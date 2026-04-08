@@ -38,6 +38,7 @@ export const PatientFileWorkspace = memo(function PatientFileWorkspace({ patient
   const handleTabChange = useCallback((tab: TabId) => setActiveTab(tab), []);
 
   const patientName = patient?.fullName ?? "جار التحميل…";
+  const patientCode = patient?.patientCode ?? "";
   const remaining = financial?.totalOutstanding ?? 0;
 
   return (
@@ -122,6 +123,7 @@ export const PatientFileWorkspace = memo(function PatientFileWorkspace({ patient
             isLoading={loadingAggregated}
             patientId={patientId}
             patientName={patientName}
+            patientCode={patientCode}
           />
         )}
 

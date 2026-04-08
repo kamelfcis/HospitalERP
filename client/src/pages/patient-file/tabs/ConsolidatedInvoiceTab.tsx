@@ -14,6 +14,7 @@ interface Props {
   isLoading: boolean;
   patientId: string;
   patientName: string;
+  patientCode: string;
 }
 
 const DEFAULT_FILTERS: ConsolidatedFiltersState = {
@@ -30,6 +31,7 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
   isLoading,
   patientId,
   patientName,
+  patientCode,
 }: Props) {
   const [filters, setFilters] = useState<ConsolidatedFiltersState>(DEFAULT_FILTERS);
 
@@ -39,8 +41,8 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
 
   const handlePrint = useCallback((mode: ConsolidatedViewMode) => {
     if (!data) return;
-    dispatchPrint(mode, data, patientName, filters.showPaid);
-  }, [data, patientName, filters.showPaid]);
+    dispatchPrint(mode, data, patientName, patientCode, filters.showPaid);
+  }, [data, patientName, patientCode, filters.showPaid]);
 
   const visibleVisits = useMemo(() => {
     if (!data) return [];

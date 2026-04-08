@@ -95,12 +95,13 @@ export const OverviewTab = memo(function OverviewTab({ patient, financial, isLoa
             <div className="flex items-center gap-2 mb-4">
               <Receipt className="h-4 w-4 text-muted-foreground" />
               <h3 className="font-semibold text-sm">الملخص المالي</h3>
+              <span className="text-xs text-muted-foreground bg-amber-50 border border-amber-200 rounded px-2 py-0.5">فواتير مكتملة فقط</span>
               {financial.lastInteraction && (
                 <span className="text-xs text-muted-foreground mr-auto">آخر تعامل: {fmtDate(financial.lastInteraction)}</span>
               )}
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-              <FinancialCard label="إجمالي الفواتير" amount={financial.totalAmount} colorClass="bg-blue-50 border-blue-100 text-blue-900" sub={`${financial.invoiceCount} فاتورة`} />
+              <FinancialCard label="إجمالي الفواتير المكتملة" amount={financial.totalAmount} colorClass="bg-blue-50 border-blue-100 text-blue-900" sub={`${financial.invoiceCount} فاتورة`} />
               <FinancialCard label="إجمالي المدفوع" amount={financial.totalPaid} colorClass="bg-green-50 border-green-100 text-green-900" />
               <FinancialCard label="المتبقي" amount={financial.totalOutstanding} colorClass={financial.totalOutstanding > 0 ? "bg-red-50 border-red-100 text-red-900" : "bg-gray-50 border-gray-100 text-gray-700"} sub={financial.totalOutstanding <= 0 ? "مسدد بالكامل" : undefined} />
               <FinancialCard label="فواتير طبية" amount={financial.breakdown.medical.totalAmount} colorClass="bg-purple-50 border-purple-100 text-purple-900" sub={`${financial.breakdown.medical.invoiceCount} فاتورة`} />

@@ -636,21 +636,18 @@ export function registerPatientsRoutes(app: Express) {
           AND COALESCE(is_return, false) = false
       `);
 
-      // فواتير المريض الطبية (patient_invoice_headers)
+      // فواتير المريض الطبية (patient_invoice_headers) — finalized فقط للملخص المالي
       const patInvResult = await db.execute(sql`
         SELECT
-          COUNT(*)::int                                          AS invoice_count,
-          COALESCE(SUM(total_amount::numeric),   0)::numeric    AS total_amount,
-          COALESCE(SUM(paid_amount::numeric),    0)::numeric    AS total_paid,
-          COALESCE(SUM(
-            CASE WHEN status = 'finalized'
-            THEN (total_amount::numeric - COALESCE(paid_amount::numeric, 0))
-            ELSE 0 END
-          ), 0)::numeric                                        AS total_outstanding,
-          MAX(invoice_date)                                     AS last_invoice_date
+          COUNT(*)::int                                                      AS invoice_count,
+          COALESCE(SUM(total_amount::numeric),   0)::numeric                AS total_amount,
+          COALESCE(SUM(paid_amount::numeric),    0)::numeric                AS total_paid,
+          COALESCE(SUM(total_amount::numeric - COALESCE(paid_amount::numeric, 0)), 0)::numeric
+                                                                            AS total_outstanding,
+          MAX(invoice_date)                                                  AS last_invoice_date
         FROM patient_invoice_headers
         WHERE patient_id = ${id}
-          AND status IN ('draft','finalized')
+          AND status = 'finalized'
       `);
 
       // عدد مرات الإقامة
@@ -711,6 +708,15 @@ export function registerPatientsRoutes(app: Express) {
   app.get("/api/patients/:id/invoices-aggregated", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
       const { id } = req.params;
+
+      // ── scope guard (نفس منطق /api/patients/:id) ──────────────────────────
+      const scope = await storage.getUserOperationalScope(req.session.userId!);
+      const forcedDeptIds: string[] | null = scope.isFullAccess ? null : scope.allowedDepartmentIds;
+      if (!scope.isFullAccess && scope.allowedDepartmentIds.length === 0) {
+        return res.status(403).json({ message: "ليس لديك صلاحية عرض بيانات هذا المريض" });
+      }
+      const inScope = await storage.checkPatientInScope(id, forcedDeptIds);
+      if (!inScope) return res.status(403).json({ message: "ليس لديك صلاحية عرض بيانات هذا المريض" });
 
       // ① جلب كل الفواتير الطبية + اسم القسم في استعلام واحد
       const headersResult = await db.execute(sql`
@@ -949,6 +955,16 @@ export function registerPatientsRoutes(app: Express) {
   app.get("/api/patients/:id/invoice-lines", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
       const { id } = req.params;
+
+      // ── scope guard ───────────────────────────────────────────────────────
+      const scope = await storage.getUserOperationalScope(req.session.userId!);
+      const forcedDeptIds: string[] | null = scope.isFullAccess ? null : scope.allowedDepartmentIds;
+      if (!scope.isFullAccess && scope.allowedDepartmentIds.length === 0) {
+        return res.status(403).json({ message: "ليس لديك صلاحية عرض بيانات هذا المريض" });
+      }
+      const inScope = await storage.checkPatientInScope(id, forcedDeptIds);
+      if (!inScope) return res.status(403).json({ message: "ليس لديك صلاحية عرض بيانات هذا المريض" });
+
       const page  = Math.max(1, parseInt(String(req.query.page  ?? "1"), 10));
       const limit = Math.min(200, Math.max(10, parseInt(String(req.query.limit ?? "50"), 10)));
       const lineTypeFilter   = req.query.lineType   ? String(req.query.lineType)   : null;
@@ -1007,12 +1023,22 @@ export function registerPatientsRoutes(app: Express) {
   app.get("/api/patients/:id/payments-list", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
       const { id } = req.params;
+
+      // ── scope guard ───────────────────────────────────────────────────────
+      const scope = await storage.getUserOperationalScope(req.session.userId!);
+      const forcedDeptIds: string[] | null = scope.isFullAccess ? null : scope.allowedDepartmentIds;
+      if (!scope.isFullAccess && scope.allowedDepartmentIds.length === 0) {
+        return res.status(403).json({ message: "ليس لديك صلاحية عرض بيانات هذا المريض" });
+      }
+      const inScope = await storage.checkPatientInScope(id, forcedDeptIds);
+      if (!inScope) return res.status(403).json({ message: "ليس لديك صلاحية عرض بيانات هذا المريض" });
+
       const result = await db.execute(sql`
         SELECT
           p.id, p.header_id, p.payment_date, p.amount,
           p.payment_method, p.reference_number, p.notes,
           p.treasury_id, p.created_at,
-          COALESCE(t.name_ar, t.name, '—') AS treasury_name,
+          COALESCE(t.name, '—') AS treasury_name,
           h.invoice_number, h.invoice_date,
           COALESCE(d.name_ar,'—') AS department_name
         FROM patient_invoice_payments p

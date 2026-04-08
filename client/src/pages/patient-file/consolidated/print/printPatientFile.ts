@@ -20,6 +20,7 @@ function printHtml(html: string, title: string) {
     h2 { font-size: 11pt; margin: 12px 0 4px 0; border-bottom: 1px solid #ccc; padding-bottom: 3px; }
     .header-block { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
     .patient-info { font-size: 9pt; color: #555; }
+    .patient-code { display: inline-block; font-family: monospace; background: #f3f4f6; border: 1px solid #ddd; border-radius: 3px; padding: 1px 6px; font-size: 9pt; color: #374151; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
     th, td { border: 1px solid #ddd; padding: 5px 8px; text-align: right; }
     th { background: #f3f4f6; font-weight: 600; font-size: 9pt; }
@@ -57,10 +58,10 @@ function buildTotalsBlock(totals: AggregatedViewData["totals"], showPaid: boolea
   </div>`;
 }
 
-function buildPatientHeader(patientName: string, invoiceCount: number): string {
+function buildPatientHeader(patientName: string, patientCode: string, invoiceCount: number): string {
   return `<div class="header-block">
     <div>
-      <h1>${patientName}</h1>
+      <h1>${patientName}${patientCode ? `&nbsp;&nbsp;<span class="patient-code">${patientCode}</span>` : ""}</h1>
       <div class="patient-info">إجمالي الفواتير: ${invoiceCount}</div>
     </div>
     <div class="patient-info">${new Date().toLocaleDateString("ar-EG", { year: "numeric", month: "long", day: "numeric" })}</div>
@@ -70,6 +71,7 @@ function buildPatientHeader(patientName: string, invoiceCount: number): string {
 export function printByVisit(
   data: AggregatedViewData,
   patientName: string,
+  patientCode: string,
   showPaid: boolean,
 ) {
   const rows = data.byVisit.map(v => `
@@ -85,7 +87,7 @@ export function printByVisit(
       <td class="num ${v.remaining > 0.01 ? "balance-red" : "balance-ok"}">${money(v.remaining)}</td>` : ""}
     </tr>`).join("");
 
-  const html = buildPatientHeader(patientName, data.totals.invoiceCount)
+  const html = buildPatientHeader(patientName, patientCode, data.totals.invoiceCount)
     + `<h2>ملخص الفاتورة المجمعة — حسب الزيارة</h2>
     <table>
       <thead><tr>
@@ -110,6 +112,7 @@ export function printByVisit(
 export function printByDepartment(
   data: AggregatedViewData,
   patientName: string,
+  patientCode: string,
   showPaid: boolean,
 ) {
   const rows = data.byDepartment.map(d => `
@@ -122,7 +125,7 @@ export function printByDepartment(
       ${showPaid ? `<td class="num">${money(d.paidAmount)}</td><td class="num ${d.remaining > 0.01 ? "balance-red" : "balance-ok"}">${money(d.remaining)}</td>` : ""}
     </tr>`).join("");
 
-  const html = buildPatientHeader(patientName, data.totals.invoiceCount)
+  const html = buildPatientHeader(patientName, patientCode, data.totals.invoiceCount)
     + `<h2>ملخص الفاتورة المجمعة — حسب القسم</h2>
     <table>
       <thead><tr>
@@ -147,6 +150,7 @@ export function printByDepartment(
 export function printByClassification(
   data: AggregatedViewData,
   patientName: string,
+  patientCode: string,
   showPaid: boolean,
 ) {
   const labelMap: Record<string, string> = { service: "خدمات", drug: "أدوية", consumable: "مستهلكات", equipment: "أجهزة" };
@@ -160,7 +164,7 @@ export function printByClassification(
       ${showPaid ? `<td class="num">${money(c.paidAmount)}</td><td class="num ${c.remaining > 0.01 ? "balance-red" : "balance-ok"}">${money(c.remaining)}</td>` : ""}
     </tr>`).join("");
 
-  const html = buildPatientHeader(patientName, data.totals.invoiceCount)
+  const html = buildPatientHeader(patientName, patientCode, data.totals.invoiceCount)
     + `<h2>ملخص الفاتورة المجمعة — حسب التصنيف</h2>
     <table>
       <thead><tr>
@@ -176,24 +180,58 @@ export function printByClassification(
 }
 
 export function printDetailed(
+  data: AggregatedViewData,
   patientName: string,
-  invoiceCount: number,
+  patientCode: string,
+  showPaid: boolean,
 ) {
-  alert("لطباعة التفصيلي الكامل، استخدم زر طباعة الصفحة بعد الانتقال لوضع العرض التفصيلي");
-  void invoiceCount;
-  void patientName;
+  const STATUS_AR: Record<string, string> = { finalized: "مكتملة", draft: "مسودة", cancelled: "ملغاة" };
+  const rows = data.invoices.map(inv => `
+    <tr>
+      <td>${inv.invoiceNumber ?? "—"}</td>
+      <td>${inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString("ar-EG") : "—"}</td>
+      <td>${inv.departmentName ?? "—"}</td>
+      <td>${STATUS_AR[inv.status] ?? inv.status}</td>
+      <td>${inv.doctorName ?? "—"}</td>
+      <td class="num">${money(inv.totalAmount)}</td>
+      <td class="num">${inv.discountAmount > 0 ? `(${money(inv.discountAmount)})` : "—"}</td>
+      <td class="num">${money(inv.netAmount)}</td>
+      ${showPaid ? `<td class="num">${money(inv.paidAmount)}</td><td class="num ${inv.remaining > 0.01 ? "balance-red" : "balance-ok"}">${money(inv.remaining)}</td>` : ""}
+    </tr>`).join("");
+
+  const html = buildPatientHeader(patientName, patientCode, data.totals.invoiceCount)
+    + `<h2>كشف تفصيلي — جميع الفواتير</h2>
+    <table>
+      <thead><tr>
+        <th>رقم الفاتورة</th><th>التاريخ</th><th>القسم</th><th>الحالة</th><th>الطبيب</th>
+        <th class="num">الإجمالي</th><th class="num">الخصم</th><th class="num">الصافي</th>
+        ${showPaid ? "<th class=\"num\">المدفوع</th><th class=\"num\">المتبقي</th>" : ""}
+      </tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr>
+        <td colspan="5">الإجمالي</td>
+        <td class="num">${money(data.totals.totalAmount)}</td>
+        <td class="num">(${money(data.totals.discountAmount)})</td>
+        <td class="num">${money(data.totals.netAmount)}</td>
+        ${showPaid ? `<td class="num">${money(data.totals.paidAmount)}</td><td class="num ${data.totals.remaining>0.01?"balance-red":"balance-ok"}">${money(data.totals.remaining)}</td>` : ""}
+      </tr></tfoot>
+    </table>`
+    + buildTotalsBlock(data.totals, showPaid);
+
+  printHtml(html, `ملف المريض — ${patientName}`);
 }
 
 export function dispatchPrint(
   mode: ConsolidatedViewMode,
   data: AggregatedViewData,
   patientName: string,
+  patientCode: string,
   showPaid: boolean,
 ) {
   switch (mode) {
-    case "visit":          return printByVisit(data, patientName, showPaid);
-    case "department":     return printByDepartment(data, patientName, showPaid);
-    case "classification": return printByClassification(data, patientName, showPaid);
-    case "detailed":       return printDetailed(patientName, data.totals.invoiceCount);
+    case "visit":          return printByVisit(data, patientName, patientCode, showPaid);
+    case "department":     return printByDepartment(data, patientName, patientCode, showPaid);
+    case "classification": return printByClassification(data, patientName, patientCode, showPaid);
+    case "detailed":       return printDetailed(data, patientName, patientCode, showPaid);
   }
 }
