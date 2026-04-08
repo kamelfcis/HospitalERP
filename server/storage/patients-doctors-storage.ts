@@ -34,6 +34,164 @@ import {
 } from "../services/patient-dedup";
 import type { DatabaseStorage } from "./index";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Consolidation Core — دالة مشتركة بين admission و visit_group
+// ─────────────────────────────────────────────────────────────────────────────
+// تحذير: لا تستدعِ هذه الدالة مباشرة من الـ routes. استخدم الـ wrapper methods.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type ConsolidationMode =
+  | { kind: 'admission';   admissionId:   string }
+  | { kind: 'visit_group'; visitGroupId:  string };
+
+/**
+ * _consolidateInvoicesCore
+ * ─────────────────────────────────────────────────────────────────────────────
+ * الدالة المشتركة للتجميع. تقبل Drizzle transaction و mode.
+ * كلتا حالتَي (admission / visit_group) تستخدمان نفس منطق التجميع.
+ *
+ * Safety guarantees:
+ * - لا تجمع فاتورة is_consolidated=true ضمن المصادر (تمنع double-counting)
+ * - تحذف الفاتورة المجمعة القديمة لنفس الـ reference قبل إنشاء الجديدة
+ *   (TODO: يمكن تحسينه مستقبلاً إلى soft-update لتجنب فقدان تعديلات يدوية)
+ * - تحافظ على source_type/source_id لكل بند (Phase-1 traceability)
+ * - لا تخلط visit_group مع admission في نفس المجمعة
+ */
+async function _consolidateInvoicesCore(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: any,
+  mode: ConsolidationMode,
+  patientName: string,
+  patientPhone: string | null,
+  doctorName: string | null,
+  notesLabel: string,
+): Promise<PatientInvoiceHeader> {
+  // ── 1. بناء شرط الفلتر حسب الـ mode ─────────────────────────────────────
+  const sourceFilter =
+    mode.kind === 'admission'
+      ? eq(patientInvoiceHeaders.admissionId, mode.admissionId)
+      : eq(patientInvoiceHeaders.visitGroupId, mode.visitGroupId);
+
+  // ── 2. جلب فواتير المصدر (غير مجمعة فقط) ────────────────────────────────
+  const invoices = await tx.select().from(patientInvoiceHeaders)
+    .where(and(sourceFilter, eq(patientInvoiceHeaders.isConsolidated, false)))
+    .orderBy(asc(patientInvoiceHeaders.createdAt));
+
+  if (invoices.length === 0) throw new Error("لا توجد فواتير لتجميعها");
+
+  // ── 3. حذف الفاتورة المجمعة القديمة إن وجدت ─────────────────────────────
+  // ⚠️ الحذف والإعادة هو السلوك الحالي المورّث من admission consolidation.
+  // هذا يعني فقدان أي تعديل يدوي على الفاتورة المجمعة عند إعادة التجميع.
+  // لم نزد الأمر سوءًا — سلوك admission القديم محفوظ بالكامل.
+  const existingConsolidated = await tx.select().from(patientInvoiceHeaders)
+    .where(and(sourceFilter, eq(patientInvoiceHeaders.isConsolidated, true)));
+
+  if (existingConsolidated.length > 0) {
+    for (const ec of existingConsolidated) {
+      await tx.delete(patientInvoiceLines).where(eq(patientInvoiceLines.headerId, ec.id));
+      await tx.delete(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, ec.id));
+    }
+  }
+
+  // ── 4. رقم الفاتورة الجديد ────────────────────────────────────────────────
+  await tx.execute(sql`LOCK TABLE patient_invoice_headers IN EXCLUSIVE MODE`);
+  const maxNumResult = await tx.execute(sql`
+    SELECT COALESCE(MAX(CAST(NULLIF(regexp_replace(invoice_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) AS max_num
+    FROM patient_invoice_headers
+  `);
+  const nextNum = (parseInt(String((maxNumResult.rows[0] as { max_num: string })?.max_num || "0")) || 0) + 1;
+
+  // ── 5. تجميع المبالغ ──────────────────────────────────────────────────────
+  const totalAmount   = invoices.reduce((s: number, inv: PatientInvoiceHeader) => s + parseFloat(inv.totalAmount), 0);
+  const discountAmount= invoices.reduce((s: number, inv: PatientInvoiceHeader) => s + parseFloat(inv.discountAmount), 0);
+  const netAmount     = invoices.reduce((s: number, inv: PatientInvoiceHeader) => s + parseFloat(inv.netAmount), 0);
+  const paidAmount    = invoices.reduce((s: number, inv: PatientInvoiceHeader) => s + parseFloat(inv.paidAmount), 0);
+
+  // ── 6. إنشاء الفاتورة المجمعة ────────────────────────────────────────────
+  // sourceInvoiceIds: مصفوفة unique بدون تكرار (safety guard)
+  const uniqueSourceIds = [...new Set(invoices.map((i: PatientInvoiceHeader) => i.id))];
+
+  const consolidatedValues: Record<string, unknown> = {
+    invoiceNumber:   String(nextNum),
+    invoiceDate:     new Date().toISOString().split("T")[0],
+    patientName,
+    patientPhone,
+    patientType:     invoices[0].patientType,
+    isConsolidated:  true,
+    sourceInvoiceIds: JSON.stringify(uniqueSourceIds),
+    doctorName,
+    notes:           notesLabel,
+    status:          "draft",
+    totalAmount:     String(+totalAmount.toFixed(2)),
+    discountAmount:  String(+discountAmount.toFixed(2)),
+    netAmount:       String(+netAmount.toFixed(2)),
+    paidAmount:      String(+paidAmount.toFixed(2)),
+  };
+
+  // ربط الفاتورة المجمعة بنفس reference المصدر
+  if (mode.kind === 'admission') {
+    consolidatedValues.admissionId = mode.admissionId;
+  } else {
+    consolidatedValues.visitGroupId = mode.visitGroupId;
+  }
+
+  const [consolidated] = await tx.insert(patientInvoiceHeaders).values(consolidatedValues).returning();
+
+  // ── 7. نسخ البنود مع الحفاظ على source_type/source_id ───────────────────
+  // - STAY_ENGINE: يُحفظ كما هو (source_type='STAY_ENGINE')
+  // - dept_service_invoice: يُحفظ كما هو
+  // - null (بيانات قديمة): نُعيّن source_type='dept_service_invoice' + source_id=inv.id
+  //   لأننا عند التجميع نعرف يقيناً الفاتورة المصدر لكل بند
+  let sortOrder = 0;
+  for (const inv of invoices) {
+    const lines = await tx.select().from(patientInvoiceLines)
+      .where(eq(patientInvoiceLines.headerId, inv.id))
+      .orderBy(asc(patientInvoiceLines.sortOrder));
+
+    if (lines.length === 0) continue;
+
+    // Batch insert بدلاً من loop (أداء أفضل + لا N+1 داخلي)
+    const newLines = lines.map((l: typeof patientInvoiceLines.$inferSelect) => ({
+      headerId:        consolidated.id,
+      lineType:        l.lineType,
+      serviceId:       l.serviceId,
+      itemId:          l.itemId,
+      description:     l.description,
+      quantity:        l.quantity,
+      unitPrice:       l.unitPrice,
+      discountPercent: l.discountPercent,
+      discountAmount:  l.discountAmount,
+      totalPrice:      l.totalPrice,
+      unitLevel:       l.unitLevel,
+      lotId:           l.lotId,
+      expiryMonth:     l.expiryMonth,
+      expiryYear:      l.expiryYear,
+      priceSource:     l.priceSource,
+      doctorName:      l.doctorName,
+      nurseName:       l.nurseName,
+      businessClassification: l.businessClassification,
+      notes: l.notes
+        ? `[${inv.invoiceNumber}] ${l.notes}`
+        : `[فاتورة ${inv.invoiceNumber}]`,
+      sortOrder: sortOrder++,
+      // ── Phase-1 Traceability: حفظ مصدر كل بند ──────────────────────────
+      // إن كان البند يحمل source موجود (مثل STAY_ENGINE) → نحتفظ به
+      // إن كان null (بيانات قديمة) → نُعيّن المصدر من الفاتورة الأصلية
+      sourceType: l.sourceType ?? "dept_service_invoice",
+      sourceId:   l.sourceId   ?? inv.id,
+    }));
+
+    await tx.insert(patientInvoiceLines).values(newLines);
+  }
+
+  // ── 8. إعادة الفاتورة المجمعة النهائية ───────────────────────────────────
+  const [finalHeader] = await tx.select().from(patientInvoiceHeaders)
+    .where(eq(patientInvoiceHeaders.id, consolidated.id));
+  return finalHeader;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 const methods = {
 
   async getPatients(this: DatabaseStorage, limit = 200): Promise<Patient[]> {
@@ -880,95 +1038,55 @@ const methods = {
       .orderBy(asc(patientInvoiceHeaders.createdAt));
   },
 
+  // ── Admission Consolidation — Thin Wrapper ────────────────────────────────
   async consolidateAdmissionInvoices(this: DatabaseStorage, admissionId: string): Promise<PatientInvoiceHeader> {
     return await db.transaction(async (tx) => {
+      // جلب بيانات المريض من سجل الإقامة لبناء الفاتورة المجمعة
       const [admission] = await tx.select().from(admissions).where(eq(admissions.id, admissionId));
       if (!admission) throw new Error("الإقامة غير موجودة");
 
-      const invoices = await tx.select().from(patientInvoiceHeaders)
+      return _consolidateInvoicesCore(
+        tx,
+        { kind: 'admission', admissionId },
+        admission.patientName,
+        admission.patientPhone ?? null,
+        admission.doctorName   ?? null,
+        `فاتورة مجمعة - إقامة رقم ${admission.admissionNumber}`,
+      );
+    });
+  },
+
+  // ── Visit Group Consolidation — Thin Wrapper ──────────────────────────────
+  async consolidateVisitGroupInvoices(this: DatabaseStorage, visitGroupId: string): Promise<PatientInvoiceHeader> {
+    return await db.transaction(async (tx) => {
+      // بيانات المريض مشتقة من أول فاتورة في المجموعة (لا جدول visit_groups بعد)
+      const [firstInvoice] = await tx.select().from(patientInvoiceHeaders)
         .where(and(
-          eq(patientInvoiceHeaders.admissionId, admissionId),
+          eq(patientInvoiceHeaders.visitGroupId, visitGroupId),
           eq(patientInvoiceHeaders.isConsolidated, false),
         ))
-        .orderBy(asc(patientInvoiceHeaders.createdAt));
+        .orderBy(asc(patientInvoiceHeaders.createdAt))
+        .limit(1);
 
-      if (invoices.length === 0) throw new Error("لا توجد فواتير لتجميعها");
+      if (!firstInvoice) throw new Error("لا توجد فواتير لهذه المجموعة");
 
-      const existingConsolidated = await tx.select().from(patientInvoiceHeaders)
-        .where(and(
-          eq(patientInvoiceHeaders.admissionId, admissionId),
-          eq(patientInvoiceHeaders.isConsolidated, true),
-        ));
-
-      if (existingConsolidated.length > 0) {
-        for (const ec of existingConsolidated) {
-          await tx.delete(patientInvoiceLines).where(eq(patientInvoiceLines.headerId, ec.id));
-          await tx.delete(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, ec.id));
-        }
-      }
-
-      await tx.execute(sql`LOCK TABLE patient_invoice_headers IN EXCLUSIVE MODE`);
-      const maxNumResult = await tx.execute(sql`SELECT COALESCE(MAX(CAST(NULLIF(regexp_replace(invoice_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) as max_num FROM patient_invoice_headers`);
-      const nextNum = (parseInt(String((maxNumResult.rows[0] as any)?.max_num || "0")) || 0) + 1;
-
-      const totalAmount = invoices.reduce((s, inv) => s + parseFloat(inv.totalAmount), 0);
-      const discountAmount = invoices.reduce((s, inv) => s + parseFloat(inv.discountAmount), 0);
-      const netAmount = invoices.reduce((s, inv) => s + parseFloat(inv.netAmount), 0);
-      const paidAmount = invoices.reduce((s, inv) => s + parseFloat(inv.paidAmount), 0);
-
-      const [consolidated] = await tx.insert(patientInvoiceHeaders).values({
-        invoiceNumber: String(nextNum),
-        invoiceDate: new Date().toISOString().split("T")[0],
-        patientName: admission.patientName,
-        patientPhone: admission.patientPhone,
-        patientType: invoices[0].patientType,
-        admissionId: admissionId,
-        isConsolidated: true,
-        sourceInvoiceIds: JSON.stringify(invoices.map(i => i.id)),
-        doctorName: admission.doctorName,
-        notes: `فاتورة مجمعة - إقامة رقم ${admission.admissionNumber}`,
-        status: "draft",
-        totalAmount: String(+totalAmount.toFixed(2)),
-        discountAmount: String(+discountAmount.toFixed(2)),
-        netAmount: String(+netAmount.toFixed(2)),
-        paidAmount: String(+paidAmount.toFixed(2)),
-      }).returning();
-
-      let sortOrder = 0;
-      for (const inv of invoices) {
-        const lines = await tx.select().from(patientInvoiceLines)
-          .where(eq(patientInvoiceLines.headerId, inv.id))
-          .orderBy(asc(patientInvoiceLines.sortOrder));
-
-        if (lines.length > 0) {
-          const newLines = lines.map(l => ({
-            headerId: consolidated.id,
-            lineType: l.lineType,
-            serviceId: l.serviceId,
-            itemId: l.itemId,
-            description: l.description,
-            quantity: l.quantity,
-            unitPrice: l.unitPrice,
-            discountPercent: l.discountPercent,
-            discountAmount: l.discountAmount,
-            totalPrice: l.totalPrice,
-            unitLevel: l.unitLevel,
-            lotId: l.lotId,
-            expiryMonth: l.expiryMonth,
-            expiryYear: l.expiryYear,
-            priceSource: l.priceSource,
-            doctorName: l.doctorName,
-            nurseName: l.nurseName,
-            notes: l.notes ? `[${inv.invoiceNumber}] ${l.notes}` : `[فاتورة ${inv.invoiceNumber}]`,
-            sortOrder: sortOrder++,
-          }));
-          await tx.insert(patientInvoiceLines).values(newLines);
-        }
-      }
-
-      const [finalHeader] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, consolidated.id));
-      return finalHeader;
+      return _consolidateInvoicesCore(
+        tx,
+        { kind: 'visit_group', visitGroupId },
+        firstInvoice.patientName,
+        firstInvoice.patientPhone ?? null,
+        firstInvoice.doctorName   ?? null,
+        `فاتورة مجمعة - زيارة ${visitGroupId.slice(0, 8)}`,
+      );
     });
+  },
+
+  // ── Visit Group Invoices List ─────────────────────────────────────────────
+  async getVisitGroupInvoices(this: DatabaseStorage, visitGroupId: string): Promise<PatientInvoiceHeader[]> {
+    // يُعيد كل الفواتير (مجمعة وغير مجمعة) المرتبطة بمجموعة الزيارة
+    return db.select().from(patientInvoiceHeaders)
+      .where(eq(patientInvoiceHeaders.visitGroupId, visitGroupId))
+      .orderBy(asc(patientInvoiceHeaders.createdAt));
   },
 
   // ==================== Patient Inquiry ====================

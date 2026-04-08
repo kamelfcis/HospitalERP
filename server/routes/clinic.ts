@@ -871,11 +871,19 @@ export function registerClinicRoutes(app: Express) {
     try {
       const { patientName, patientPhone, doctorId, doctorName, departmentId,
         orderType, contractName, treasuryId, services, discountPercent,
-        discountAmount, notes, clinicOrderIds } = req.body;
+        discountAmount, notes, clinicOrderIds,
+        visitGroupId,   // ← Phase-2: nullable UUID لمجموعة الزيارة
+      } = req.body;
 
       if (!patientName || !departmentId || !services?.length) {
         return res.status(400).json({ message: "اسم المريض والقسم والخدمات مطلوبة" });
       }
+
+      // visitGroupId — صحّ المدخل: إما UUID صالح أو غير موجود
+      const safeVisitGroupId: string | undefined =
+        visitGroupId && typeof visitGroupId === 'string' && visitGroupId.trim()
+          ? visitGroupId.trim()
+          : undefined;
 
       const hasDiscount = (discountPercent && parseFloat(discountPercent) > 0) || (discountAmount && parseFloat(discountAmount) > 0);
       if (hasDiscount) {
@@ -890,6 +898,7 @@ export function registerClinicRoutes(app: Express) {
         orderType: orderType || 'cash', contractName, treasuryId,
         services, discountPercent, discountAmount, notes,
         userId: req.session.userId!, clinicOrderIds,
+        visitGroupId: safeVisitGroupId,
       });
       res.json(result);
     } catch (e: any) { res.status(400).json({ message: e.message }); }

@@ -410,13 +410,14 @@ const methods = {
       const netAmount = Math.max(totalAmount - discountAmount, 0);
       const paidAmount = data.orderType === 'cash' ? netAmount : 0;
 
+      // ── $14 = visit_group_id (nullable) — يربط الفاتورة بمجموعة زيارة OPD ──
       const invRes = await client.query(`
         INSERT INTO patient_invoice_headers
           (invoice_number, invoice_date, patient_name, patient_phone,
            department_id, doctor_name, patient_type, contract_name,
            total_amount, discount_amount, header_discount_amount, header_discount_percent,
-           net_amount, paid_amount, status, notes, version)
-        VALUES ($1, CURRENT_DATE, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10, $11, $12, 'finalized', $13, 1)
+           net_amount, paid_amount, status, notes, version, visit_group_id)
+        VALUES ($1, CURRENT_DATE, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10, $11, $12, 'finalized', $13, 1, $14)
         RETURNING id
       `, [
         invoiceNumber, data.patientName, data.patientPhone ?? null,
@@ -425,15 +426,19 @@ const methods = {
         totalAmount.toFixed(2), discountAmount.toFixed(2),
         data.discountPercent ?? 0, netAmount.toFixed(2), paidAmount.toFixed(2),
         data.notes ?? null,
+        data.visitGroupId ?? null,
       ]);
       const invoiceId = invRes.rows[0].id;
 
+      // ── Phase-1 Traceability: source_type='dept_service_invoice', source_id=invoiceId ──
+      // كل بند منشأ من dept-services يحمل مرجع الفاتورة الأصلية لضمان audit trail كامل.
       for (let i = 0; i < data.services.length; i++) {
         const svc = data.services[i];
         await client.query(`
           INSERT INTO patient_invoice_lines
-            (header_id, line_type, service_id, description, quantity, unit_price, total_price, sort_order)
-          VALUES ($1, 'service', $2, $3, $4, $5, $6, $7)
+            (header_id, line_type, service_id, description, quantity, unit_price, total_price, sort_order,
+             source_type, source_id)
+          VALUES ($1, 'service', $2, $3, $4, $5, $6, $7, 'dept_service_invoice', $1)
         `, [invoiceId, svc.serviceId, svc.serviceName, svc.quantity, svc.unitPrice.toFixed(2), (svc.quantity * svc.unitPrice).toFixed(2), i]);
       }
 

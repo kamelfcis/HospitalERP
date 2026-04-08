@@ -159,6 +159,8 @@ export interface DeptServiceOrderInput {
   notes?: string;
   userId: string;
   clinicOrderIds?: string[];
+  /** UUID حر يربط هذه الفاتورة بمجموعة زيارة (nullable — لا FK الآن) */
+  visitGroupId?: string;
 }
 
 export interface DeptServiceBatchInput {
@@ -549,6 +551,10 @@ export interface IStorage {
   dischargeAdmission(id: string): Promise<Admission>;
   getAdmissionInvoices(admissionId: string): Promise<PatientInvoiceHeader[]>;
   consolidateAdmissionInvoices(admissionId: string): Promise<PatientInvoiceHeader>;
+  /** تجميع فواتير الأقسام حسب مجموعة الزيارة (visit_group_id) */
+  consolidateVisitGroupInvoices(visitGroupId: string): Promise<PatientInvoiceHeader>;
+  /** كل فواتير مجموعة الزيارة (مجمعة وغير مجمعة) */
+  getVisitGroupInvoices(visitGroupId: string): Promise<PatientInvoiceHeader[]>;
   // Stay Engine
   getStaySegments(admissionId: string): Promise<StaySegment[]>;
   openStaySegment(params: { admissionId: string; serviceId?: string; invoiceId: string; notes?: string }): Promise<StaySegment>;

@@ -10,7 +10,7 @@ import { ServicesGrid, type ServiceLine } from "../components/ServicesGrid";
 import { ConsumablesPanel } from "../components/ConsumablesPanel";
 import { useDeptServices, usePatientSearch, useUserTreasury } from "../hooks/useDeptServices";
 import { DoctorLookup } from "@/components/lookups";
-import { Save, Loader2, AlertTriangle } from "lucide-react";
+import { Save, Loader2, AlertTriangle, Link2, X } from "lucide-react";
 import type { Patient, Service } from "@shared/schema";
 
 interface Props {
@@ -43,6 +43,8 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
   const [serviceLines, setServiceLines] = useState<ServiceLine[]>([]);
   const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarning[]>([]);
   const [clinicOrderIds, setClinicOrderIds] = useState<string[]>([]);
+  /** Phase-2: Visit Group ID — nullable UUID يربط فواتير أقسام مختلفة لنفس المريض */
+  const [visitGroupId, setVisitGroupId] = useState<string>("");
   const prefillDone = useRef(false);
 
   useEffect(() => {
@@ -106,6 +108,7 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
         treasuryId: orderType === "cash" && treasury ? treasury.id : undefined,
         services: serviceLines, discountPercent, notes: notes || undefined,
         clinicOrderIds: clinicOrderIds.length ? clinicOrderIds : undefined,
+        visitGroupId: visitGroupId.trim() || undefined,
       };
       const res = await apiRequest("POST", "/api/dept-service-orders", body);
       return res.json();
@@ -155,6 +158,7 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
     setDoctorId(""); setDoctorName(""); setOrderType("cash"); setContractName("");
     setNotes(""); setDiscountPercent(0); setServiceLines([]);
     setDuplicateWarning([]); setClinicOrderIds([]);
+    setVisitGroupId("");
   };
 
   const handlePatientSearchChange = (val: string) => {
@@ -238,6 +242,39 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
             </>
           )}
         </div>
+      </div>
+
+      {/* ── Phase-2: Visit Group — ربط الفاتورة بمجموعة زيارة (اختياري) ─── */}
+      <div className="flex items-center gap-2 border rounded px-3 py-1.5 bg-muted/20">
+        <Link2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <Label className="text-xs text-muted-foreground shrink-0 whitespace-nowrap">مجموعة الزيارة:</Label>
+        <Input
+          value={visitGroupId}
+          onChange={e => setVisitGroupId(e.target.value)}
+          placeholder="اختياري — UUID لربط الفواتير متعددة الأقسام"
+          className="h-7 text-xs flex-1 font-mono"
+          data-testid="input-visit-group-id"
+        />
+        <Button
+          type="button" variant="outline" size="sm"
+          className="h-7 text-xs px-2 shrink-0"
+          onClick={() => setVisitGroupId(crypto.randomUUID())}
+          title="إنشاء رقم زيارة جديد"
+          data-testid="btn-generate-visit-group"
+        >
+          إنشاء
+        </Button>
+        {visitGroupId && (
+          <Button
+            type="button" variant="ghost" size="sm"
+            className="h-7 w-7 p-0 shrink-0"
+            onClick={() => setVisitGroupId("")}
+            title="مسح"
+            data-testid="btn-clear-visit-group"
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3" style={{ minHeight: 200 }}>

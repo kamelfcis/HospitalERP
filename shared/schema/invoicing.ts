@@ -327,6 +327,9 @@ export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   warehouseId: varchar("warehouse_id").references(() => warehouses.id),
   admissionId: varchar("admission_id"),
   patientId: varchar("patient_id"),
+  // ── Visit Group — طبقة grouping خفيفة للزيارات متعددة الأقسام (OPD) ─────────
+  // null = فاتورة مستقلة أو قديمة  |  قيمة = ضمن مجموعة زيارة (UUID حر بدون FK الآن)
+  visitGroupId: varchar("visit_group_id"),
   isConsolidated: boolean("is_consolidated").notNull().default(false),
   sourceInvoiceIds: text("source_invoice_ids"),
   doctorName: text("doctor_name"),
@@ -365,6 +368,9 @@ export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   companyIdx:       index("idx_pat_inv_company").on(table.companyId),
   contractIdx:      index("idx_pat_inv_contract").on(table.contractId),
   contractMemberIdx: index("idx_pat_inv_contract_member").on(table.contractMemberId),
+  // ── Visit Group indexes — الاستعلام الأساسي: (visitGroupId, isConsolidated) ──
+  visitGroupIdx:         index("idx_pat_inv_visit_group").on(table.visitGroupId),
+  visitGroupStatusIdx:   index("idx_pat_inv_visit_group_consolidated").on(table.visitGroupId, table.isConsolidated),
 }));
 
 export const patientInvoiceLines = pgTable("patient_invoice_lines", {

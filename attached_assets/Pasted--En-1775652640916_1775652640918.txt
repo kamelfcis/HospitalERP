@@ -1,0 +1,310 @@
+أريدك أن تنفّذ الحل المتفق عليه لتنظيم خدمات المريض متعددة الأقسام في النظام الحالي، لكن بتنفيذ **Enterprise-grade صارم جدًا**، منظم جدًا، ومبني على الموجود بدون هدم، مع الالتزام الكامل بالريفاكتور والكمبوننت والفهرسة ومنع البَجّات والحفاظ على الـ backward compatibility.
+
+❗ مهم جدًا:
+- لا تهدم أي flow قائم.
+- لا تعيد اختراع النظام.
+- لا تكدّس الكود.
+- لا تعمل patch سريع.
+- لا تكبر الملفات أو routes أو components بشكل فوضوي.
+- لا تكرر business logic في أكثر من مكان.
+- لا تكسر الفاتورة الحالية.
+- لا تكسر الفاتورة المجمعة الحالية الخاصة بالإقامة.
+- لا تكسر الصلاحيات الحالية.
+- لا تكسر STAY_ENGINE.
+- لا تغيّر semantics موجودة إلا لو هناك bug حقيقي واضح.
+- أي خطوة لازم تكون minimal, safe, incremental, reversible.
+- نفّذ على مراحل واضحة ونظيفة.
+- افحص كل نقطة قبل تنفيذها، ولو وجدت تعارضًا مع الكود الحقيقي اختَر الحل الأنسب بما يحافظ على نفس الهدف.
+
+━━━━━━━━━━━━━━━━━━━━━━━
+🎯 الهدف النهائي
+النظام الحالي سيظل محافظًا على قاعدته الأساسية:
+
+- كل `patient_invoice_header` ينتمي إلى **قسم واحد فقط**
+- لا نسمح بتحويل الفاتورة الواحدة إلى multi-department header
+- لا نسمح لإداري قسم أن يعمل بسهولة على نفس تفاصيل أقسام أخرى
+
+وفي نفس الوقت نضيف طبقة grouping جديدة:
+
+### `visit_group_id`
+بحيث:
+- المريض في زيارة واحدة يمكن أن يكون له أكثر من فاتورة قسمية:
+  - العناية
+  - الأشعة
+  - المعمل
+  - العمليات
+- وكلها ترتبط بنفس `visit_group_id`
+- ثم يمكن عمل **فاتورة مجمعة حسب الزيارة** دون كسر التجميع الحالي المبني على `admissionId`
+
+━━━━━━━━━━━━━━━━━━━━━━━
+📌 النطاق المطلوب تنفيذه الآن فقط
+### Phase 1 — Traceability Hardening
+نفّذ أولًا إصلاحات التتبع قبل أي توسيع للتجميع:
+
+#### 1) `saveDeptServiceOrder`
+أضف/فعّل حفظ:
+- `source_type`
+- `source_id`
+
+بالشكل المنطقي الصحيح الذي يراعي الموجود حاليًا، وبأقل هدم ممكن.
+
+الهدف:
+- أي سطر ناتج من dept services يكون قابلاً للتتبع لأصله
+- لا تترك سطور department services بدون source metadata
+
+اختر naming واضح ومتسق، مثل:
+- `source_type = "dept_service_invoice"`
+- و `source_id = original invoice header id`
+أو أي naming أدق بناءً على الموجود، لكن حافظ على الاتساق.
+
+#### 2) `consolidateAdmissionInvoices`
+لا تفقد `source_type/source_id` أثناء نسخ البنود إلى الفاتورة المجمعة.
+حافظ على الـ traceability بالكامل.
+لو هناك حالة تحتاج source جديد للفواتير المجمعة مع الاحتفاظ بالأصل، صمّمها بحذر شديد وبأقل تغيير ممكن.
+
+❗ لا تفسد أي منطق قائم لـ `STAY_ENGINE`.
+
+━━━━━━━━━━━━━━━━━━━━━━━
+### Phase 2 — Introduce `visit_group_id`
+أضف دعم grouping للزيارة على مستوى الهيدر فقط:
+
+#### المطلوب:
+- إضافة `visit_group_id` nullable إلى `patient_invoice_headers`
+- إضافة index مناسب له
+- تحديث schema / drizzle / storage / typing / inserts / selects بشكل نظيف جدًا
+- لا تفرضه على البيانات القديمة
+- `null` يظل معناه:
+  - فاتورة مستقلة
+  - أو فاتورة قديمة
+  - أو فاتورة ليست ضمن مجموعة زيارة
+
+❗ لا تضف جدول جديد الآن إلا إذا اضطررت اضطرارًا واضحًا جدًا.
+الافتراض الحالي:
+- لا نحتاج جدول `patient_visit_groups` في هذه المرحلة
+- لا نحتاج foreign key الآن
+- لا نحتاج lifecycle معقد الآن
+
+لو وجدت أن هناك سببًا قويًا جدًا يجبرك على جدول مستقل الآن، اذكره أولًا في المخرجات قبل التنفيذ، لكن الأصل هو **عدم إضافة جدول جديد** في هذه المرحلة.
+
+━━━━━━━━━━━━━━━━━━━━━━━
+### Phase 3 — Visit-aware Consolidation
+وسّع منطق التجميع الحالي بحيث يدعم حالتين **بأقل duplication ممكن**:
+
+#### الوضع الحالي:
+- التجميع حسب `admissionId`
+
+#### المطلوب:
+- الإبقاء على admission consolidation كما هو دون كسر
+- إضافة مسار جديد للتجميع حسب `visit_group_id`
+
+أنشئ abstraction نظيف جدًا، مثل:
+- دالة موحدة للتجميع
+- تقبل mode / reference type
+- أو resolver واضح
+- أو service/storage method نظيف
+لكن:
+- لا تكرر كود التجميع مرتين
+- لا تنسخ نفس اللوجيك في مسارين منفصلين
+- لا تفتح باب divergence بين admission و visit grouping
+
+مثال متوقع منطقيًا:
+- `consolidateInvoices({ mode: "admission", referenceId })`
+- `consolidateInvoices({ mode: "visit_group", referenceId })`
+
+لكن اختر الاسم والبنية الأنسب حسب الكود الحالي.
+
+❗ مهم جدًا:
+راجع bug قائم حاليًا:
+- حذف الفاتورة المجمعة القديمة ثم إعادة إنشائها
+لا تعالجه علاجًا هدامًا الآن إن كان خارج النطاق، لكن:
+- لا تسوءه
+- لا تكرر نفس الخطأ في مكان جديد بدون تعليق واضح
+- ولو أمكن تحسينه بشكل آمن جدًا وminimal افعل
+- وإن لم يكن آمنًا الآن، اتركه كما هو مع comment واضح
+
+━━━━━━━━━━━━━━━━━━━━━━━
+### Phase 4 — UI / API minimal enablement
+نفّذ أقل UI/API support يسمح باستعمال `visit_group_id` بدون فوضى:
+
+#### المطلوب الآن:
+- دعم تمرير `visitGroupId` اختياريًا عند إنشاء فاتورة قسمية جديدة للمريض
+- دعم تجميع/عرض الفاتورة المجمعة حسب `visitGroupId`
+- لا توسّع UI بأكثر من اللازم
+- لا تبنِ workflow ضخم جديد الآن
+- فقط enablement clean
+
+لو الشاشة الحالية عندها:
+- `InvoiceTab`
+- `ConsolidatedTab`
+
+فأضف التوسعة بأقل impact ممكن، مع الحفاظ على readability والـ component boundaries.
+
+❗ لا تخلط UI المنطقي الخاص بالإقامة مع UI الزيارة الجديدة.
+لو احتاجت الشاشة فصل hook أو utility أو query key جديد، افعل ذلك بشكل نظيف.
+
+━━━━━━━━━━━━━━━━━━━━━━━
+🏗️ متطلبات معمارية صارمة جدًا
+
+### 1) Refactor
+- لا تضع كل المنطق في route.
+- لا تضع SQL ثقيل داخل JSX أو hooks غير مناسبة.
+- افصل:
+  - schema changes
+  - storage/repository logic
+  - consolidation logic
+  - traceability helpers
+  - API handlers
+  - UI query / state helpers
+- اجعل كل طبقة في مكانها الطبيعي.
+- لو الملف الحالي كبير، لا تزوده عشوائيًا. استخرج helper / service / util عند الحاجة.
+- لا تعمل over-engineering، لكن لا تعمل spaghetti.
+
+### 2) Componentization
+- لا تكسر الـ UI الحالي.
+- لا تضف props مبعثرة بلا تنظيم.
+- إن احتجت دعم visitGroupId في أكثر من مكان:
+  - استخرج helper أو hook أو type واضح
+- حافظ على مبدأ single responsibility
+
+### 3) DRY
+- لا تكرر منطق:
+  - filter condition
+  - source mapping
+  - consolidation copy
+  - invoice selection
+- استخرج shared function محترمة
+
+### 4) Strong typing
+- حدّث الـ types كلها اللازمة
+- لا تترك any أو typing هش
+- أي حقل جديد لازم يمر من schema إلى DTO إلى API إلى UI cleanly
+
+━━━━━━━━━━━━━━━━━━━━━━━
+🧱 متطلبات البيانات والفهرسة
+أضف فقط الفهارس التي يحتاجها التنفيذ فعلًا:
+
+### Required:
+- index على `patient_invoice_headers.visit_group_id`
+- راجع إن كان الأفضل:
+  - index منفرد
+  - أو composite مع `is_consolidated`
+  - أو composite مع `patient_id`
+بحسب الاستعلامات الفعلية المستخدمة في التجميع والعرض
+- لا تضف فهارس عشوائية
+
+### راجع أيضًا:
+- هل هناك query ستعتمد على:
+  - `visit_group_id + is_consolidated`
+  - `visit_group_id + department_id`
+  - `visit_group_id + patient_id`
+اختر الفهرسة الفعلية الأفضل بناءً على الكود الحقيقي
+
+━━━━━━━━━━━━━━━━━━━━━━━
+🛡️ متطلبات أمان ومنع البَجّات
+افحص وانتبه جدًا للآتي:
+
+### 1) Duplicate Billing
+- لا تسمح أن نفس فاتورة القسم تدخل أكثر من مرة في التجميع
+- لا تسمح أن فاتورة مجمعة تدخل داخل تجميع مرة ثانية
+- لا تسمح أن `sourceInvoiceIds` تحتوي duplicates
+- لا تسمح بأن يتم تجميع فواتير من مجموعات زيارة مختلفة في نفس الفاتورة المجمعة
+
+### 2) Duplicate Revenue / GL
+- لا تجعل التوسيع الجديد يخلق ازدواج إيراد
+- لا تغيّر finalize أو journal generation بشكل يؤدي إلى duplicate posting
+- لو الفاتورة المجمعة view-like أو operational فقط، حافظ على ذلك
+- لو لها أثر مالي حالي، راجعه بدقة ولا تكسره
+
+### 3) Cross-scope Leakage
+- لا تجعل `visit_group_id` يفتح ثغرة تجعل قسمًا يرى فواتير أقسام أخرى بدون المسار المقصود
+- حافظ على scope-guard والصلاحيات الحالية
+- لا تعتمد على UI فقط
+
+### 4) Null safety
+- `visit_group_id` nullable
+- لازم كل query تتعامل مع null بعناية
+- لا تجعل null يطابق null-grouping بالخطأ
+- لا تعتبر `null` مجموعة مستقلة قابلة للتجميع التلقائي
+
+### 5) Re-run Safety
+- لو شُغّل consolidate لنفس visit_group أكثر من مرة:
+  - لا تترك orphan lines
+  - لا تكرر البنود
+  - لا تكسر consolidated invoice القائمة
+- التزم بنفس مستوى الأمان أو أفضل من admission consolidation الحالية
+
+### 6) Backward Compatibility
+- الفواتير القديمة تعمل كما هي
+- admission consolidation الحالية تعمل كما هي
+- dept-services workflow الحالي يعمل كما هو
+- clinic_orders لا تلمسه الآن إلا إذا كان لازمًا فعلاً للنطاق الحالي
+
+### 7) Source Integrity
+- لا تكتب `source_type/source_id` عشوائيًا
+- استخدم naming ثابت، واضح، وقابل للتوسع
+- لا تكسر `STAY_ENGINE`
+- لا تفقد الأصل أثناء النسخ
+
+### 8) Performance
+- لا تعمل N+1
+- لا تجعل التجميع الجديد أسوأ من الحالي
+- لو هناك نسخ بنود، اجعله batch-style ونظيف
+- راقب query count
+- لو احتجت helper لتحضير data maps افعله
+
+━━━━━━━━━━━━━━━━━━━━━━━
+🧪 اختبارات قبول إلزامية
+أريد تنفيذًا يمر على هذه السيناريوهات بنجاح، واذكر نتائجها بوضوح في الرد النهائي:
+
+### Traceability
+1) فاتورة قسمية جديدة من dept services → كل line لها source_type/source_id صحيح
+2) الفاتورة المجمعة تحتفظ بالمصدر ولا تفقده
+3) STAY_ENGINE ما زال يعمل كما هو
+
+### Visit Group
+4) يمكن إنشاء فاتورتين/ثلاث للمريض نفسه تحت نفس `visit_group_id` ومن أقسام مختلفة
+5) يمكن ترك `visit_group_id = null` دون أي كسر
+6) التجميع حسب visit_group يجمع فقط الفواتير غير المجمعة التابعة لنفس المجموعة
+7) لا يخلط admission invoices مع visit-group invoices بشكل خاطئ
+8) لا يلتقط consolidated invoice داخل التجميع مرة أخرى
+
+### Backward Compatibility
+9) admission consolidation القديمة تعمل كما هي
+10) الفواتير القديمة لا تتأثر
+11) UI الحالي لا ينكسر
+
+### Safety
+12) إعادة تشغيل consolidate لنفس visit_group لا تخلق duplication
+13) sourceInvoiceIds لا تحتوي تكرار
+14) لا توجد مشكلة typing / null / undefined
+15) لا يوجد N+1 واضح
+
+━━━━━━━━━━━━━━━━━━━━━━━
+📦 المخرجات المطلوبة في الرد النهائي
+أريد منك في النهاية:
+
+1) Current state المختصر قبل التنفيذ
+2) ما الذي نفذته بالضبط
+3) أين وضعت الريفاكتور
+4) أين وضعت الـ helpers / services / storage changes
+5) أي schema changes / indexes تمت إضافتها
+6) كيف ضمنت backward compatibility
+7) كيف ضمنت عدم duplication أو كسر المحاسبة
+8) نتائج اختبارات القبول
+9) أي نقاط مؤجلة intentionally
+10) Done looks like
+
+━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ تنبيهات صارمة جدًا
+- لا تبدأ من UI
+- ابدأ من data integrity ثم traceability ثم consolidation core ثم UI enablement
+- لا تكتب كودًا طويلًا متشابكًا
+- لا تكبر route موجودة بلا داعٍ
+- لو الملف كبر، استخرج logic إلى helper/service منظم
+- لا تخلط بين admission flow و visit-group flow بشكل يسبب spaghetti
+- لا تفتح باب لتغيير الصلاحيات الحالية
+- لا تلمس clinic_orders في هذه المرحلة إلا لو يوجد اعتماد مباشر لازم
+- لا تضف جدول metadata جديد الآن إلا لو الضرورة القصوى أثبتت نفسها من الكود
+- نفّذ بعقلية production ERP حقيقي: clarity, safety, auditability, performance, minimalism
+
+ابدأ الآن بالتنفيذ، واشتغل بخطوات مرتبة جدًا، وكل قرار خذه بناءً على الموجود فعليًا في الكود.

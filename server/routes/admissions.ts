@@ -299,4 +299,49 @@ export function registerAdmissionsRoutes(app: Express) {
       res.json(result);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Visit Group API — مجموعات زيارة المريض متعددة الأقسام (Phase 2/3/4)
+  // ══════════════════════════════════════════════════════════════════════════
+  // visit_group_id: UUID حر يربط فواتير أقسام متعددة لنفس المريض في نفس الزيارة.
+  // لا يوجد جدول visit_groups بعد — UUID يُمرر مباشرة من الـ client.
+  // scope-guard الحالي يُحافظ على عزل الأقسام — هذه الـ routes لا تفتح ثغرات.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * GET /api/visit-groups/:id/invoices
+   * كل فواتير مجموعة الزيارة (مجمعة وغير مجمعة)
+   * صلاحية: ADMISSIONS_VIEW (نفس صلاحية عرض الإقامات)
+   */
+  app.get("/api/visit-groups/:id/invoices", requireAuth, checkHospitalAccess, async (req, res) => {
+    try {
+      const visitGroupId = req.params.id?.trim();
+      if (!visitGroupId) return res.status(400).json({ message: "visit_group_id مطلوب" });
+
+      const invoices = await storage.getVisitGroupInvoices(visitGroupId);
+      res.json(invoices);
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ message: _em });
+    }
+  });
+
+  /**
+   * POST /api/visit-groups/:id/consolidate
+   * تجميع فواتير مجموعة الزيارة في فاتورة مجمعة واحدة.
+   * إعادة التشغيل: تحذف المجمعة القديمة وتُنشئ جديدة (نفس سلوك admission consolidation).
+   * صلاحية: ADMISSIONS_MANAGE
+   */
+  app.post("/api/visit-groups/:id/consolidate", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
+    try {
+      const visitGroupId = req.params.id?.trim();
+      if (!visitGroupId) return res.status(400).json({ message: "visit_group_id مطلوب" });
+
+      const consolidated = await storage.consolidateVisitGroupInvoices(visitGroupId);
+      res.json(consolidated);
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      res.status(400).json({ message: _em });
+    }
+  });
 }
