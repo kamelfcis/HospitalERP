@@ -183,6 +183,8 @@ export function useLineManagement({
       templateNameSnapshot: (l as any).templateNameSnapshot ?? (l as any).template_name_snapshot ?? null,
       appliedAt:            (l as any).appliedAt            ?? (l as any).applied_at              ?? null,
       appliedBy:            (l as any).appliedBy            ?? (l as any).applied_by              ?? null,
+      // للبنود المحملة من DB: نستخدم unitPrice الحالي كـ baseline للكشف عن التعديل اللاحق
+      resolvedUnitPrice:    parseFloat(l.unitPrice || "0") || 0,
     }));
     setLines(loaded);
     return loaded;
@@ -192,7 +194,21 @@ export function useLineManagement({
     setLines(prev =>
       prev.map(l => {
         if (l.tempId !== tempId) return l;
-        const updated = { ...l, [field]: value };
+        let updated = { ...l, [field]: value };
+
+        // ── كشف التعديل اليدوي على سعر بند الخدمة ───────────────────────────
+        if (field === "unitPrice" && l.lineType === "service" && l.resolvedUnitPrice != null) {
+          const newPrice   = parseFloat(String(value)) || 0;
+          const origPrice  = l.resolvedUnitPrice;
+          const isDifferent = Math.abs(newPrice - origPrice) > 0.001;
+          updated = {
+            ...updated,
+            priceSource: isDifferent ? "manual_override" : (l.priceSource === "manual_override"
+              ? "restored_to_list_price"
+              : l.priceSource),
+          };
+        }
+
         if (field === "quantity" || field === "unitPrice") return recalcLine(updated);
         if (field === "discountPercent") return recalcLineFromPercent(updated);
         if (field === "discountAmount") return recalcLineFromAmount(updated);
@@ -283,6 +299,8 @@ export function useLineManagement({
       templateNameSnapshot: opts?.templateNameSnapshot ?? null,
       appliedAt:            opts?.appliedAt            ?? null,
       appliedBy:            null,
+      // ── audit: السعر الأصلي من المحلّل — للكشف عن التعديلات اليدوية لاحقاً ──
+      resolvedUnitPrice:    unitPrice,
     };
     setLines(prev => [...prev, newLine]);
   }, [contractId, invoiceDate]);

@@ -44,6 +44,12 @@ export interface LineLocal {
   appliedAt: string | null;
   /** المستخدم الذي طبّق النموذج */
   appliedBy: string | null;
+  /**
+   * السعر الأصلي من المحلّل (resolver) لحظة إضافة البند.
+   * حقل UI فقط — لا يُحفظ في قاعدة البيانات.
+   * يُستخدم للكشف عن التعديل اليدوي: إذا تغيّر unitPrice عنه → priceSource = "manual_override"
+   */
+  resolvedUnitPrice?: number | null;
 }
 
 export interface PaymentLocal {

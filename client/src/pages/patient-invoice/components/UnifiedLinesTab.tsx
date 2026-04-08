@@ -441,6 +441,27 @@ export function UnifiedLinesTab({
                             </Badge>
                           </div>
                         )}
+                        {isService && line.priceSource === "manual_override" && (
+                          <div className="flex flex-row-reverse items-center gap-1">
+                            <Badge variant="outline" className="text-[10px] bg-orange-50 text-orange-700 border-orange-300 gap-0.5">
+                              ✏ سعر يدوي
+                            </Badge>
+                          </div>
+                        )}
+                        {isService && line.priceSource === "contract_price_list" && (
+                          <div className="flex flex-row-reverse items-center gap-1">
+                            <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200 gap-0.5">
+                              سعر العقد
+                            </Badge>
+                          </div>
+                        )}
+                        {isService && line.priceSource === "default_price_list" && (
+                          <div className="flex flex-row-reverse items-center gap-1">
+                            <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 gap-0.5">
+                              قائمة افتراضية
+                            </Badge>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div>
@@ -503,6 +524,22 @@ export function UnifiedLinesTab({
                               )}
                             </div>
                           </TooltipProvider>
+                        )}
+                        {/* مصدر السعر للخدمات — عرض القراءة */}
+                        {isService && line.priceSource === "manual_override" && (
+                          <Badge variant="outline" className="mt-0.5 text-[9px] bg-orange-50 text-orange-700 border-orange-300">
+                            ✏ سعر يدوي
+                          </Badge>
+                        )}
+                        {isService && line.priceSource === "contract_price_list" && (
+                          <Badge variant="outline" className="mt-0.5 text-[9px] bg-blue-50 text-blue-600 border-blue-200">
+                            سعر العقد
+                          </Badge>
+                        )}
+                        {isService && line.priceSource === "default_price_list" && (
+                          <Badge variant="outline" className="mt-0.5 text-[9px] bg-amber-50 text-amber-700 border-amber-200">
+                            قائمة افتراضية
+                          </Badge>
                         )}
                       </div>
                     )}

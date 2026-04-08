@@ -59,6 +59,26 @@ async function enforceNonZeroPrice(req: any, res: any, linesParsed: any[]): Prom
 }
 
 /**
+ * سجل تدقيق لتجاوزات الأسعار في فواتير العقود.
+ * يُسجَّل حين يختلف unitPrice عن listPrice بعد تطبيق تغطية العقد.
+ * التسجيل فقط (لا حجب) — يمكن إضافة permission gate لاحقاً.
+ */
+function auditContractPriceOverrides(lines: any[], contractId: string | null | undefined, userId: string | number | undefined): void {
+  if (!contractId) return;
+  for (const l of lines) {
+    if (!l.listPrice || !l.serviceId) continue;
+    const listPrice = parseFloat(String(l.listPrice));
+    const unitPrice = parseFloat(String(l.unitPrice ?? 0));
+    if (Math.abs(unitPrice - listPrice) > 0.001) {
+      logger.warn(
+        { contractId, serviceId: l.serviceId, listPrice, unitPrice, delta: +(unitPrice - listPrice).toFixed(4), userId },
+        "[PRICE_OVERRIDE] سعر الخدمة مختلف عن قائمة الأسعار في فاتورة العقد",
+      );
+    }
+  }
+}
+
+/**
  * Server-side classification guard — المصدر الوحيد للحقيقة.
  *
  * القاعدة: لا نثق أبداً في قيمة الـ client.
@@ -235,6 +255,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
         linesParsed,
         (headerParsed as any).invoiceDate ?? undefined,
       );
+      auditContractPriceOverrides(linesParsed, (headerParsed as any).contractId, req.session.userId);
 
       if (!(await enforceNonZeroPrice(req, res, linesParsed))) return;
 
@@ -281,6 +302,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
         linesParsed,
         (headerParsed as any).invoiceDate ?? undefined,
       );
+      auditContractPriceOverrides(linesParsed, (headerParsed as any).contractId, req.session.userId);
 
       if (!(await enforceNonZeroPrice(req, res, linesParsed))) return;
 
