@@ -83,7 +83,7 @@ function AdmissionVisitBreakdown({ invoices }: { invoices: PatientInvoiceHeader[
         </div>
       ))}
       <p className="text-[10px] text-muted-foreground">
-        * الإجمالي أعلاه تقريبي للتوجيه — المصدر الرسمي هو "إجمالي الإقامة"
+        هذا التقسيم حسب الزيارة للشرح فقط، والرقم الرسمي المعتمد هو إجمالي الإقامة.
       </p>
     </div>
   );
