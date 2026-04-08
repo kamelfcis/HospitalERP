@@ -66,6 +66,11 @@ async function _consolidateInvoicesCore(
   doctorName: string | null,
   notesLabel: string,
 ): Promise<PatientInvoiceHeader> {
+  // ── 0. Lock أولاً — يمنع race condition عند تشغيل consolidation متزامن ───
+  // الـ LOCK يجب أن يكون أول عملية داخل الـ transaction حتى يكون المسح والإنشاء
+  // كلاهما تحت نفس الحماية الكاملة. أي transaction ثانية ستنتظر هنا حتى COMMIT.
+  await tx.execute(sql`LOCK TABLE patient_invoice_headers IN EXCLUSIVE MODE`);
+
   // ── 1. بناء شرط الفلتر حسب الـ mode ─────────────────────────────────────
   const sourceFilter =
     mode.kind === 'admission'
@@ -79,10 +84,22 @@ async function _consolidateInvoicesCore(
 
   if (invoices.length === 0) throw new Error("لا توجد فواتير لتجميعها");
 
+  // ── 2b. Cross-patient safety — فواتير visit_group يجب أن تكون لنفس المريض
+  // نفحص patientId (المرضى المسجلين). إن وُجد أكثر من patient_id مختلف → خطأ.
+  // المرضى غير المسجلين (walk-in / null) لا نرفضهم لأن اسم المريض يُؤخذ من أول فاتورة.
+  if (mode.kind === 'visit_group') {
+    const registeredIds = (invoices as PatientInvoiceHeader[])
+      .map(i => (i as PatientInvoiceHeader & { patientId?: string | null }).patientId)
+      .filter((id): id is string => Boolean(id));
+    const uniquePatientIds = new Set(registeredIds);
+    if (uniquePatientIds.size > 1) {
+      throw new Error("لا يمكن تجميع فواتير تخص مرضى مختلفين في نفس المجموعة");
+    }
+  }
+
   // ── 3. حذف الفاتورة المجمعة القديمة إن وجدت ─────────────────────────────
   // ⚠️ الحذف والإعادة هو السلوك الحالي المورّث من admission consolidation.
-  // هذا يعني فقدان أي تعديل يدوي على الفاتورة المجمعة عند إعادة التجميع.
-  // لم نزد الأمر سوءًا — سلوك admission القديم محفوظ بالكامل.
+  // الآن هو آمن تماماً لأن LOCK حصل قبله مباشرة في الخطوة 0.
   const existingConsolidated = await tx.select().from(patientInvoiceHeaders)
     .where(and(sourceFilter, eq(patientInvoiceHeaders.isConsolidated, true)));
 
@@ -93,8 +110,7 @@ async function _consolidateInvoicesCore(
     }
   }
 
-  // ── 4. رقم الفاتورة الجديد ────────────────────────────────────────────────
-  await tx.execute(sql`LOCK TABLE patient_invoice_headers IN EXCLUSIVE MODE`);
+  // ── 4. رقم الفاتورة الجديد (LOCK مأخوذ بالفعل من الخطوة 0) ───────────────
   const maxNumResult = await tx.execute(sql`
     SELECT COALESCE(MAX(CAST(NULLIF(regexp_replace(invoice_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) AS max_num
     FROM patient_invoice_headers

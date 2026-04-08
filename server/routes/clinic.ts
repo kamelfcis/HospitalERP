@@ -879,11 +879,13 @@ export function registerClinicRoutes(app: Express) {
         return res.status(400).json({ message: "اسم المريض والقسم والخدمات مطلوبة" });
       }
 
-      // visitGroupId — صحّ المدخل: إما UUID صالح أو غير موجود
-      const safeVisitGroupId: string | undefined =
-        visitGroupId && typeof visitGroupId === 'string' && visitGroupId.trim()
-          ? visitGroupId.trim()
-          : undefined;
+      // visitGroupId — صحّ المدخل: إما UUID صالح (36 حرف) أو undefined
+      const _vgRaw = typeof visitGroupId === 'string' ? visitGroupId.trim() : "";
+      const _UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (_vgRaw && !_UUID_RE.test(_vgRaw)) {
+        return res.status(400).json({ message: "visit_group_id يجب أن يكون UUID صالحاً أو فارغاً" });
+      }
+      const safeVisitGroupId: string | undefined = _vgRaw || undefined;
 
       const hasDiscount = (discountPercent && parseFloat(discountPercent) > 0) || (discountAmount && parseFloat(discountAmount) > 0);
       if (hasDiscount) {

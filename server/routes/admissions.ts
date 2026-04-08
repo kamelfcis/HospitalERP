@@ -313,10 +313,14 @@ export function registerAdmissionsRoutes(app: Express) {
    * كل فواتير مجموعة الزيارة (مجمعة وغير مجمعة)
    * صلاحية: ADMISSIONS_VIEW (نفس صلاحية عرض الإقامات)
    */
+  // UUID format validator — shared between visit-group routes
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
   app.get("/api/visit-groups/:id/invoices", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
-      const visitGroupId = req.params.id?.trim();
+      const visitGroupId = req.params.id?.trim() ?? "";
       if (!visitGroupId) return res.status(400).json({ message: "visit_group_id مطلوب" });
+      if (!UUID_RE.test(visitGroupId)) return res.status(400).json({ message: "visit_group_id يجب أن يكون UUID صالحاً" });
 
       const invoices = await storage.getVisitGroupInvoices(visitGroupId);
       res.json(invoices);
@@ -334,8 +338,9 @@ export function registerAdmissionsRoutes(app: Express) {
    */
   app.post("/api/visit-groups/:id/consolidate", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
     try {
-      const visitGroupId = req.params.id?.trim();
+      const visitGroupId = req.params.id?.trim() ?? "";
       if (!visitGroupId) return res.status(400).json({ message: "visit_group_id مطلوب" });
+      if (!UUID_RE.test(visitGroupId)) return res.status(400).json({ message: "visit_group_id يجب أن يكون UUID صالحاً" });
 
       const consolidated = await storage.consolidateVisitGroupInvoices(visitGroupId);
       res.json(consolidated);

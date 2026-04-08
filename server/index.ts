@@ -917,6 +917,19 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] Inventory lots UNIQUE index error");
   }
 
+  // ── 5g2. Visit Group composite index (visit_group_id + patient_id) ─────────
+  // يُستخدم في cross-patient safety check ولاستعلامات الفلترة السريعة
+  try {
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_pat_inv_visit_group_patient
+      ON patient_invoice_headers (visit_group_id, patient_id)
+      WHERE visit_group_id IS NOT NULL
+    `);
+    log("[STARTUP] idx_pat_inv_visit_group_patient index ensured");
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] visit_group_patient index error");
+  }
+
   // ── 5h. Backfill expiry_month/expiry_year from expiry_date ────────────────
   // حالات تاريخية: دفعات دخلت بـ expiry_date لكن بدون expiry_month/expiry_year
   // (استيراد إكسيل، opening stock قديم). آمن ومتكرر الإجراء.
