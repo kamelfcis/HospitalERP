@@ -9,6 +9,12 @@ interface AdmissionWithLatestInvoice extends Admission {
   totalNetAmount?: string | number | null;
   totalPaidAmount?: string | number | null;
   totalTransferredAmount?: string | number | null;
+  /**
+   * Count of distinct non-null visit_group_ids among source (non-consolidated)
+   * invoices for this admission. 0 or null = no visit groups.
+   * Populated by getAdmissions(); NOT present in single getAdmission() calls.
+   */
+  visitGroupCount?: number | null;
 }
 
 /** حالات الإقامة: label + CSS classes للـ Badge */

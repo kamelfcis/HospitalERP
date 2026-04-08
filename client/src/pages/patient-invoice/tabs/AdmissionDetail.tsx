@@ -5,10 +5,11 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { BedDouble, LogOut, Layers, FileText, Printer, ChevronRight, AlertCircle } from "lucide-react";
+import { BedDouble, LogOut, Layers, FileText, Printer, ChevronRight, AlertCircle, CalendarDays } from "lucide-react";
 import { formatCurrency, formatDateShort, formatDateTime } from "@/lib/formatters";
 import type { Department, PatientInvoiceHeader } from "@shared/schema";
 import { AdmissionWithLatestInvoice, InvoiceStatusBadge } from "./admission-types";
+import { groupInvoicesByVisit, type InvWithDept } from "./admission-visit-utils";
 
 // ─── AdmissionInvoiceSummaryBar — شريط ملخص سريع لفواتير الإقامة ──────────────
 // يعرض: عدد الفواتير الأصلية، الأقسام المشاركة، وتحذير وجود فاتورة مجمعة.
@@ -36,6 +37,54 @@ function AdmissionInvoiceSummaryBar({ invoices }: { invoices: PatientInvoiceHead
           يوجد فاتورة مجمعة — الإجمالي يعتمد على الأصليات فقط
         </Badge>
       )}
+    </div>
+  );
+}
+
+// ─── AdmissionVisitBreakdown — تفصيل خفيف حسب الزيارة ───────────────────────
+// يظهر فقط عندما يكون هناك 2+ visit_group_ids فعلية (غير null) بين الفواتير الأصلية.
+// يحسب من البيانات الموجودة — بدون query إضافي.
+// null invoices تُجمع في bucket "غير مرتبطة بزيارة" في النهاية إن وُجدت.
+function AdmissionVisitBreakdown({ invoices }: { invoices: PatientInvoiceHeader[] }) {
+  const groups = groupInvoicesByVisit(invoices as InvWithDept[]);
+  const nonNullGroups = groups.filter(g => g.groupId !== null);
+
+  // لا نعرض breakdown إلا لو في 2+ زيارات حقيقية
+  if (nonNullGroups.length < 2) return null;
+
+  return (
+    <div className="mt-3 border rounded-md bg-blue-50/40 dark:bg-blue-950/20 p-3 space-y-2">
+      <p className="text-[11px] font-medium text-blue-800 dark:text-blue-300 flex items-center gap-1">
+        <CalendarDays className="h-3.5 w-3.5" />
+        تفصيل حسب الزيارة ({nonNullGroups.length} زيارات)
+      </p>
+      {groups.map(g => (
+        <div
+          key={g.groupId ?? "__null__"}
+          className={`flex items-center justify-between gap-2 text-xs pb-1.5 border-b last:border-0 last:pb-0 ${
+            g.groupId === null ? "opacity-70" : ""
+          }`}
+          data-testid={`row-visit-group-${g.groupId ?? "null"}`}
+        >
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <span className={`font-medium ${g.groupId === null ? "text-muted-foreground italic" : ""}`}>
+              {g.label}
+            </span>
+            {g.depts.length > 0 && (
+              <span className="text-muted-foreground text-[10px] truncate">
+                {g.depts.join("، ")}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-muted-foreground text-[10px]">{g.invoices.length} فاتورة</span>
+            <span className="font-mono font-medium text-xs">{formatCurrency(g.total)}</span>
+          </div>
+        </div>
+      ))}
+      <p className="text-[10px] text-muted-foreground">
+        * الإجمالي أعلاه تقريبي للتوجيه — المصدر الرسمي هو "إجمالي الإقامة"
+      </p>
     </div>
   );
 }
@@ -232,6 +281,7 @@ function AdmissionDetail({
                   الفاتورة المجمعة ( <Layers className="h-3 w-3 inline" /> ) تجمع الفواتير الأصلية — مبلغها لا يُضاف للإجمالي
                 </p>
               )}
+              <AdmissionVisitBreakdown invoices={admInvoices} />
             </>
           )}
         </CardContent>

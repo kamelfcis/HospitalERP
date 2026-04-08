@@ -972,7 +972,8 @@ const methods = {
         inv_latest.latest_invoice_id                     AS latest_invoice_id,
         inv_latest.latest_invoice_status                 AS latest_invoice_status,
         rpt.department_id                                AS latest_invoice_dept_id,
-        rpt.department_name                              AS latest_invoice_dept_name
+        rpt.department_name                              AS latest_invoice_dept_name,
+        COALESCE(vg_cnt.visit_group_count, 0)            AS visit_group_count
         ${countCol}
       FROM admissions a
       LEFT JOIN rpt_patient_visit_summary rpt
@@ -995,6 +996,18 @@ const methods = {
           AND pih.is_consolidated = false
         GROUP BY pih.admission_id
       ) inv_latest ON inv_latest.admission_id = a.id
+      LEFT JOIN (
+        -- عدد visit_group_ids الفريدة (غير null) داخل كل إقامة
+        -- يُستخدم لعرض "N زيارات" في القائمة الرئيسية فقط — لا يؤثر على الإجماليات
+        SELECT
+          admission_id,
+          COUNT(DISTINCT visit_group_id) AS visit_group_count
+        FROM patient_invoice_headers
+        WHERE admission_id IS NOT NULL
+          AND is_consolidated = false
+          AND visit_group_id IS NOT NULL
+        GROUP BY admission_id
+      ) vg_cnt ON vg_cnt.admission_id = a.id
       ${whereExpr}
       ORDER BY a.created_at DESC
       ${limitClause}

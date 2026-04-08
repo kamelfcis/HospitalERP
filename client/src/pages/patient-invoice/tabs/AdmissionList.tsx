@@ -15,6 +15,23 @@ import {
   AdmissionStatusBadge,
 } from "./admission-types";
 
+// ─── VisitGroupBadge — indicator هادئ لتعدد الزيارات ─────────────────────────
+// يظهر فقط إذا كان للإقامة visit_group_count >= 2.
+// لا يُزعج المستخدم في الحالة الاعتيادية (0 أو 1 زيارة).
+function VisitGroupBadge({ count }: { count?: number | null }) {
+  if (!count || count < 2) return null;
+  return (
+    <Badge
+      variant="outline"
+      className="text-[10px] px-1 py-0 gap-0.5 border-blue-400 text-blue-700 dark:text-blue-400 whitespace-nowrap no-default-hover-elevate no-default-active-elevate"
+      data-testid={`badge-visit-group-count-${count}`}
+    >
+      <CalendarDays className="h-2.5 w-2.5" />
+      {count} زيارات
+    </Badge>
+  );
+}
+
 interface AdmissionListProps {
   rows: AdmissionWithLatestInvoice[] | undefined;
   loading: boolean;
@@ -212,7 +229,12 @@ function AdmissionRow({ row: a, onSelect }: { row: AdmissionWithLatestInvoice; o
       onClick={() => onSelect(a)}
       data-testid={`row-adm-${a.id}`}
     >
-      <TableCell className="py-0.5 text-xs font-medium">{a.admissionNumber}</TableCell>
+      <TableCell className="py-0.5 text-xs font-medium">
+        <span className="flex items-center gap-1 flex-wrap">
+          {a.admissionNumber}
+          <VisitGroupBadge count={a.visitGroupCount} />
+        </span>
+      </TableCell>
       <TableCell className="py-0.5 text-xs">{a.patientName}</TableCell>
       <TableCell className="py-0.5 text-xs">{a.doctorName || "—"}</TableCell>
       <TableCell className="py-0.5 text-xs">
