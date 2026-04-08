@@ -21,12 +21,14 @@ interface AuthData {
   user: AuthUser;
   permissions: string[];
   allowedWarehouseIds: string[];
+  allowedDepartmentIds: string[];
 }
 
 interface AuthContextType {
   user: AuthUser | null;
   permissions: string[];
   allowedWarehouseIds: string[];
+  allowedDepartmentIds: string[];
   isLoading: boolean;
   isAuthenticated: boolean;
   hasPermission: (permission: string) => boolean;
@@ -138,6 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const permissions = data?.permissions || [];
   const allowedWarehouseIds = data?.allowedWarehouseIds || [];
+  const allowedDepartmentIds = data?.allowedDepartmentIds || [];
   const hasPermission = useCallback((permission: string) => {
     return permissions.includes(permission);
   }, [permissions]);
@@ -148,6 +151,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user: data?.user || null,
         permissions,
         allowedWarehouseIds,
+        allowedDepartmentIds,
         isLoading,
         isAuthenticated: !!data?.user,
         hasPermission,

@@ -5,18 +5,39 @@ import { PERMISSIONS } from "@shared/permissions";
 import { requireAuth, checkPermission } from "./_shared";
 import { insertServiceSchema, insertPriceListSchema } from "@shared/schema";
 import { resolveServicePrice } from "../lib/service-price-resolver";
+import { resolveUserDeptScope, ScopeViolationError } from "../lib/scope-guard";
 
 export function registerServicesRoutes(app: Express) {
   // ===== Services =====
 
   // Layer 2: requireAuth — service catalog used in invoicing; any logged-in user may need this
-  // Deferred: SERVICES.VIEW not required here — service lookup is cross-module operational data
+  // Layer 3 (dept scope): restricts results/access to user's allowed departments
   app.get("/api/services", requireAuth, async (req, res) => {
     try {
-      const { search, departmentId, category, active, page, pageSize } = req.query;
+      const { search, category, active, page, pageSize } = req.query;
+      let requestedDeptId = (req.query.departmentId as string) || undefined;
+
+      // ── Department scope enforcement (server-side) ───────────────────────
+      const userId = (req.session as any).userId as string;
+      const deptScope = await resolveUserDeptScope(userId);
+
+      if (!deptScope.isFullAccess && deptScope.allowedDeptIds.length > 0) {
+        if (requestedDeptId) {
+          // المستخدم يطلب قسماً محدداً — نتحقق أنه مسموح له
+          if (!deptScope.allowedDeptIds.includes(requestedDeptId)) {
+            return res.status(403).json({ message: "غير مسموح لك بعرض خدمات هذا القسم" });
+          }
+        } else {
+          // لم يُحدَّد قسم — نُطبَّق تلقائياً أول قسم مسموح
+          // (في الغالب مستخدم بقسم واحد؛ لو أكثر → يجب تمرير departmentId)
+          requestedDeptId = deptScope.allowedDeptIds[0];
+        }
+      }
+      // ────────────────────────────────────────────────────────────────────
+
       const result = await storage.getServices({
         search: search as string,
-        departmentId: departmentId as string,
+        departmentId: requestedDeptId,
         category: category as string,
         active: active as string,
         page: page ? parseInt(page as string) : undefined,
@@ -24,7 +45,10 @@ export function registerServicesRoutes(app: Express) {
       });
       res.json(result);
     } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      if (error instanceof ScopeViolationError) {
+        return res.status(error.statusCode).json({ message: error.message });
+      }
+      const _em = error instanceof Error ? error.message : String(error);
       res.status(500).json({ message: _em });
     }
   });

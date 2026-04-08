@@ -74,4 +74,5 @@ The system uses a RESTful JSON API. Database interactions are managed by Drizzle
 - `zod`
 - `xlsx`
 - `shadcn/ui`
+- **Department/Warehouse Scope Enforcement (Patient Invoices)**: 4-layer enforcement — `allowedDepartmentIds` exposed from auth/me, UI dropdowns scoped to user's allowed departments/warehouses, `/api/services` enforces dept scope server-side, CREATE+UPDATE+FINALIZE routes block out-of-scope dept/warehouse/service. Central helper: `server/lib/scope-guard.ts`. Admin/owner bypass preserved. `assertServiceDeptMatch` validates service belongs to invoice department (null dept = cross-dept service, allowed everywhere).
 - `connect-pg-simple`

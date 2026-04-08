@@ -44,7 +44,7 @@ interface MemberResolved {
 
 export default function PatientInvoice() {
   const { toast }        = useToast();
-  const { hasPermission, user } = useAuth();
+  const { hasPermission, user, allowedDepartmentIds, allowedWarehouseIds } = useAuth();
   const canDiscount      = hasPermission("patient_invoices.discount");
 
   // ── Navigation ──────────────────────────────────────────────────────────────
@@ -65,6 +65,20 @@ export default function PatientInvoice() {
 
   // ── Shared data ─────────────────────────────────────────────────────────────
   const { nextNumber, departments, warehouses, activeAdmissions } = useInvoiceBootstrap();
+
+  // ── Scope-filtered lists (enforced by allowedDepartmentIds / allowedWarehouseIds) ──
+  // [] = full access (admin/owner) → show all
+  const visibleDepartments = useMemo(() => {
+    if (!departments) return departments;
+    if (allowedDepartmentIds.length === 0) return departments;
+    return departments.filter((d) => allowedDepartmentIds.includes(d.id));
+  }, [departments, allowedDepartmentIds]);
+
+  const visibleWarehouses = useMemo(() => {
+    if (!warehouses) return warehouses;
+    if (allowedWarehouseIds.length === 0) return warehouses;
+    return (warehouses as any[]).filter((w: any) => allowedWarehouseIds.includes(String(w.id)));
+  }, [warehouses, allowedWarehouseIds]);
 
   // ── Form state (with user defaults for new invoices) ────────────────────────
   const userDefaults = useMemo(() => ({
@@ -438,10 +452,10 @@ export default function PatientInvoice() {
             setDoctorName={form.setDoctorName}
             departmentId={form.departmentId}
             setDepartmentId={form.setDepartmentId}
-            departments={departments}
+            departments={visibleDepartments}
             warehouseId={form.warehouseId}
             setWarehouseId={form.setWarehouseId}
-            warehouses={warehouses}
+            warehouses={visibleWarehouses}
             admissionId={form.admissionId}
             setAdmissionId={form.setAdmissionId}
             activeAdmissions={activeAdmissions}

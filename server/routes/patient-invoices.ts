@@ -25,6 +25,7 @@ import {
 } from "@shared/schema";
 import { resolveBusinessClassificationWithMeta } from "@shared/resolve-business-classification";
 import { applyContractCoverage } from "../lib/patient-invoice-coverage";
+import { assertInvoiceScopeGuard, assertServiceDeptMatch, ScopeViolationError } from "../lib/scope-guard";
 import { findOrCreatePatient } from "../lib/find-or-create-patient";
 import { eq } from "drizzle-orm";
 
@@ -257,6 +258,16 @@ export function registerPatientInvoicesRoutes(app: Express) {
       );
       auditContractPriceOverrides(linesParsed, (headerParsed as any).contractId, req.session.userId);
 
+      // ── Scope guard: قسم + مخزن + تطابق قسم الخدمات ──────────────────────
+      await assertInvoiceScopeGuard(
+        req.session.userId as string,
+        (headerParsed as any).departmentId,
+        (headerParsed as any).warehouseId,
+        "patient_invoice_create",
+      );
+      await assertServiceDeptMatch(linesParsed, (headerParsed as any).departmentId);
+      // ─────────────────────────────────────────────────────────────────────
+
       if (!(await enforceNonZeroPrice(req, res, linesParsed))) return;
 
       const result = await storage.createPatientInvoice(headerParsed, linesParsed, paymentsParsed);
@@ -269,6 +280,9 @@ export function registerPatientInvoicesRoutes(app: Express) {
 
       res.status(201).json(result);
     } catch (error: unknown) {
+      if (error instanceof ScopeViolationError) {
+        return res.status(error.statusCode).json({ message: error.message });
+      }
       if (error instanceof z.ZodError || (error instanceof Error && error.name === "ZodError")) {
         return res.status(400).json({ message: "بيانات غير صالحة", errors: (error instanceof z.ZodError ? error.errors : []) });
       }
@@ -304,6 +318,16 @@ export function registerPatientInvoicesRoutes(app: Express) {
       );
       auditContractPriceOverrides(linesParsed, (headerParsed as any).contractId, req.session.userId);
 
+      // ── Scope guard: قسم + مخزن + تطابق قسم الخدمات ──────────────────────
+      await assertInvoiceScopeGuard(
+        req.session.userId as string,
+        (headerParsed as any).departmentId,
+        (headerParsed as any).warehouseId,
+        "patient_invoice_update",
+      );
+      await assertServiceDeptMatch(linesParsed, (headerParsed as any).departmentId);
+      // ─────────────────────────────────────────────────────────────────────
+
       if (!(await enforceNonZeroPrice(req, res, linesParsed))) return;
 
       const result = await storage.updatePatientInvoice(req.params.id as string, headerParsed, linesParsed, paymentsParsed, expectedVersion != null ? Number(expectedVersion) : undefined);
@@ -317,6 +341,9 @@ export function registerPatientInvoicesRoutes(app: Express) {
 
       res.json(result);
     } catch (error: unknown) {
+      if (error instanceof ScopeViolationError) {
+        return res.status(error.statusCode).json({ message: error.message });
+      }
       if (error instanceof z.ZodError || (error instanceof Error && error.name === "ZodError")) {
         return res.status(400).json({ message: "بيانات غير صالحة", errors: (error instanceof z.ZodError ? error.errors : []) });
       }
@@ -435,6 +462,15 @@ export function registerPatientInvoicesRoutes(app: Express) {
       }
 
       await storage.assertPeriodOpen(existing.invoiceDate);
+
+      // ── Scope guard: تحقق أن القسم والمخزن مسموح للمستخدم ────────────────
+      await assertInvoiceScopeGuard(
+        req.session.userId as string,
+        (existing as any).departmentId,
+        (existing as any).warehouseId,
+        "patient_invoice_finalize",
+      );
+      // ─────────────────────────────────────────────────────────────────────
 
       const result = await storage.finalizePatientInvoice(
         invoiceId,
@@ -571,6 +607,9 @@ export function registerPatientInvoicesRoutes(app: Express) {
 
       res.json(result);
     } catch (error: unknown) {
+      if (error instanceof ScopeViolationError) {
+        return res.status(error.statusCode).json({ message: error.message });
+      }
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
       if (_em?.includes("الفترة المحاسبية")) return res.status(403).json({ message: (error instanceof Error ? error.message : String(error)) });
       if ((error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("مسودة") || (error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "").includes("تم تعديل الفاتورة")) return res.status(409).json({ message: (error instanceof Error ? error.message : String(error)) });

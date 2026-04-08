@@ -135,6 +135,14 @@ export async function registerAuthRoutes(app: Express) {
       const allowedWarehouses = isAdminRole ? [] : await storage.getUserWarehouses(user.id);
       const allowedWarehouseIds = allowedWarehouses.map(w => w.id);
 
+      // أقسام المستخدم المسموح بها ([] = وصول كامل لـ admin/owner)
+      const allowedDepts = isAdminRole ? [] : await storage.getUserDepartments(user.id);
+      let allowedDepartmentIds = allowedDepts.map(d => d.id);
+      // fallback: إذا لم تُعيَّن أقسام صريحة ولكن يوجد قسم افتراضي → استخدمه
+      if (!isAdminRole && allowedDepartmentIds.length === 0 && user.departmentId) {
+        allowedDepartmentIds = [user.departmentId];
+      }
+
       // ── حدود الخصم الفعّالة: مجموعة الصلاحيات تُحدّد الحد الأعلى ────────
       let effectiveMaxDiscountPct:   string | null = safeUser.maxDiscountPct ?? null;
       let effectiveMaxDiscountValue: string | null = null;
@@ -166,6 +174,7 @@ export async function registerAuthRoutes(app: Express) {
         },
         permissions,
         allowedWarehouseIds,
+        allowedDepartmentIds,
       });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
