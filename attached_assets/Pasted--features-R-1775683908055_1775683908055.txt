@@ -1,0 +1,63 @@
+ممتاز. الآن لا أريد أي features جديدة.
+
+أريد مرحلة تحقق نهائية مركزة فقط على ما تم تنفيذه في:
+- Reception
+- admissions.department_id
+- department filtering
+- Final Close
+- internal/external badges
+- classification estimated badge
+
+==================================================
+المطلوب
+==================================================
+
+1) Validate Reception Flow
+- أنشئ/استدعِ مريض من شاشة الاستقبال
+- جرّب:
+  - زيارة خارجية
+  - زيارة داخلية
+- تأكد أن السجل يُنشأ فعليًا
+- تأكد أن visit number يتولد
+- تأكد أن الحالة تتغير open/completed بشكل صحيح
+- تأكد أن التقارير/القوائم يمكنها الاعتماد على هذا السجل
+
+2) Validate admissions.department_id
+- افتح إقامة جديدة من Bed Board / المسار الداخلي
+- تأكد أن department_id يُحفظ على admission
+- تأكد أنه يمثل القسم الداخلي المسؤول عن الإقامة
+- تأكد أن فتح فواتير للمعمل/الأشعة لن يغيّر هذا الحقل ولن يسبب تكرار إقامة
+
+3) Validate Inpatient List Filtering
+- اختبر مستخدمين من قسمين مختلفين
+- تأكد أن "حالات دخول المستشفى" تعرض فقط حالات القسم المصرح به
+- تأكد أن الفلترة تعتمد على admissions.department_id كمصدر رسمي
+- تأكد أن تاريخ اليوم default filter يعمل
+
+4) Validate Final Close
+- جرّب فاتورة مجمعة outstanding > 0 → يجب أن يمنع final close
+- جرّب فاتورة غير finalized → يجب أن يمنع final close
+- جرّب فاتورة cancelled → يجب أن يمنع final close
+- جرّب وجود sub-invoices draft داخل نفس admission → يجب أن يمنع final close
+- جرّب فاتورة تستوفي كل الشروط → يجب أن تغلق بنجاح
+- بعد final close:
+  - تأكد أن التعديل ممنوع فعليًا من الـ backend وليس UI فقط
+  - تأكد أن final_closed_at و final_closed_by محفوظان
+
+5) Validate UI Indicators
+- تأكد أن badges داخلي/خارجي صحيحة
+- تأكد أن badge "تقريبي" يظهر فقط في byClassification
+- تأكد أنه لا يظهر في أوضاع أخرى
+
+==================================================
+شكل الرد المطلوب
+==================================================
+
+1) Validation Results by Feature
+2) Any Bugs Found
+3) Any Logic Gaps Still Remaining
+4) Ready / Not Ready for next phase
+
+لا تضف ميزات جديدة.
+لا تعمل refactor جديد.
+فقط تحقق من صحة التنفيذ الحالي.
