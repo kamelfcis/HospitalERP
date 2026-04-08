@@ -22,12 +22,16 @@ import {
   insertPatientInvoicePaymentSchema,
   patientInvoiceHeaders,
   patientInvoiceLines,
+  items,
+  itemDepartmentPrices,
+  inventoryLots,
+  warehouses,
 } from "@shared/schema";
 import { resolveBusinessClassificationWithMeta } from "@shared/resolve-business-classification";
 import { applyContractCoverage } from "../lib/patient-invoice-coverage";
 import { assertInvoiceScopeGuard, assertServiceDeptMatch, ScopeViolationError } from "../lib/scope-guard";
 import { findOrCreatePatient } from "../lib/find-or-create-patient";
-import { eq } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 
 async function enforceNonZeroPrice(req: any, res: any, linesParsed: any[]): Promise<boolean> {
   const hasZeroPrice = linesParsed.some(l => parseFloat(String(l.unitPrice ?? 0)) <= 0);
@@ -76,6 +80,133 @@ function auditContractPriceOverrides(lines: any[], contractId: string | null | u
         "[PRICE_OVERRIDE] سعر الخدمة مختلف عن قائمة الأسعار في فاتورة العقد",
       );
     }
+  }
+}
+
+/**
+ * Audit: يقارن unitPrice القادم من الـ client مقابل السعر المتوقع
+ * من نفس منطق /api/pricing (داخلياً بدون HTTP).
+ *
+ * الأولوية:
+ *   1. سعر القسم من item_department_prices
+ *   2. سعر الدفعة (lot) — إن وُجد lotId
+ *   3. salePriceCurrent من جدول items
+ *
+ * Batch: query واحدة لكل جدول (لا N+1).
+ * Non-blocking: لا تُعيد السعر ولا ترفض العملية — تسجيل فقط.
+ */
+async function auditItemPriceDeviations(
+  lines: any[],
+  invoiceDepartmentId: string | null | undefined,
+  invoiceWarehouseId: string | null | undefined,
+  invoiceId: string | null | undefined,
+  userId: string | number | undefined,
+): Promise<void> {
+  try {
+    const itemLines = lines.filter((l: any) => l.itemId);
+    if (itemLines.length === 0) return;
+
+    // ── Resolve effective departmentId (from header or warehouse) ──────────
+    let effectiveDeptId: string | null = invoiceDepartmentId ?? null;
+    if (!effectiveDeptId && invoiceWarehouseId) {
+      const [wh] = await db
+        .select({ departmentId: warehouses.departmentId })
+        .from(warehouses)
+        .where(eq(warehouses.id, invoiceWarehouseId))
+        .limit(1);
+      effectiveDeptId = (wh as any)?.departmentId ?? null;
+    }
+
+    const itemIds = [...new Set(itemLines.map((l: any) => l.itemId as string))];
+
+    // ── Batch: dept prices ─────────────────────────────────────────────────
+    const deptPriceMap = new Map<string, string>();
+    if (effectiveDeptId && itemIds.length > 0) {
+      const deptRows = await db
+        .select({ itemId: itemDepartmentPrices.itemId, salePrice: itemDepartmentPrices.salePrice })
+        .from(itemDepartmentPrices)
+        .where(
+          and(
+            inArray(itemDepartmentPrices.itemId, itemIds),
+            eq(itemDepartmentPrices.departmentId, effectiveDeptId),
+          ),
+        );
+      for (const dp of deptRows) {
+        if (parseFloat(dp.salePrice) > 0) deptPriceMap.set(dp.itemId, dp.salePrice);
+      }
+    }
+
+    // ── Batch: lot prices (for lines that carry lotId) ─────────────────────
+    const lotIds = [
+      ...new Set(itemLines.map((l: any) => l.lotId).filter(Boolean) as string[]),
+    ];
+    const lotPriceMap = new Map<string, string>();
+    if (lotIds.length > 0) {
+      const lotRows = await db
+        .select({ id: inventoryLots.id, salePrice: inventoryLots.salePrice })
+        .from(inventoryLots)
+        .where(inArray(inventoryLots.id, lotIds));
+      for (const lot of lotRows) {
+        if (lot.salePrice && parseFloat(lot.salePrice) > 0) {
+          lotPriceMap.set(lot.id, lot.salePrice);
+        }
+      }
+    }
+
+    // ── Batch: global item prices (fallback) ───────────────────────────────
+    const globalPriceMap = new Map<string, string>();
+    {
+      const itemRows = await db
+        .select({ id: items.id, salePriceCurrent: items.salePriceCurrent })
+        .from(items)
+        .where(inArray(items.id, itemIds));
+      for (const itm of itemRows) {
+        globalPriceMap.set(itm.id, itm.salePriceCurrent ?? "0");
+      }
+    }
+
+    // ── Compare and log ────────────────────────────────────────────────────
+    for (const line of itemLines) {
+      const sentPrice = parseFloat(String(line.unitPrice ?? 0));
+
+      let expectedPrice: number;
+      let expectedSource: string;
+
+      if (effectiveDeptId && deptPriceMap.has(line.itemId)) {
+        expectedPrice = parseFloat(deptPriceMap.get(line.itemId)!);
+        expectedSource = "department";
+      } else if (line.lotId && lotPriceMap.has(line.lotId)) {
+        expectedPrice = parseFloat(lotPriceMap.get(line.lotId)!);
+        expectedSource = "lot";
+      } else {
+        expectedPrice = parseFloat(globalPriceMap.get(line.itemId) ?? "0");
+        expectedSource = "item";
+      }
+
+      const delta = Math.abs(sentPrice - expectedPrice);
+      if (delta > 0.001) {
+        logger.warn(
+          {
+            event:          "ITEM_PRICE_DEVIATION",
+            invoiceId:      invoiceId ?? null,
+            lineId:         line.id ?? null,
+            itemId:         line.itemId,
+            departmentId:   effectiveDeptId,
+            expectedSource,
+            sentPrice,
+            expectedPrice,
+            delta:          +delta.toFixed(4),
+            userId,
+          },
+          "[PRICE_AUDIT] item unit price differs from expected",
+        );
+      }
+    }
+  } catch (err: unknown) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err), invoiceId },
+      "[PRICE_AUDIT] auditItemPriceDeviations failed — skipped",
+    );
   }
 }
 
@@ -268,6 +399,16 @@ export function registerPatientInvoicesRoutes(app: Express) {
       await assertServiceDeptMatch(linesParsed, (headerParsed as any).departmentId);
       // ─────────────────────────────────────────────────────────────────────
 
+      // ── Item price audit (non-blocking, logging only) ──────────────────
+      void auditItemPriceDeviations(
+        linesParsed,
+        (headerParsed as any).departmentId,
+        (headerParsed as any).warehouseId,
+        null,
+        req.session.userId,
+      );
+      // ──────────────────────────────────────────────────────────────────
+
       if (!(await enforceNonZeroPrice(req, res, linesParsed))) return;
 
       const result = await storage.createPatientInvoice(headerParsed, linesParsed, paymentsParsed);
@@ -327,6 +468,16 @@ export function registerPatientInvoicesRoutes(app: Express) {
       );
       await assertServiceDeptMatch(linesParsed, (headerParsed as any).departmentId);
       // ─────────────────────────────────────────────────────────────────────
+
+      // ── Item price audit (non-blocking, logging only) ──────────────────
+      void auditItemPriceDeviations(
+        linesParsed,
+        (headerParsed as any).departmentId,
+        (headerParsed as any).warehouseId,
+        req.params.id as string,
+        req.session.userId,
+      );
+      // ──────────────────────────────────────────────────────────────────
 
       if (!(await enforceNonZeroPrice(req, res, linesParsed))) return;
 
@@ -471,6 +622,16 @@ export function registerPatientInvoicesRoutes(app: Express) {
         "patient_invoice_finalize",
       );
       // ─────────────────────────────────────────────────────────────────────
+
+      // ── Item price audit (non-blocking, logging only) ──────────────────
+      void auditItemPriceDeviations(
+        (existing as any).lines ?? [],
+        (existing as any).departmentId,
+        (existing as any).warehouseId,
+        invoiceId,
+        req.session.userId,
+      );
+      // ──────────────────────────────────────────────────────────────────
 
       const result = await storage.finalizePatientInvoice(
         invoiceId,
