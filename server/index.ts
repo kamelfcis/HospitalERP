@@ -722,6 +722,17 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
       ON admissions (LOWER(TRIM(patient_name)))
       WHERE patient_id IS NULL
     `);
+    // patient invoice lines: service + item lookups for audit & analytics
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_pil_service_id
+      ON patient_invoice_lines (service_id)
+      WHERE service_id IS NOT NULL AND is_void = false
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_pil_item_id
+      ON patient_invoice_lines (item_id)
+      WHERE item_id IS NOT NULL AND is_void = false
+    `);
     log("[STARTUP] Performance indexes ensured");
     // NOTE: purchase_invoice_lines(invoice_id) → idx_pi_lines_invoice (in Drizzle schema)
     // NOTE: purchase_return_lines(purchase_invoice_line_id) → idx_prl_invoice_line (in Drizzle schema)

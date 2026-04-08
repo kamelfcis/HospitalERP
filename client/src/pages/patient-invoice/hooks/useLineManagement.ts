@@ -4,108 +4,19 @@ import { genId } from "../utils/id";
 import type { LineLocal } from "../types";
 import { resolveBusinessClassificationClient } from "@shared/resolve-business-classification";
 import {
-  type ItemUnitConfig,
   computeUnitPriceFromBase,
   calculateQtyInMinor,
-  calculateQtyInSmallest,
   convertMinorToDisplayQty,
-  convertSmallestToDisplayQty,
-  itemHasMajorUnit,
-  itemHasMediumUnit,
   getSmartDefaultUnitLevel,
   capMinorToAvailable,
 } from "../utils/units";
-
-// ── Domain types ───────────────────────────────────────────────────────────────
-export interface FefoAllocation {
-  allocatedQty: string;
-  lotId?: string | null;
-  expiryMonth?: number | string | null;
-  expiryYear?: number | string | null;
-  lotSalePrice?: string | null;
-}
-
-export interface ServiceSearchResult {
-  id: string;
-  nameAr?: string | null;
-  name?: string | null;
-  code?: string | null;
-  basePrice?: string | null;
-  requiresDoctor?: boolean | null;
-  requiresNurse?: boolean | null;
-  serviceType?: string | null;
-  businessClassification?: string | null;
-}
-
-export interface ItemSearchResult extends ItemUnitConfig {
-  id: string;
-  nameAr?: string | null;
-  itemCode?: string | null;
-  hasExpiry?: boolean | null;
-  allowOversell?: boolean | null;
-  availableQtyMinor?: string | number | null;
-  salePriceCurrent?: string | number | null;
-  purchasePriceLast?: string | number | null;
-  businessClassification?: string | null;
-}
-
-interface RawInvoiceLine {
-  lineType: string;
-  serviceId?: string | null;
-  itemId?: string | null;
-  description?: string | null;
-  doctorName?: string | null;
-  nurseName?: string | null;
-  quantity?: string | null;
-  unitPrice?: string | null;
-  discountPercent?: string | null;
-  discountAmount?: string | null;
-  totalPrice?: string | null;
-  notes?: string | null;
-  sortOrder?: number | null;
-  unitLevel?: string | null;
-  itemData?: ItemSearchResult | null;
-  priceSource?: string | null;
-  sourceType?: string | null;
-  sourceId?: string | null;
-  lotId?: string | null;
-  expiryMonth?: number | string | null;
-  expiryYear?: number | string | null;
-  businessClassification?: string | null;
-  service?: {
-    requiresDoctor?: boolean | null;
-    requiresNurse?: boolean | null;
-    serviceType?: string | null;
-    businessClassification?: string | null;
-  } | null;
-  line?: {
-    lotId?: string | null;
-    expiryMonth?: number | string | null;
-    expiryYear?: number | string | null;
-    priceSource?: string | null;
-  } | null;
-  requiresDoctor?: boolean | null;
-  requiresNurse?: boolean | null;
-}
-
-// ── Recalc helpers (internal) ──────────────────────────────────────────────────
-function recalcLine(line: LineLocal): LineLocal {
-  const gross = line.quantity * line.unitPrice;
-  const totalPrice = Math.max(0, +(gross - line.discountAmount).toFixed(2));
-  return { ...line, totalPrice };
-}
-function recalcLineFromPercent(line: LineLocal): LineLocal {
-  const gross = line.quantity * line.unitPrice;
-  const discountAmount = +(gross * line.discountPercent / 100).toFixed(2);
-  const totalPrice = Math.max(0, +(gross - discountAmount).toFixed(2));
-  return { ...line, discountAmount, totalPrice };
-}
-function recalcLineFromAmount(line: LineLocal): LineLocal {
-  const gross = line.quantity * line.unitPrice;
-  const discountPercent = gross > 0 ? +(line.discountAmount / gross * 100).toFixed(2) : 0;
-  const totalPrice = Math.max(0, +(gross - line.discountAmount).toFixed(2));
-  return { ...line, discountPercent, totalPrice };
-}
+import { recalcLine, recalcLineFromPercent, recalcLineFromAmount } from "../utils/line-recalc";
+export type {
+  FefoAllocation,
+  ServiceSearchResult,
+  ItemSearchResult,
+} from "./line-types";
+import type { FefoAllocation, ServiceSearchResult, ItemSearchResult, RawInvoiceLine } from "./line-types";
 
 interface UseLineManagementParams {
   warehouseId: string;

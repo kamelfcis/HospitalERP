@@ -1,0 +1,375 @@
+أريدك أن تنفّذ **Refactor كامل ومنظم جدًا** لثلاث مناطق رئيسية في النظام الحالي، مع كل ما يرتبط بها مباشرة، بحيث تصبح بسيطة، واضحة، قابلة للصيانة، وآمنة جدًا لأي مبرمج لاحق حتى لو كان مستواه ضعيفًا.
+
+الشاشات المستهدفة:
+1) شاشة فاتورة المريض
+2) شاشة حالات دخول المستشفى / Admissions
+3) شاشة الخدمات والأسعار / Services + Price Lists + related pricing UI
+
+❗ مهم جدًا:
+- لا أريد إعادة كتابة من الصفر.
+- لا أريد هدم أي flow شغال.
+- لا أريد تحسينات شكلية فقط.
+- المطلوب Refactor حقيقي، معماري، منظم، وقابل للصيانة.
+- لازم تحافظ على نفس السلوك الحالي Business-wise إلا إذا اكتشفت bug حقيقي واضح.
+- أي تعديل لازم يكون incremental, safe, backward-compatible.
+- اشتغل بعقلية ERP/HMIS production حقيقي، وليس مشروع تجريبي.
+
+━━━━━━━━━━━━━━━━━━━━━━━
+🎯 الهدف الرئيسي
+أريد أن تصل هذه المناطق الثلاث إلى حالة يكون فيها:
+
+- الكود واضح جدًا
+- الملفات قصيرة نسبيًا
+- كل جزء له مسؤولية واحدة
+- الـ business logic ليست داخل JSX
+- الـ queries ليست مبعثرة
+- الـ naming واضح جدًا
+- الـ types واضحة
+- الـ routes رفيعة
+- الـ storage/services منظمة
+- أي تعديل لاحق يمكن عمله بسهولة وبأقل احتمال لكسر النظام
+- الأداء قوي
+- والفهارس مدروسة وقوية
+
+━━━━━━━━━━━━━━━━━━━━━━━
+📌 المبدأ الحاكم
+**بسّط كل شيء بدون تغيير السلوك.**
+
+يعني:
+- لا تضف تعقيدًا نظريًا
+- لا تعمل over-engineering
+- لا تفتح workflows جديدة
+- لا تغيّر UX جذريًا
+- لا تغيّر مسارات البيانات إلا إذا كان ذلك لتحسين التنظيم فقط
+- لا تغيّر semantics إلا لو كان هناك bug حقيقي
+
+━━━━━━━━━━━━━━━━━━━━━━━
+## المرحلة 1 — Discovery & Mapping قبل أي Refactor
+أريدك أولًا أن تعمل جردًا كاملًا لهذه المناطق الثلاث وما يرتبط بها، ثم تخرج بخريطة واضحة:
+
+### A) Patient Invoice
+راجع كل ما يخص:
+- الصفحة الرئيسية
+- tabs
+- line management
+- services/items/devices/consumables
+- search components
+- header bar
+- save/finalize flow
+- contract pricing
+- service pricing
+- item pricing
+- scope guards
+- permissions
+- snapshots
+- classification
+- related storage / routes / services / hooks
+
+### B) Admissions
+راجع كل ما يخص:
+- admissions list
+- admission detail
+- rpt_patient_visit_summary
+- invoice summary داخل الإقامة
+- consolidated invoices
+- visit_group breakdown
+- related routes/storage/helpers/components
+
+### C) Services & Pricing
+راجع كل ما يخص:
+- service master
+- service dialog
+- service lookup
+- price lists
+- price list items
+- contract base price list linkage
+- service price resolver
+- /resolve-price
+- service pricing in patient invoice
+- أي filters by department
+- related routes/storage/hooks/components
+
+### D) Output required from discovery
+أريد منك أن تخرج:
+1) خريطة الملفات الحالية
+2) الملفات الكبيرة/المتشابكة
+3) أماكن تكرار business logic
+4) أماكن mixing بين UI وlogic
+5) أي queries ثقيلة أو مكررة
+6) أي naming غير واضح
+7) أي props drilling زائد
+8) أي hooks متضخمة
+9) أي routes متضخمة
+10) أي storage methods متداخلة
+
+❗ لا تبدأ refactor قبل هذا الجرد.
+
+━━━━━━━━━━━━━━━━━━━━━━━
+## المرحلة 2 — Target Refactor Design
+بعد discovery، أريدك أن تصمم Target Structure واضح جدًا، بسيط جدًا، وقابل للصيانة.
+
+### المطلوب:
+لكل منطقة من الثلاثة، اقترح structure واضح مثل:
+
+#### Patient Invoice
+- page shell
+- header section component
+- line table component
+- line row component
+- pricing helpers
+- save/finalize service
+- hooks صغيرة وواضحة
+- util files نقية
+- validation helpers
+- DTO/types واضحة
+
+#### Admissions
+- list row component
+- summary helpers
+- invoice summary bar
+- visit breakdown component
+- rpt mapping helpers
+- detail sections مفصولة
+- table renderers منفصلة
+
+#### Services & Pricing
+- service form
+- service list
+- service lookup
+- price list form
+- price list table
+- resolver helpers
+- department filtering helpers
+- contract linkage helpers
+
+### الشروط:
+- لا تكثر عدد الملفات بلا داعٍ
+- لكن لا تترك ملفات عملاقة
+- كل file له purpose واضح
+- كل component صغير نسبيًا
+- كل hook لها مسؤولية واحدة
+- business rules في helpers/services وليس في JSX
+
+━━━━━━━━━━━━━━━━━━━━━━━
+## المرحلة 3 — Refactor Execution Rules
+نفّذ refactor على مراحل صغيرة وآمنة جدًا.
+
+### قواعد صارمة:
+1) لا تغيّر السلوك الخارجي إلا لو bug
+2) كل مرحلة قابلة للاختبار
+3) لا تنقل logic لمكان جديد ثم تترك النسخة القديمة
+4) لا تكرر نفس rule في أكثر من مكان
+5) routes تظل thin
+6) storage/services تظل واضحة
+7) React components تظل presentational قدر الإمكان
+8) hooks لا تجمع 10 مسؤوليات معًا
+9) لا تستخدم any
+10) لا تكتب comments كثيرة بديلة عن تصميم جيد — خلي التصميم نفسه واضح
+
+━━━━━━━━━━━━━━━━━━━━━━━
+## المرحلة 4 — Strong Componentization
+أريد componentization محترم جدًا، لكن بدون مبالغة.
+
+### المطلوب:
+- أي table كبيرة تتقسم
+- أي row معقدة تتفصل
+- أي badge/summary متكرر يتفصل
+- أي lookup له logic خاص يتفصل
+- أي modal/form كبير يتقسم sections
+- أي behavior متكرر يتجمع في hook/helper
+
+### لكن:
+- لا تفصل كل 5 أسطر في ملف مستقل
+- لا تبالغ في abstraction
+- اجعل التنظيم يخدم مبرمجًا عاديًا، لا يربكه
+
+━━━━━━━━━━━━━━━━━━━━━━━
+## المرحلة 5 — Refactor the Logic Layer
+أريد إعادة تنظيم منطق الأعمال نفسه:
+
+### Patient Invoice
+- pricing logic
+- contract coverage
+- line normalization
+- save/finalize validations
+- scope checks
+- display helpers
+- totals calculators
+
+### Admissions
+- admission totals mapping
+- consolidated invoice handling
+- visit group interpretation
+- display rules
+- admission invoice summarization
+
+### Services & Pricing
+- service filtering by department
+- service base price resolution
+- price list selection
+- default price list behavior
+- contract base price list fallback
+- pricing source labeling
+
+### المطلوب:
+- استخرج helper/resolver/service واضح لكل عائلة من المنطق
+- لا تترك logic موزعة بين page + hook + component + route عشوائيًا
+
+━━━━━━━━━━━━━━━━━━━━━━━
+## المرحلة 6 — Routes / Storage / Services Cleanup
+أريد تنظيف طبقة الخادم كذلك:
+
+### المطلوب:
+- routes تكون thin جدًا
+- أي logic حقيقي يذهب إلى storage/service/helper
+- لا تكرر نفس SQL في أكثر من مكان
+- أي query مشتركة يتم توحيدها
+- أي consolidation logic أو pricing logic أو summary logic يكون له مصدر واحد
+
+### تأكد من:
+- typed return shapes
+- naming واضح للـ methods
+- فصل queries التحليلية عن queries التشغيلية
+- عدم خلط admission logic مع visit logic بشكل فوضوي
+
+━━━━━━━━━━━━━━━━━━━━━━━
+## المرحلة 7 — Indexing Review (قوي جدًا لكن محسوب)
+أريد مراجعة فهرسة قوية جدًا لكل ما يخص هذه المناطق الثلاث.
+
+### افحص وأضف فقط ما هو مبرر فعلاً:
+#### Patient Invoice
+- patient_invoice_headers
+- patient_invoice_lines
+- visit_group_id
+- is_consolidated
+- admission_id
+- patient_id
+- department_id
+- status
+- source_type/source_id
+
+#### Admissions / rpt
+- rpt_patient_visit_summary
+- patient_invoice_headers(admission_id, is_consolidated)
+- أي استعلامات latest invoice / summary / visit counts
+
+#### Services & Pricing
+- services(department_id, is_active?)
+- price_lists(is_active, valid_from, valid_to, department_id)
+- price_list_items(price_list_id, service_id)
+- contracts(base_price_list_id)
+- item_department_prices(item_id, department_id)
+
+### المطلوب:
+- اذكر لماذا أضفت كل index
+- لا تضف index عشوائي
+- لا تكرر index قائم
+- لو هناك startup index system قائم، استخدمه بشكل منظم ومتسق
+
+━━━━━━━━━━━━━━━━━━━━━━━
+## المرحلة 8 — Naming & Readability
+أريد تحسين التسمية بشكل واضح جدًا:
+- أسماء functions
+- أسماء hooks
+- أسماء components
+- أسماء helpers
+- أسماء variables
+- أسماء DTOs / response models
+
+### الهدف:
+أي مبرمج يفتح الملف يفهم:
+- هذا الملف مسؤوليته ماذا
+- هذه الدالة ترجع ماذا
+- هذا component يعرض ماذا
+- هذا hook يدير ماذا
+
+❗ لا تغيّر أسماء عامة مشهورة في كل النظام إلا لو لازم، لكن نظّف ما يخص هذه المناطق بوضوح.
+
+━━━━━━━━━━━━━━━━━━━━━━━
+## المرحلة 9 — Bug Prevention / Safety
+أريد أن تراعي refactor مع منع البَجّات التي قد تظهر عادة في هذا النوع من الشاشات:
+
+### Patient Invoice
+- stale state
+- اختلاف السعر بين UI والحفظ
+- duplicate line logic
+- broken permission checks
+- accidental re-renders
+- N+1 في lookups
+- lost source metadata
+- null / undefined handling
+
+### Admissions
+- duplicate totals
+- consolidated confusion
+- visit grouping confusion
+- leakage of cross-department financial details
+- unstable ordering
+- wrong latest invoice
+
+### Services & Pricing
+- wrong department filtering
+- wrong default price list selection
+- stale resolver behavior
+- inconsistent contract fallback
+- UI preview ≠ server result
+
+❗ refactor يجب أن يقلل فرص هذه الأخطاء، لا أن ينقلها فقط من مكان لمكان.
+
+━━━━━━━━━━━━━━━━━━━━━━━
+## المرحلة 10 — Output Style أثناء التنفيذ
+أريدك أن تعمل بهذا الأسلوب:
+
+### أولًا:
+اعرض:
+1) Current state mapping
+2) الملفات الحرجة
+3) خطة refactor المقترحة
+4) ترتيب التنفيذ
+5) المخاطر
+6) كيف ستتجنبها
+
+### ثم:
+ابدأ التنفيذ على دفعات منظمة
+- Batch 1
+- Batch 2
+- Batch 3
+بحيث كل batch يكون coherent وقابل للفهم
+
+### وفي النهاية:
+أريد تقريرًا نهائيًا منظمًا جدًا فيه:
+1) ما الذي تم refactor له
+2) ما الذي لم يُلمس intentionally
+3) كيف صار structure أوضح
+4) ما الـ helpers/components الجديدة
+5) ما الـ hooks التي تم تبسيطها
+6) ما الـ indexes التي أضيفت
+7) ما bugs التي تم منعها
+8) كيف ضمنت backward compatibility
+9) أي نقاط مؤجلة intentionally
+10) Done looks like
+
+━━━━━━━━━━━━━━━━━━━━━━━
+## تنبيهات صارمة جدًا
+- لا تهدم
+- لا تكتب كود أطول من اللازم
+- لا تكدّس hooks ضخمة
+- لا تترك pages متضخمة
+- لا تترك SQL موزعة عشوائيًا
+- لا تخلط UI مع business rules
+- لا تغيّر behavior بلا داعٍ
+- لا تضف abstraction فارغة
+- لا تبني architecture مثالية نظريًا لكن معقدة عمليًا
+- ابنِ شيئًا بسيطًا جدًا، منظمًا جدًا، وواضحًا جدًا
+
+━━━━━━━━━━━━━━━━━━━━━━━
+## الهدف الأخير
+أريد هذه الشاشات الثلاث وما يرتبط بها أن تصبح:
+- بسيطة
+- مفهومة
+- منظمة
+- مفهرسة
+- آمنة
+- وسهلة جدًا على أي مبرمج لاحق أن يتعامل معها بدون أن يكسر السيستم
+
+ابدأ بالـ discovery أولًا، ثم أعطني الخطة، ثم نفّذ تدريجيًا.
