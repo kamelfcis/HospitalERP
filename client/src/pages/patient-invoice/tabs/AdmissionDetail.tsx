@@ -5,10 +5,40 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { BedDouble, LogOut, Layers, FileText, Printer, ChevronRight } from "lucide-react";
+import { BedDouble, LogOut, Layers, FileText, Printer, ChevronRight, AlertCircle } from "lucide-react";
 import { formatCurrency, formatDateShort, formatDateTime } from "@/lib/formatters";
 import type { Department, PatientInvoiceHeader } from "@shared/schema";
 import { AdmissionWithLatestInvoice, InvoiceStatusBadge } from "./admission-types";
+
+// ─── AdmissionInvoiceSummaryBar — شريط ملخص سريع لفواتير الإقامة ──────────────
+// يعرض: عدد الفواتير الأصلية، الأقسام المشاركة، وتحذير وجود فاتورة مجمعة.
+// بدون state ولا query — يحسب من البيانات الواصلة.
+function AdmissionInvoiceSummaryBar({ invoices }: { invoices: PatientInvoiceHeader[] }) {
+  type InvWithDept = PatientInvoiceHeader & { departmentName?: string | null };
+  const source = invoices.filter(i => !i.isConsolidated);
+  const depts  = [...new Set(
+    source.map(i => (i as InvWithDept).departmentName?.trim()).filter(Boolean)
+  )] as string[];
+  const hasConsolidated = invoices.some(i => i.isConsolidated);
+
+  return (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2 flex-wrap border-b pb-2">
+      <span className="font-medium text-foreground">{source.length} فاتورة أصلية</span>
+      {depts.length > 0 && (
+        <>
+          <span className="text-muted-foreground">•</span>
+          <span>أقسام: <span className="text-foreground font-medium">{depts.join("، ")}</span></span>
+        </>
+      )}
+      {hasConsolidated && (
+        <Badge variant="outline" className="text-[10px] gap-1 border-amber-400 text-amber-700 dark:text-amber-400">
+          <Layers className="h-3 w-3" />
+          يوجد فاتورة مجمعة — الإجمالي يعتمد على الأصليات فقط
+        </Badge>
+      )}
+    </div>
+  );
+}
 
 interface AdmissionDetailProps {
   adm: AdmissionWithLatestInvoice;
@@ -148,32 +178,61 @@ function AdmissionDetail({
           ) : !admInvoices || admInvoices.length === 0 ? (
             <p className="text-xs text-muted-foreground text-center py-4">لا توجد فواتير</p>
           ) : (
-            <ScrollArea className="max-h-[300px]">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-right">رقم الفاتورة</TableHead>
-                    <TableHead className="text-right">القسم</TableHead>
-                    <TableHead className="text-right">التاريخ</TableHead>
-                    <TableHead className="text-right">الإجمالي</TableHead>
-                    <TableHead className="text-right">الحالة</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {admInvoices.map((inv: PatientInvoiceHeader) => (
-                    <TableRow key={inv.id} data-testid={`row-adm-invoice-${inv.id}`}>
-                      <TableCell className="text-xs">{inv.invoiceNumber}</TableCell>
-                      <TableCell className="text-xs">{(inv as PatientInvoiceHeader & { departmentName?: string }).departmentName || "—"}</TableCell>
-                      <TableCell className="text-xs">{formatDateShort(inv.invoiceDate)}</TableCell>
-                      <TableCell className="text-xs">{formatCurrency(parseFloat(String(inv.netAmount || inv.totalAmount)))}</TableCell>
-                      <TableCell>
-                        <InvoiceStatusBadge status={inv.status} />
-                      </TableCell>
+            <>
+              <AdmissionInvoiceSummaryBar invoices={admInvoices} />
+              <ScrollArea className="max-h-[300px]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-right">رقم الفاتورة</TableHead>
+                      <TableHead className="text-right">القسم</TableHead>
+                      <TableHead className="text-right">التاريخ</TableHead>
+                      <TableHead className="text-right">الإجمالي</TableHead>
+                      <TableHead className="text-right">الحالة</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </ScrollArea>
+                  </TableHeader>
+                  <TableBody>
+                    {admInvoices.map((inv: PatientInvoiceHeader) => {
+                      const isConsolidated = inv.isConsolidated;
+                      return (
+                        <TableRow
+                          key={inv.id}
+                          data-testid={`row-adm-invoice-${inv.id}`}
+                          className={isConsolidated ? "bg-amber-50/60 dark:bg-amber-950/20" : ""}
+                        >
+                          <TableCell className="text-xs font-mono">
+                            <span className="flex items-center gap-1">
+                              {isConsolidated && <Layers className="h-3 w-3 text-amber-600 shrink-0" />}
+                              {inv.invoiceNumber}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {isConsolidated
+                              ? <span className="text-amber-700 dark:text-amber-400 font-medium">مجمعة</span>
+                              : ((inv as PatientInvoiceHeader & { departmentName?: string }).departmentName || "—")}
+                          </TableCell>
+                          <TableCell className="text-xs">{formatDateShort(inv.invoiceDate)}</TableCell>
+                          <TableCell className="text-xs font-mono">
+                            {isConsolidated
+                              ? <span className="text-muted-foreground line-through text-[10px]">{formatCurrency(parseFloat(String(inv.netAmount || inv.totalAmount)))}</span>
+                              : formatCurrency(parseFloat(String(inv.netAmount || inv.totalAmount)))}
+                          </TableCell>
+                          <TableCell>
+                            <InvoiceStatusBadge status={inv.status} />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+              {admInvoices.some(i => i.isConsolidated) && (
+                <p className="text-[10px] text-amber-700 dark:text-amber-400 flex items-center gap-1 mt-1.5">
+                  <AlertCircle className="h-3 w-3 shrink-0" />
+                  الفاتورة المجمعة ( <Layers className="h-3 w-3 inline" /> ) تجمع الفواتير الأصلية — مبلغها لا يُضاف للإجمالي
+                </p>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

@@ -150,7 +150,7 @@ function AdmissionList({
                   <TableHead className="py-1 text-xs">وقت الدخول</TableHead>
                   <TableHead className="py-1 text-xs">رقم الفاتورة</TableHead>
                   <TableHead className="py-1 text-xs text-center">حالة الفاتورة</TableHead>
-                  <TableHead className="py-1 text-xs text-left">قيمة الفاتورة</TableHead>
+                  <TableHead className="py-1 text-xs text-left">إجمالي الإقامة</TableHead>
                   <TableHead className="py-1 text-xs text-left">المدفوع</TableHead>
                   <TableHead className="py-1 text-xs text-left">محول للطبيب</TableHead>
                   <TableHead className="py-1 text-xs">تاريخ الخروج</TableHead>
@@ -176,7 +176,7 @@ function AdmissionList({
                 <tfoot>
                   <TableRow className="bg-muted/70 font-bold border-t-2">
                     <TableCell colSpan={7} className="py-1 text-xs text-right pr-2">
-                      الإجمالي ({rows.length} إقامة)
+                      الإجمالي الكلي للإقامات ({rows.length})
                     </TableCell>
                     <TableCell className="py-1 text-xs text-left font-mono font-bold" data-testid="text-adm-total-net">
                       {formatCurrency(totals.net)}

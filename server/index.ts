@@ -917,6 +917,21 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] Inventory lots UNIQUE index error");
   }
 
+  // ── 5g1. Admission + is_consolidated index ────────────────────────────────
+  // يُسرّع استعلامات rpt_patient_visit_summary التي تفلتر على:
+  //   WHERE admission_id IS NOT NULL AND is_consolidated = false
+  // وكذلك inv_latest في getAdmissions
+  try {
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_pih_admission_consolidated
+      ON patient_invoice_headers (admission_id, is_consolidated)
+      WHERE admission_id IS NOT NULL
+    `);
+    log("[STARTUP] idx_pih_admission_consolidated index ensured");
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] admission_consolidated index error");
+  }
+
   // ── 5g2. Visit Group composite index (visit_group_id + patient_id) ─────────
   // يُستخدم في cross-patient safety check ولاستعلامات الفلترة السريعة
   try {

@@ -992,6 +992,7 @@ const methods = {
         ) dt_agg ON dt_agg.invoice_id = pih.id
         WHERE pih.status != 'cancelled'
           AND pih.admission_id IS NOT NULL
+          AND pih.is_consolidated = false
         GROUP BY pih.admission_id
       ) inv_latest ON inv_latest.admission_id = a.id
       ${whereExpr}

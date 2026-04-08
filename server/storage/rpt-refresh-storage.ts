@@ -304,6 +304,7 @@ const methods = {
         FROM patient_invoice_headers pih
         WHERE pih.status != 'cancelled'
           AND pih.admission_id IS NOT NULL
+          AND pih.is_consolidated = false
         GROUP BY pih.admission_id
       ) hdr_agg ON hdr_agg.admission_id = a.id
 
@@ -347,6 +348,7 @@ const methods = {
         JOIN patient_invoice_lines pil ON pil.header_id = pih.id
         WHERE pih.status != 'cancelled'
           AND pih.admission_id IS NOT NULL
+          AND pih.is_consolidated = false
         GROUP BY pih.admission_id
       ) line_agg ON line_agg.admission_id = a.id
 
@@ -360,6 +362,7 @@ const methods = {
           ON pih2.id = dt.invoice_id
          AND pih2.status != 'cancelled'
          AND pih2.admission_id IS NOT NULL
+         AND pih2.is_consolidated = false
         GROUP BY pih2.admission_id
       ) transfer_agg ON transfer_agg.admission_id = a.id
 
