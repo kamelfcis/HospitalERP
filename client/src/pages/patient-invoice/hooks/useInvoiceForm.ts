@@ -19,6 +19,7 @@ export interface InvoiceFormState {
   notes: string;
   status: string;
   admissionId: string;
+  visitId: string;
   warehouseId: string;
   headerDiscountPercent: number;
   headerDiscountAmount: number;
@@ -44,6 +45,7 @@ export interface InvoiceFormSetters {
   setNotes: (v: string) => void;
   setStatus: (v: string) => void;
   setAdmissionId: (v: string) => void;
+  setVisitId: (v: string) => void;
   setWarehouseId: (v: string) => void;
   setHeaderDiscountPercent: (v: number) => void;
   setHeaderDiscountAmount: (v: number) => void;
@@ -75,6 +77,7 @@ export function useInvoiceForm(
   const [notes, setNotes]                 = useState("");
   const [status, setStatus]               = useState("draft");
   const [admissionId, setAdmissionId]     = useState("");
+  const [visitId, setVisitId]             = useState("");
   const [warehouseId, setWarehouseId]     = useState("");
   const [headerDiscountPercent, setHeaderDiscountPercent] = useState(0);
   const [headerDiscountAmount, setHeaderDiscountAmount]   = useState(0);
@@ -98,6 +101,7 @@ export function useInvoiceForm(
     setCompanyCoveragePct(100);
     setNotes("");
     setAdmissionId("");
+    setVisitId("");
     setStatus("draft");
     setHeaderDiscountPercent(0);
     setHeaderDiscountAmount(0);
@@ -122,6 +126,7 @@ export function useInvoiceForm(
     notes, setNotes,
     status, setStatus,
     admissionId, setAdmissionId,
+    visitId, setVisitId,
     warehouseId, setWarehouseId,
     headerDiscountPercent, setHeaderDiscountPercent,
     headerDiscountAmount, setHeaderDiscountAmount,

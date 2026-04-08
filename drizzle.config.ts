@@ -24,5 +24,6 @@ export default defineConfig({
     "!rpt_department_activity",
     "!rpt_refresh_log",
     "!rpt_patient_visit_summary",
+    "!rpt_patient_visit_classification",
   ],
 });

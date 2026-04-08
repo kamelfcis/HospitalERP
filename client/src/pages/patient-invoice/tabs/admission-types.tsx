@@ -15,6 +15,8 @@ interface AdmissionWithLatestInvoice extends Admission {
    * Populated by getAdmissions(); NOT present in single getAdmission() calls.
    */
   visitGroupCount?: number | null;
+  /** رقم الزيارة من patient_visits (مرتبط بـ admission_id) */
+  visitNumber?: string | null;
 }
 
 /** حالات الإقامة: label + CSS classes للـ Badge */

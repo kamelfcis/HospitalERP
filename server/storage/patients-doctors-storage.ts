@@ -973,9 +973,11 @@ const methods = {
         inv_latest.latest_invoice_status                 AS latest_invoice_status,
         rpt.department_id                                AS latest_invoice_dept_id,
         rpt.department_name                              AS latest_invoice_dept_name,
-        COALESCE(vg_cnt.visit_group_count, 0)            AS visit_group_count
+        COALESCE(vg_cnt.visit_group_count, 0)            AS visit_group_count,
+        pv.visit_number                                  AS visit_number
         ${countCol}
       FROM admissions a
+      LEFT JOIN patient_visits pv ON pv.admission_id = a.id AND pv.visit_type = 'inpatient'
       LEFT JOIN rpt_patient_visit_summary rpt
         ON rpt.source_type = 'admission' AND rpt.source_id = a.id
       LEFT JOIN (

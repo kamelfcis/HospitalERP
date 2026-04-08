@@ -232,6 +232,15 @@ function AdmissionRow({ row: a, onSelect }: { row: AdmissionWithLatestInvoice; o
       <TableCell className="py-0.5 text-xs font-medium">
         <span className="flex items-center gap-1 flex-wrap">
           {a.admissionNumber}
+          {a.visitNumber && (
+            <Badge
+              variant="outline"
+              className="text-[10px] px-1 py-0 gap-0.5 border-violet-400 text-violet-700 dark:text-violet-400 whitespace-nowrap no-default-hover-elevate no-default-active-elevate"
+              data-testid={`badge-visit-number-${a.id}`}
+            >
+              {a.visitNumber}
+            </Badge>
+          )}
           <VisitGroupBadge count={a.visitGroupCount} />
         </span>
       </TableCell>

@@ -30,6 +30,7 @@ interface UseInvoiceMutationsParams {
   contractMemberId: string;
   notes: string;
   admissionId: string;
+  visitId: string;
   totals: Totals;
   lines: LineLocal[];
   payments: PaymentLocal[];
@@ -42,7 +43,7 @@ export function useInvoiceMutations({
   invoiceId, invoiceNumber, invoiceDate, patientName, patientPhone,
   patientId, patientType, departmentId, warehouseId, doctorName, contractName,
   contractId, companyId, contractMemberId,
-  notes, admissionId, totals, lines, payments,
+  notes, admissionId, visitId, totals, lines, payments,
   setInvoiceId, setStatus, resetAll,
 }: UseInvoiceMutationsParams) {
   const { toast } = useToast();
@@ -66,6 +67,7 @@ export function useInvoiceMutations({
       contractMemberId: patientType === "contract" ? contractMemberId || null : null,
       notes: notes || null,
       admissionId: admissionId || null,
+      visitId: visitId || null,
       status: "draft",
       totalAmount: String(totals.totalAmount),
       discountAmount: String(totals.discountAmount),

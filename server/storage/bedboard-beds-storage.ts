@@ -20,6 +20,7 @@ import {
   patientInvoiceHeaders,
   patientInvoiceLines,
   patientInvoicePayments,
+  patientVisits,
   staySegments,
   surgeryTypes,
   surgeryCategoryPrices,
@@ -183,6 +184,22 @@ const methods = {
       }
       if (!warehouseId) throw new Error("لا يوجد مخزن متاح — يرجى إنشاء مخزن أولاً");
 
+      // ── إنشاء patient_visit (type=inpatient) ─────────────────────────────────
+      const pvCntRes = await tx.execute(sql`SELECT COUNT(*) AS cnt FROM patient_visits`);
+      const pvSeq = parseInt((pvCntRes.rows[0] as Record<string, unknown>)?.cnt as string | undefined ?? "0") + 1;
+      const visitNumber = `VIS-${String(pvSeq).padStart(6, "0")}`;
+
+      const [patientVisit] = await tx.insert(patientVisits).values({
+        visitNumber,
+        patientId: resolvedPatientId!,
+        visitType: "inpatient",
+        departmentId: params.departmentId || null,
+        admissionId: admission.id,
+        status: "open",
+        notes: params.notes || null,
+      } as any).returning();
+      // ─────────────────────────────────────────────────────────────────────────
+
       const invCntRes = await tx.execute(sql`SELECT COUNT(*) AS cnt FROM patient_invoice_headers`);
       const invSeq = parseInt((invCntRes.rows[0] as Record<string, unknown>)?.cnt as string | undefined ?? "0") + 1;
       const invoiceNumber = `PI-${String(invSeq).padStart(6, "0")}`;
@@ -192,9 +209,11 @@ const methods = {
         patientName: params.patientName,
         patientPhone: params.patientPhone || "",
         admissionId: admission.id,
+        visitId: patientVisit.id,
         warehouseId,
         departmentId: params.departmentId || null,
         doctorName: params.doctorName || null,
+        patientId: resolvedPatientId,
         patientType: (params.paymentType === "contract" ? "contract" : "cash") as "contract" | "cash",
         contractName: params.paymentType === "contract" ? (params.insuranceCompany || null) : null,
         status: "draft" as "draft",
@@ -292,13 +311,13 @@ const methods = {
         tableName: "beds",
         recordId: params.bedId,
         action: "admit",
-        newValues: JSON.stringify({ admissionId: admission.id, invoiceId: invoice.id, segmentId }),
+        newValues: JSON.stringify({ admissionId: admission.id, invoiceId: invoice.id, segmentId, visitId: patientVisit.id, visitNumber }),
       });
 
-      return { bed: updatedBed, admissionId: admission.id, invoiceId: invoice.id, segmentId };
+      return { bed: updatedBed, admissionId: admission.id, invoiceId: invoice.id, segmentId, visitId: patientVisit.id, visitNumber };
     });
 
-    console.log(`[BED_BOARD] Admitted ${params.patientName} → bed ${params.bedId} admission ${result.admissionId}`);
+    console.log(`[BED_BOARD] Admitted ${params.patientName} → bed ${params.bedId} admission ${result.admissionId} visit ${result.visitNumber}`);
     return result;
   },
 

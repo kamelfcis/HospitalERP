@@ -742,6 +742,7 @@ export function registerPatientsRoutes(app: Express) {
           h.is_final_closed,
           h.final_closed_at,
           h.final_closed_by,
+          h.visit_id,
           COALESCE(d.name_ar, '—') AS department_name
         FROM patient_invoice_headers h
         LEFT JOIN departments d ON d.id = h.department_id
@@ -759,6 +760,7 @@ export function registerPatientsRoutes(app: Express) {
         doctor_name: string | null; contract_name: string | null;
         created_at: string; department_id: string | null; department_name: string;
         is_final_closed: boolean | null; final_closed_at: string | null; final_closed_by: string | null;
+        visit_id: string | null;
       }>;
 
       if (headers.length === 0) {
@@ -824,6 +826,10 @@ export function registerPatientsRoutes(app: Express) {
           visitKey = `group:${h.visit_group_id}`;
           visitType = "outpatient";
           visitLabel = `زيارة خارجية ${h.visit_group_id.slice(-6).toUpperCase()}`;
+        } else if (h.visit_id) {
+          visitKey = `visit:${h.visit_id}`;
+          visitType = "outpatient";
+          visitLabel = `زيارة خارجية`;
         } else {
           visitKey = `standalone:${h.id}`;
           visitType = "standalone";

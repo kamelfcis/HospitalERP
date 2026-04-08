@@ -1,8 +1,11 @@
 import { memo, useState, useCallback, useMemo } from "react";
-import { Loader2, Lock, CheckCircle2, AlertTriangle } from "lucide-react";
-import { useMutation } from "@tanstack/react-query";
+import { Loader2, Lock, CheckCircle2, AlertTriangle, History } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
@@ -18,6 +21,17 @@ import { ByClassificationView } from "../consolidated/views/ByClassificationView
 import { DetailedLinesView } from "../consolidated/views/DetailedLinesView";
 import { dispatchPrint } from "../consolidated/print/printPatientFile";
 import type { AggregatedInvoice, AggregatedViewData, ConsolidatedFiltersState, ConsolidatedViewMode } from "../shared/types";
+
+// ─── PatientVisit type (from GET /api/patients/:id/visits) ───────────────────
+interface PatientVisit {
+  id: string;
+  visit_number: string;
+  visit_type: "inpatient" | "outpatient";
+  admission_id: string | null;
+  department_name: string | null;
+  status: string;
+  created_at: string;
+}
 
 interface Props {
   data: AggregatedViewData | undefined;
@@ -44,6 +58,14 @@ function findPrimaryInvoice(invoices: AggregatedInvoice[]): AggregatedInvoice | 
   );
 }
 
+/** Map a patient_visit to the visitKey used in byVisit grouping */
+function pvToVisitKey(pv: PatientVisit): string {
+  if (pv.visit_type === "inpatient" && pv.admission_id) {
+    return `admission:${pv.admission_id}`;
+  }
+  return `visit:${pv.id}`;
+}
+
 export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
   data,
   isLoading,
@@ -53,6 +75,17 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
 }: Props) {
   const [filters, setFilters] = useState<ConsolidatedFiltersState>(DEFAULT_FILTERS);
   const { toast } = useToast();
+
+  // ── Fetch all patient visits for the visit selector ─────────────────────────
+  const { data: patientVisits = [] } = useQuery<PatientVisit[]>({
+    queryKey: ["/api/patients", patientId, "visits"],
+    queryFn: async () => {
+      const r = await fetch(`/api/patients/${patientId}/visits`, { credentials: "include" });
+      if (!r.ok) return [];
+      return r.json();
+    },
+    enabled: !!patientId,
+  });
 
   const handleFiltersChange = useCallback((partial: Partial<ConsolidatedFiltersState>) => {
     setFilters(prev => ({ ...prev, ...partial }));
@@ -121,6 +154,48 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
             <span className="text-green-600 text-xs">
               — {new Date(primaryInvoice.finalClosedAt).toLocaleDateString("ar-EG")}
             </span>
+          )}
+        </div>
+      )}
+
+      {/* ── Visit Selector ──────────────────────────────────────────────────── */}
+      {patientVisits.length > 0 && (
+        <div className="flex items-center gap-2">
+          <History className="h-4 w-4 text-muted-foreground shrink-0" />
+          <Select
+            value={filters.visitKey || "__all__"}
+            onValueChange={(val) => handleFiltersChange({ visitKey: val === "__all__" ? "" : val })}
+          >
+            <SelectTrigger className="h-8 text-xs w-[260px]" data-testid="select-visit-filter">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">كل الزيارات ({patientVisits.length})</SelectItem>
+              {patientVisits.map(pv => (
+                <SelectItem key={pv.id} value={pvToVisitKey(pv)}>
+                  <span className="flex items-center gap-1.5">
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] px-1 py-0 ${pv.visit_type === "inpatient" ? "border-indigo-400 text-indigo-700" : "border-teal-400 text-teal-700"}`}
+                    >
+                      {pv.visit_type === "inpatient" ? "داخلي" : "خارجي"}
+                    </Badge>
+                    {pv.visit_number}
+                    {pv.department_name && <span className="text-muted-foreground text-[10px]">— {pv.department_name}</span>}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {filters.visitKey && (
+            <button
+              type="button"
+              className="text-xs text-muted-foreground hover:text-foreground underline"
+              onClick={() => handleFiltersChange({ visitKey: "" })}
+              data-testid="button-clear-visit-filter"
+            >
+              مسح
+            </button>
           )}
         </div>
       )}

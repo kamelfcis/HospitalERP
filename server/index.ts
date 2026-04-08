@@ -956,6 +956,47 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] visit_group_patient index error");
   }
 
+  // ── 5g3. Backfill patient_visits for existing admissions ─────────────────
+  // أي admission لا يملك patient_visit مرتبطة → ننشئ له visit (type=inpatient)
+  // ثم نُحدِّث الفاتورة الموحدة الخاصة به لتحمل visit_id الجديد
+  try {
+    const unlinkedAdmissions = await db.execute(sql`
+      SELECT a.id, a.patient_id, a.department_id, a.created_at
+      FROM admissions a
+      WHERE a.patient_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM patient_visits pv WHERE pv.admission_id = a.id
+        )
+      ORDER BY a.created_at
+    `);
+    const rows = unlinkedAdmissions.rows as Array<Record<string, unknown>>;
+    if (rows.length > 0) {
+      let backfillCount = 0;
+      for (const adm of rows) {
+        const cntRes = await db.execute(sql`SELECT COUNT(*) AS cnt FROM patient_visits`);
+        const seq = parseInt((cntRes.rows[0] as Record<string, unknown>)?.cnt as string ?? "0") + 1;
+        const visitNumber = `VIS-${String(seq).padStart(6, "0")}`;
+        const pvResult = await db.execute(sql`
+          INSERT INTO patient_visits (id, visit_number, patient_id, visit_type, department_id, admission_id, status, created_at, updated_at)
+          VALUES (gen_random_uuid(), ${visitNumber}, ${adm.patient_id || null}, 'inpatient', ${adm.department_id || null}, ${adm.id}, 'open', NOW(), NOW())
+          RETURNING id
+        `);
+        const visitId = (pvResult.rows[0] as Record<string, unknown>)?.id as string;
+        if (visitId) {
+          await db.execute(sql`
+            UPDATE patient_invoice_headers
+            SET visit_id = ${visitId}, updated_at = NOW()
+            WHERE admission_id = ${adm.id} AND is_consolidated = true AND visit_id IS NULL
+          `);
+          backfillCount++;
+        }
+      }
+      log(`[STARTUP] patient_visits backfill: created ${backfillCount} inpatient visit(s) for existing admissions`);
+    }
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] patient_visits backfill error");
+  }
+
   // ── 5h. Backfill expiry_month/expiry_year from expiry_date ────────────────
   // حالات تاريخية: دفعات دخلت بـ expiry_date لكن بدون expiry_month/expiry_year
   // (استيراد إكسيل، opening stock قديم). آمن ومتكرر الإجراء.

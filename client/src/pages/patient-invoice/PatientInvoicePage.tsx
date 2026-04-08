@@ -210,6 +210,7 @@ export default function PatientInvoice() {
     contractMemberId: form.contractMemberId,
     notes:            form.notes,
     admissionId:      form.admissionId,
+    visitId:          form.visitId,
     totals,
     lines:            lm.lines,
     payments:         payments.payments,
@@ -320,6 +321,33 @@ export default function PatientInvoice() {
       loadInvoice(loadId);
       window.history.replaceState({}, "", window.location.pathname);
     }
+  }, []);
+
+  // ── Pre-fill from reception visit (initVisitId + initPatientId + initDeptId) ─
+  useEffect(() => {
+    const sp          = new URLSearchParams(window.location.search);
+    const initVisitId = sp.get("initVisitId");
+    const initPatientId = sp.get("initPatientId");
+    const initDeptId  = sp.get("initDeptId");
+    if (!initVisitId && !initPatientId) return;
+
+    if (initVisitId)  form.setVisitId(initVisitId);
+    if (initDeptId)   form.setDepartmentId(initDeptId);
+
+    if (initPatientId) {
+      fetch(`/api/patients/${initPatientId}`, { credentials: "include" })
+        .then(r => r.ok ? r.json() : null)
+        .then((pt: { id: string; fullName: string; phone?: string | null; patientCode?: string | null } | null) => {
+          if (!pt) return;
+          form.setPatientId(pt.id);
+          form.setPatientName(pt.fullName);
+          form.setPatientPhone(pt.phone || "");
+          form.setPatientCode(pt.patientCode || "");
+        })
+        .catch(() => {});
+    }
+
+    window.history.replaceState({}, "", window.location.pathname);
   }, []);
 
   // ── Load invoice ─────────────────────────────────────────────────────────────

@@ -26,7 +26,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import {
   Loader2, Search, UserCheck, UserPlus, X, ClipboardList,
-  BedDouble, Building2, CheckCircle2,
+  BedDouble, Building2, CheckCircle2, FileText,
 } from "lucide-react";
 import { DepartmentLookup } from "@/components/lookups";
 
@@ -162,6 +162,9 @@ export default function ReceptionPage() {
   const [requestedService, setRequestedService]   = useState("");
   const [notes, setNotes]                         = useState("");
 
+  const [lastSavedVisit, setLastSavedVisit]       = useState<VisitRecord | null>(null);
+  const [lastSavedPatient, setLastSavedPatient]   = useState<PatientResult | null>(null);
+
   // ── list filter state ─────────────────────────────────────────────────────
   const [listDate, setListDate]                   = useState(new Date().toISOString().split("T")[0]);
   const [listTypeFilter, setListTypeFilter]       = useState("__all__");
@@ -230,7 +233,7 @@ export default function ReceptionPage() {
 
   // ── save visit mutation ────────────────────────────────────────────────────
   const saveVisitMutation = useMutation({
-    mutationFn: async (patientId: string) => {
+    mutationFn: async ({ patientId, patient }: { patientId: string; patient: PatientResult | null }) => {
       const r = await apiRequest("POST", "/api/patient-visits", {
         patientId,
         visitType,
@@ -238,10 +241,13 @@ export default function ReceptionPage() {
         requestedService: requestedService.trim() || undefined,
         notes: notes.trim() || undefined,
       });
-      return r.json();
+      const visit = await r.json();
+      return { visit, patient };
     },
-    onSuccess: () => {
-      toast({ title: "تم تسجيل الزيارة", description: "تم تسجيل الزيارة في سجل الاستقبال" });
+    onSuccess: ({ visit, patient }) => {
+      toast({ title: "تم تسجيل الزيارة", description: `رقم الزيارة: ${visit.visit_number}` });
+      setLastSavedVisit(visit);
+      setLastSavedPatient(patient);
       setSelectedPatient(null);
       setPatientSearch("");
       setDebouncedSearch("");
@@ -297,7 +303,7 @@ export default function ReceptionPage() {
 
   const handleSubmit = useCallback(async () => {
     if (!selectedPatient) return;
-    saveVisitMutation.mutate(selectedPatient.id);
+    saveVisitMutation.mutate({ patientId: selectedPatient.id, patient: selectedPatient });
   }, [selectedPatient, saveVisitMutation]);
 
   const handleCreateNew = useCallback(() => {
@@ -306,7 +312,7 @@ export default function ReceptionPage() {
       return;
     }
     createPatientMutation.mutateAsync().then((patient: PatientResult) => {
-      saveVisitMutation.mutate(patient.id);
+      saveVisitMutation.mutate({ patientId: patient.id, patient });
     }).catch(() => {});
   }, [newPatientName, createPatientMutation, saveVisitMutation, toast]);
 
@@ -516,6 +522,50 @@ export default function ReceptionPage() {
                   data-testid="input-notes"
                 />
               </div>
+
+              {/* ── نجاح الحفظ: لوحة العمليات السريعة ── */}
+              {lastSavedVisit && lastSavedPatient && (
+                <div className="flex flex-col gap-2 p-3 rounded-md bg-green-50 border border-green-200">
+                  <div className="flex items-center gap-2 text-green-800 text-sm font-medium">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    <span>تم تسجيل {lastSavedVisit.visit_number}</span>
+                    <button
+                      type="button"
+                      onClick={() => { setLastSavedVisit(null); setLastSavedPatient(null); }}
+                      className="mr-auto text-green-600 hover:text-green-800"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <div className="text-xs text-green-700">
+                    {lastSavedPatient.fullName}
+                    {lastSavedVisit.visit_type === "outpatient" ? " — زيارة خارجية" : " — زيارة داخلية"}
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    {lastSavedVisit.visit_type === "outpatient" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-xs border-blue-300 text-blue-700 hover:bg-blue-50"
+                        data-testid="button-open-invoice-from-visit"
+                        onClick={() => {
+                          const params = new URLSearchParams({
+                            initVisitId: lastSavedVisit.id,
+                            initPatientId: lastSavedPatient.id,
+                          });
+                          if (lastSavedVisit.department_name) {
+                            params.set("initDeptName", lastSavedVisit.department_name);
+                          }
+                          window.location.href = `/patient-invoices?${params.toString()}`;
+                        }}
+                      >
+                        <FileText className="h-3.5 w-3.5" />
+                        فتح فاتورة خارجية
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Submit */}
               {isCreatingNew ? (
