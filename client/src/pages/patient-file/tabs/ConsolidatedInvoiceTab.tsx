@@ -325,7 +325,6 @@ const PaymentsTab = memo(function PaymentsTab({
               <th className="p-2.5 text-center">المبلغ</th>
               <th className="p-2.5 text-right">طريقة الدفع</th>
               <th className="p-2.5 text-right">الخزنة</th>
-              <th className="p-2.5 text-right">سُجِّل بواسطة</th>
               <th className="p-2.5 text-right">رقم الفاتورة</th>
               <th className="p-2.5 text-right">المرجع</th>
             </tr>
@@ -341,7 +340,6 @@ const PaymentsTab = memo(function PaymentsTab({
                   </Badge>
                 </td>
                 <td className="p-2.5 text-sm">{p.treasury_name}</td>
-                <td className="p-2.5 text-sm text-muted-foreground">{p.recorded_by ?? "—"}</td>
                 <td className="p-2.5 font-mono text-xs text-muted-foreground">{p.invoice_number}</td>
                 <td className="p-2.5 text-xs text-muted-foreground">{p.reference_number ?? "—"}</td>
               </tr>
@@ -351,7 +349,7 @@ const PaymentsTab = memo(function PaymentsTab({
             <tr className="bg-muted/40 font-semibold text-sm border-t-2">
               <td className="p-2.5">الإجمالي</td>
               <td className="p-2.5 text-center font-mono text-green-600">{fmtMoney(total)}</td>
-              <td colSpan={5}></td>
+              <td colSpan={4}></td>
             </tr>
           </tfoot>
         </table>

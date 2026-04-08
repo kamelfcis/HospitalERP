@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -30,6 +31,7 @@ import {
   User,
   Building2,
   AlertCircle,
+  FolderOpen,
 } from "lucide-react";
 import { useDebounce } from "@/pages/patients/useDebounce";
 
@@ -88,6 +90,7 @@ type Department = { id: string; nameAr: string };
 type Clinic = { id: string; nameAr: string; departmentId: string | null };
 
 export default function PatientInquiryPage() {
+  const [, navigate] = useLocation();
   const [adminDeptFilter, setAdminDeptFilter] = useState("");
   const [clinicId, setClinicId] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -450,6 +453,21 @@ export default function PatientInquiryPage() {
                     </div>
                   </div>
                 </SheetTitle>
+
+                {selectedRow.patient_id && (
+                  <div className="mt-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full gap-2 text-xs h-7"
+                      onClick={() => navigate(`/patients/${selectedRow.patient_id}/file`)}
+                      data-testid="button-open-patient-file"
+                    >
+                      <FolderOpen className="h-3.5 w-3.5" />
+                      الملف الكامل للمريض
+                    </Button>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-3 gap-2 mt-2">
                   <div className="bg-background rounded border p-2 text-center">

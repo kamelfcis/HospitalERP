@@ -1062,13 +1062,11 @@ export function registerPatientsRoutes(app: Express) {
           p.treasury_id, p.created_at,
           COALESCE(t.name, '—') AS treasury_name,
           h.invoice_number, h.invoice_date,
-          COALESCE(d.name_ar,'—') AS department_name,
-          COALESCE(u.full_name, u.username, '—') AS recorded_by
+          COALESCE(d.name_ar,'—') AS department_name
         FROM patient_invoice_payments p
         JOIN patient_invoice_headers h ON h.id = p.header_id
         LEFT JOIN treasuries   t ON t.id = p.treasury_id
         LEFT JOIN departments  d ON d.id = h.department_id
-        LEFT JOIN users        u ON u.id = p.created_by
         WHERE h.patient_id = ${id}
           ${admissionFilter ? sql`AND h.admission_id = ${admissionFilter}` : sql``}
           ${visitFilter     ? sql`AND h.visit_id     = ${visitFilter}`     : sql``}
