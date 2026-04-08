@@ -980,8 +980,10 @@ export function registerPatientsRoutes(app: Express) {
 
       const page  = Math.max(1, parseInt(String(req.query.page  ?? "1"), 10));
       const limit = Math.min(200, Math.max(10, parseInt(String(req.query.limit ?? "50"), 10)));
-      const lineTypeFilter   = req.query.lineType   ? String(req.query.lineType)   : null;
-      const departmentFilter = req.query.department ? String(req.query.department) : null;
+      const lineTypeFilter   = req.query.lineType    ? String(req.query.lineType)    : null;
+      const departmentFilter = req.query.department  ? String(req.query.department)  : null;
+      const admissionFilter  = req.query.admissionId ? String(req.query.admissionId) : null;
+      const visitFilter      = req.query.visitId     ? String(req.query.visitId)     : null;
       const offset = (page - 1) * limit;
 
       const countResult = await db.execute(sql`
@@ -993,6 +995,8 @@ export function registerPatientsRoutes(app: Express) {
           AND COALESCE(l.is_void, false) = false
           ${lineTypeFilter   ? sql`AND l.line_type = ${lineTypeFilter}`          : sql``}
           ${departmentFilter ? sql`AND h.department_id = ${departmentFilter}`   : sql``}
+          ${admissionFilter  ? sql`AND h.admission_id = ${admissionFilter}`     : sql``}
+          ${visitFilter      ? sql`AND h.visit_id = ${visitFilter}`             : sql``}
       `);
       const total = (countResult as any).rows[0]?.total ?? 0;
 
@@ -1015,6 +1019,8 @@ export function registerPatientsRoutes(app: Express) {
           AND COALESCE(l.is_void, false) = false
           ${lineTypeFilter   ? sql`AND l.line_type = ${lineTypeFilter}`          : sql``}
           ${departmentFilter ? sql`AND h.department_id = ${departmentFilter}`   : sql``}
+          ${admissionFilter  ? sql`AND h.admission_id = ${admissionFilter}`     : sql``}
+          ${visitFilter      ? sql`AND h.visit_id = ${visitFilter}`             : sql``}
         ORDER BY h.invoice_date DESC, h.id, l.id
         LIMIT ${limit} OFFSET ${offset}
       `);
@@ -1046,6 +1052,9 @@ export function registerPatientsRoutes(app: Express) {
       const inScope = await storage.checkPatientInScope(id, forcedDeptIds);
       if (!inScope) return res.status(403).json({ message: "ليس لديك صلاحية عرض بيانات هذا المريض" });
 
+      const admissionFilter = req.query.admissionId ? String(req.query.admissionId) : null;
+      const visitFilter     = req.query.visitId     ? String(req.query.visitId)     : null;
+
       const result = await db.execute(sql`
         SELECT
           p.id, p.header_id, p.payment_date, p.amount,
@@ -1053,12 +1062,16 @@ export function registerPatientsRoutes(app: Express) {
           p.treasury_id, p.created_at,
           COALESCE(t.name, '—') AS treasury_name,
           h.invoice_number, h.invoice_date,
-          COALESCE(d.name_ar,'—') AS department_name
+          COALESCE(d.name_ar,'—') AS department_name,
+          COALESCE(u.full_name, u.username, '—') AS recorded_by
         FROM patient_invoice_payments p
         JOIN patient_invoice_headers h ON h.id = p.header_id
-        LEFT JOIN treasuries t ON t.id = p.treasury_id
-        LEFT JOIN departments d ON d.id = h.department_id
+        LEFT JOIN treasuries   t ON t.id = p.treasury_id
+        LEFT JOIN departments  d ON d.id = h.department_id
+        LEFT JOIN users        u ON u.id = p.created_by
         WHERE h.patient_id = ${id}
+          ${admissionFilter ? sql`AND h.admission_id = ${admissionFilter}` : sql``}
+          ${visitFilter     ? sql`AND h.visit_id     = ${visitFilter}`     : sql``}
         ORDER BY p.payment_date DESC, p.created_at DESC
       `);
       return res.json((result as any).rows);
@@ -1131,9 +1144,17 @@ export function registerPatientsRoutes(app: Express) {
     try {
       const { id } = req.params;
       const rows = await db.execute(sql`
-        SELECT pv.*, d.name_ar AS department_name
+        SELECT pv.*,
+          d.name_ar AS department_name,
+          a.doctor_name,
+          a.notes     AS admission_notes,
+          a.admission_date,
+          a.discharge_date,
+          a.admission_number,
+          a.patient_name AS admission_patient_name
         FROM patient_visits pv
         LEFT JOIN departments d ON d.id = pv.department_id
+        LEFT JOIN admissions  a ON a.id = pv.admission_id
         WHERE pv.patient_id = ${id}
         ORDER BY pv.created_at DESC
         LIMIT 100
