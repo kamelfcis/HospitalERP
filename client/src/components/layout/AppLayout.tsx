@@ -1,240 +1,203 @@
+import { useState, useMemo, useCallback } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-  SidebarFooter,
-  useSidebar,
+  Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
+  SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton,
+  SidebarMenuItem, SidebarProvider, SidebarFooter, useSidebar,
 } from "@/components/ui/sidebar";
 import {
-  LayoutDashboard,
-  BookOpen,
-  FileText,
-  Building2,
-  Calendar,
-  ClipboardList,
-  PanelRightClose,
-  PanelRightOpen,
-  Package,
-  ArrowLeftRight,
-  Truck,
-  Receipt,
-  Stethoscope,
-  ShoppingCart,
-  Warehouse,
-  UserRound,
-  Banknote,
-  Users,
-  Scale,
-  TrendingUp,
-  BarChart3,
-  PieChart,
-  History,
-  Settings,
-  LogOut,
-  Shield,
-  BedDouble,
-  DoorOpen,
-  Scissors,
-  Megaphone,
-  FileSpreadsheet,
-  Undo2,
-  Gauge,
-  ScanSearch,
-  GitMerge,
-  KeyRound,
-  AlertCircle,
-  CreditCard,
-  Printer,
-  NotebookPen,
-  PackagePlus,
-  ListTodo,
-  type LucideIcon,
+  BookOpen, PanelRightClose, PanelRightOpen, Users, LogOut,
+  ChevronDown, ChevronLeft, Search, X, type LucideIcon,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
 import { usePharmacyMode } from "@/hooks/use-pharmacy-mode";
 import { ROLE_LABELS } from "@shared/permissions";
 import { AppHeader } from "./AppHeader";
+import { NAV_GROUPS, getAllNavItems, type NavItem, type NavGroup } from "./nav-config";
 
 interface AppLayoutProps {
   children: React.ReactNode;
 }
 
-interface NavItem {
-  title: string;
-  href: string;
-  icon: LucideIcon;
-  permission?: string;
-  hospitalOnly?: true;
-}
-
-const mainNavItems: NavItem[] = [
-  { title: "لوحة التحكم",            href: "/",                      icon: LayoutDashboard,  permission: "dashboard.view" },
-  { title: "المهام الداخلية",         href: "/tasks",                 icon: ListTodo },
-  { title: "دليل الحسابات",           href: "/chart-of-accounts",     icon: BookOpen,          permission: "accounts.view" },
-  { title: "القيود اليومية",           href: "/journal-entries",       icon: FileText,          permission: "journal.view" },
-  { title: "مراكز التكلفة",           href: "/cost-centers",          icon: Building2,         permission: "cost_centers.view" },
-  { title: "الفترات المحاسبية",        href: "/fiscal-periods",        icon: Calendar,          permission: "fiscal_periods.view" },
-  { title: "نماذج القيود",            href: "/templates",             icon: ClipboardList,     permission: "templates.view" },
-  { title: "الأصناف",                href: "/items",                 icon: Package,           permission: "items.view" },
-  { title: "إدارة الموردين",           href: "/suppliers",             icon: Building2,         permission: "receiving.view" },
-  { title: "استلام من مورد",          href: "/supplier-receiving",    icon: Truck,             permission: "receiving.view" },
-  { title: "فواتير الشراء",           href: "/purchase-invoices",     icon: Receipt,           permission: "purchase_invoices.view" },
-  { title: "سداد الموردين",           href: "/supplier-payments",     icon: Banknote,          permission: "supplier_payments.view" },
-  { title: "مرتجعات المشتريات",       href: "/purchase-returns",      icon: Undo2,             permission: "receiving.view" },
-  { title: "تحصيل الآجل",            href: "/customer-payments",     icon: CreditCard,        permission: "credit_payment.view" },
-  { title: "تحصيل التوصيل",          href: "/delivery-payments",     icon: Truck,             permission: "delivery_payment.view" },
-  { title: "تحويل مخزني",            href: "/store-transfers",       icon: ArrowLeftRight,    permission: "transfers.view" },
-  { title: "إعداد إذن تحويل",         href: "/transfer-preparation",  icon: FileSpreadsheet,  permission: "transfers.view" },
-  { title: "الرصيد الافتتاحي",       href: "/opening-stock",         icon: PackagePlus,       permission: "opening_stock.manage" },
-  { title: "جرد الأصناف",            href: "/stock-count",           icon: ClipboardList,     permission: "stock_count.view" },
-  { title: "كشكول النواقص",          href: "/shortage-notebook",     icon: NotebookPen,       permission: "shortage.view" },
-  { title: "صرف بدون رصيد",         href: "/oversell-resolution",   icon: AlertCircle,       permission: "oversell.view" },
-  { title: "فواتير البيع",            href: "/sales-invoices",        icon: ShoppingCart,      permission: "sales.view" },
-  { title: "مردودات المبيعات",        href: "/sales-returns",         icon: Undo2,             permission: "sales.create" },
-  { title: "فاتورة مريض",            href: "/patient-invoices",      icon: UserRound,         permission: "patient_invoices.view",  hospitalOnly: true },
-  { title: "نماذج الفواتير",         href: "/invoice-templates",     icon: FileText,          permission: "patient_invoices.view",  hospitalOnly: true },
-  { title: "لوحة الأسرّة",            href: "/bed-board",             icon: BedDouble,         permission: "patient_invoices.view",  hospitalOnly: true },
-  { title: "إدارة الأدوار والغرف",    href: "/room-management",       icon: DoorOpen,          permission: "patient_invoices.view",  hospitalOnly: true },
-  { title: "أنواع العمليات الجراحية", href: "/surgery-types",         icon: Scissors,          permission: "patient_invoices.view",  hospitalOnly: true },
-  { title: "تسوية مستحقات الأطباء",   href: "/doctor-settlements",    icon: Banknote,          permission: "patient_invoices.view",  hospitalOnly: true },
-  { title: "شاشة تحصيل الكاشير",     href: "/cashier-collection",    icon: Banknote,          permission: "cashier.view" },
-  { title: "تقرير تسليم الدرج",       href: "/cashier-handover",      icon: ClipboardList,     permission: "cashier.handover_view" },
-  { title: "الخدمات والأسعار",        href: "/services-pricing",      icon: Stethoscope,       permission: "services.view",          hospitalOnly: true },
-  { title: "المخازن",                href: "/warehouses",            icon: Warehouse,          permission: "warehouses.view" },
-  { title: "الأقسام",               href: "/departments",           icon: Building2,          permission: "departments.view" },
-  { title: "حالات دخول المستشفى",   href: "/patients",              icon: Users,              permission: "patients.view",          hospitalOnly: true },
-  { title: "استعلام المرضى",         href: "/patient-inquiry",       icon: ScanSearch,         permission: "patients.view",          hospitalOnly: true },
-  { title: "مراجعة المرضى المكررين", href: "/duplicate-patients",    icon: GitMerge,           permission: "patients.merge",         hospitalOnly: true },
-  { title: "سجل الأطباء",           href: "/doctors",               icon: Stethoscope,        permission: "doctors.view",           hospitalOnly: true },
-];
-
-const clinicNavItems: NavItem[] = [
-  { title: "حجز العيادات",        href: "/clinic-booking",       icon: Calendar,      permission: "clinic.view_own",        hospitalOnly: true },
-  { title: "أوامر الطبيب",       href: "/doctor-orders",        icon: ClipboardList, permission: "doctor_orders.view",     hospitalOnly: true },
-  { title: "خدمات المعمل",       href: "/dept-services/LAB",    icon: FileText,      permission: "dept_services.create",   hospitalOnly: true },
-  { title: "خدمات الأشعة",       href: "/dept-services/RAD",    icon: FileText,      permission: "dept_services.create",   hospitalOnly: true },
-];
-
-const reportNavItems: NavItem[] = [
-  { title: "ميزان المراجعة",       href: "/reports/trial-balance",    icon: Scale,         permission: "reports.trial_balance" },
-  { title: "قائمة الدخل",         href: "/reports/income-statement",  icon: TrendingUp,    permission: "reports.income_statement" },
-  { title: "الميزانية العمومية",    href: "/reports/balance-sheet",    icon: BarChart3,     permission: "reports.balance_sheet" },
-  { title: "تقارير مراكز التكلفة", href: "/reports/cost-centers",     icon: PieChart,      permission: "reports.cost_centers" },
-  { title: "كشف حساب",            href: "/reports/account-ledger",   icon: FileText,      permission: "reports.account_ledger" },
-  { title: "حركة صنف",            href: "/reports/item-movement",    icon: ClipboardList, permission: "reports.account_ledger" },
-  { title: "رصيد مخزن بتاريخ",   href: "/reports/warehouse-balance", icon: Warehouse,     permission: "reports.account_ledger" },
-];
-
-const systemNavItems: NavItem[] = [
-  { title: "إعدادات النظام",    href: "/system-settings",       icon: Settings,      permission: "settings.account_mappings" },
-  { title: "إعدادات الإيصالات", href: "/receipt-settings",      icon: Printer,       permission: "settings.account_mappings" },
-  { title: "ربط الحسابات",     href: "/account-mappings",      icon: Settings,      permission: "settings.account_mappings" },
-  { title: "الخزن",            href: "/treasuries",            icon: Banknote,      permission: "settings.account_mappings" },
-  { title: "سجل التدقيق",      href: "/audit-log",             icon: History,       permission: "audit_log.view" },
-  { title: "إدارة المستخدمين", href: "/users",                  icon: Shield,        permission: "users.view" },
-  { title: "مجموعات الصلاحيات", href: "/permission-groups",    icon: KeyRound,      permission: "permission_groups.view" },
-  { title: "العقود والشركات",  href: "/contracts",             icon: Building2,     permission: "contracts.view",          hospitalOnly: true },
-  { title: "مطالبات التأمين",  href: "/contract-claims",       icon: Building2,     permission: "contracts.claims.view",   hospitalOnly: true },
-  { title: "طلبات الموافقة",  href: "/approvals",              icon: ClipboardList, permission: "approvals.view",          hospitalOnly: true },
-  { title: "تحليلات العقود",  href: "/contracts-analytics",   icon: BarChart3,     permission: "contracts.claims.view",   hospitalOnly: true },
-  { title: "شريط الإعلانات",   href: "/announcements",         icon: Megaphone,     permission: "settings.account_mappings" },
-  { title: "أحداث المحاسبة",  href: "/accounting-events",     icon: AlertCircle,   permission: "journal.post" },
-  { title: "تشخيص الأداء",    href: "/perf-diagnostics",      icon: Gauge,         permission: "settings.account_mappings" },
-  { title: "سلامة الوحدات",   href: "/unit-integrity",        icon: ScanSearch,    permission: "items.edit" },
-];
-
-function shouldShowNavItem(
+// ─── هل يُعرض البند؟ ─────────────────────────────────────────────────────────
+function shouldShow(
   item: NavItem,
   pharmacyMode: boolean,
-  isOwner: boolean
+  isOwner: boolean,
+  hasPermission: (p: string) => boolean,
 ): boolean {
+  if (item.permission && !hasPermission(item.permission)) return false;
   if (pharmacyMode && !isOwner && item.hospitalOnly) return false;
   return true;
 }
 
+// ─── تطابق البحث ──────────────────────────────────────────────────────────────
+function matchSearch(item: NavItem, query: string): boolean {
+  if (!query) return true;
+  return item.title.includes(query) || item.href.includes(query);
+}
+
+// ─── SidebarToggleButton ─────────────────────────────────────────────────────
 function SidebarToggleButton() {
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
-
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
-          variant="ghost"
-          size="icon"
-          onClick={toggleSidebar}
-          className="h-8 w-8"
-          data-testid="button-sidebar-toggle"
+          variant="ghost" size="icon" onClick={toggleSidebar}
+          className="h-8 w-8" data-testid="button-sidebar-toggle"
         >
-          {isCollapsed ? (
-            <PanelRightClose className="h-4 w-4" />
-          ) : (
-            <PanelRightOpen className="h-4 w-4" />
-          )}
+          {isCollapsed ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
         </Button>
       </TooltipTrigger>
-      <TooltipContent side="left">
-        {isCollapsed ? "فتح القائمة" : "إغلاق القائمة"}
-      </TooltipContent>
+      <TooltipContent side="left">{isCollapsed ? "فتح القائمة" : "إغلاق القائمة"}</TooltipContent>
     </Tooltip>
   );
 }
 
-function NavGroup({
-  label,
-  items,
-  pharmacyMode,
-  isOwner,
-}: {
-  label: string;
-  items: NavItem[];
-  pharmacyMode: boolean;
-  isOwner: boolean;
-}) {
-  const [location] = useLocation();
-  const { hasPermission } = useAuth();
-
-  const visibleItems = items.filter(
-    (item) =>
-      (!item.permission || hasPermission(item.permission)) &&
-      shouldShowNavItem(item, pharmacyMode, isOwner)
+// ─── SidebarSearch ────────────────────────────────────────────────────────────
+interface SidebarSearchProps {
+  query: string;
+  onChange: (v: string) => void;
+}
+function SidebarSearch({ query, onChange }: SidebarSearchProps) {
+  const { state } = useSidebar();
+  if (state === "collapsed") return null;
+  return (
+    <div className="px-3 pb-2 pt-1 group-data-[collapsible=icon]:hidden">
+      <div className="relative flex items-center">
+        <Search className="absolute right-2.5 h-3.5 w-3.5 text-white/50 pointer-events-none" />
+        <Input
+          value={query}
+          onChange={e => onChange(e.target.value)}
+          placeholder="بحث في القائمة..."
+          className="h-8 pr-8 pl-7 text-xs bg-white/10 border-white/20 text-white placeholder:text-white/50
+                     focus-visible:ring-1 focus-visible:ring-white/40 focus-visible:border-white/40"
+          data-testid="input-sidebar-search"
+          dir="rtl"
+        />
+        {query && (
+          <button
+            onClick={() => onChange("")}
+            className="absolute left-2.5 text-white/50 hover:text-white"
+            aria-label="مسح البحث"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+    </div>
   );
+}
 
+// ─── NavItemLink ──────────────────────────────────────────────────────────────
+function NavItemLink({ item, isActive }: { item: NavItem; isActive: boolean }) {
+  return (
+    <SidebarMenuItem key={item.href}>
+      <SidebarMenuButton asChild isActive={isActive} tooltip={item.title}>
+        <Link
+          href={item.href}
+          data-testid={`nav-link-${item.href.replace(/\//g, "-").replace(/^-/, "")}`}
+          className="flex flex-row-reverse items-center gap-2 group-data-[collapsible=icon]:justify-center"
+        >
+          <item.icon className="h-4 w-4 shrink-0" />
+          <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
+        </Link>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
+// ─── CollapsibleNavGroup ──────────────────────────────────────────────────────
+interface CollapsibleNavGroupProps {
+  group: NavGroup;
+  isOpen: boolean;
+  onToggle: () => void;
+  visibleItems: NavItem[];
+  location: string;
+}
+
+function CollapsibleNavGroup({ group, isOpen, onToggle, visibleItems, location }: CollapsibleNavGroupProps) {
   if (visibleItems.length === 0) return null;
+  const GroupIcon = group.icon;
 
   return (
-    <SidebarGroup>
-      <SidebarGroupLabel>{label}</SidebarGroupLabel>
+    <SidebarGroup className="py-0">
+      {/* رأس المجموعة قابل للنقر */}
+      <button
+        onClick={onToggle}
+        className="flex flex-row-reverse w-full items-center justify-between px-3 py-1.5
+                   text-sidebar-foreground/70 hover:text-sidebar-foreground
+                   group-data-[collapsible=icon]:hidden transition-colors duration-150"
+        data-testid={`button-nav-group-${group.id}`}
+      >
+        <div className="flex flex-row-reverse items-center gap-1.5">
+          <GroupIcon className="h-3.5 w-3.5" />
+          <span className="text-xs font-semibold uppercase tracking-wide">{group.label}</span>
+        </div>
+        {isOpen
+          ? <ChevronDown className="h-3 w-3 opacity-50" />
+          : <ChevronLeft className="h-3 w-3 opacity-50" />
+        }
+      </button>
+
+      {/* أيقونة فقط عند الطي الكامل */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={onToggle}
+            className="hidden group-data-[collapsible=icon]:flex justify-center w-full py-1 text-sidebar-foreground/60 hover:text-sidebar-foreground"
+          >
+            <GroupIcon className="h-3.5 w-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="left">{group.label}</TooltipContent>
+      </Tooltip>
+
+      {isOpen && (
+        <SidebarGroupContent>
+          <SidebarMenu>
+            {visibleItems.map(item => (
+              <NavItemLink
+                key={item.href}
+                item={item}
+                isActive={location === item.href || (item.href !== "/" && location.startsWith(item.href))}
+              />
+            ))}
+          </SidebarMenu>
+        </SidebarGroupContent>
+      )}
+    </SidebarGroup>
+  );
+}
+
+// ─── SearchResults — قائمة نتائج البحث المسطّحة ──────────────────────────────
+function SearchResults({ items, location }: { items: NavItem[]; location: string }) {
+  if (items.length === 0) {
+    return (
+      <div className="px-4 py-6 text-center text-xs text-white/40 group-data-[collapsible=icon]:hidden">
+        لا توجد نتائج
+      </div>
+    );
+  }
+  return (
+    <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+      <SidebarGroupLabel className="text-white/50 text-[10px]">
+        نتائج البحث ({items.length})
+      </SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
-          {visibleItems.map((item) => (
-            <SidebarMenuItem key={item.href}>
-              <SidebarMenuButton
-                asChild
-                isActive={location === item.href || (item.href !== "/" && location.startsWith(item.href))}
-                tooltip={item.title}
-              >
-                <Link
-                  href={item.href}
-                  data-testid={`nav-link-${item.href.replace(/\//g, "-").replace(/^-/, "")}`}
-                  className="flex flex-row-reverse items-center gap-2 group-data-[collapsible=icon]:justify-center"
-                >
-                  <item.icon className="h-4 w-4 shrink-0" />
-                  <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+          {items.map(item => (
+            <NavItemLink
+              key={item.href}
+              item={item}
+              isActive={location === item.href || (item.href !== "/" && location.startsWith(item.href))}
+            />
           ))}
         </SidebarMenu>
       </SidebarGroupContent>
@@ -242,24 +205,60 @@ function NavGroup({
   );
 }
 
+// ─── AppLayout ────────────────────────────────────────────────────────────────
 export function AppLayout({ children }: AppLayoutProps) {
-  const { user, logout } = useAuth();
+  const { user, logout, hasPermission } = useAuth();
   const { pharmacyMode, isOwner } = usePharmacyMode();
+  const [location] = useLocation();
 
-  const appTitle = pharmacyMode ? "AMS نظام الصيدلية" : "AMS نظام المستشفى";
+  // ── بحث ────────────────────────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // ── حالة طيّ المجموعات (مفتوحة افتراضياً) ──────────────────────────────────
+  const defaultOpenGroups = new Set(NAV_GROUPS.map(g => g.id));
+  const [openGroups, setOpenGroups] = useState<Set<string>>(defaultOpenGroups);
+
+  const toggleGroup = useCallback((id: string) => {
+    setOpenGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) { next.delete(id); } else { next.add(id); }
+      return next;
+    });
+  }, []);
+
+  // ── بنود مرئية لكل مجموعة ────────────────────────────────────────────────
+  const visibleGroupItems = useMemo(() =>
+    NAV_GROUPS.map(group => ({
+      group,
+      items: group.items.filter(item => shouldShow(item, pharmacyMode, isOwner, hasPermission)),
+    })),
+    [pharmacyMode, isOwner, hasPermission],
+  );
+
+  // ── نتائج البحث ───────────────────────────────────────────────────────────
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    return getAllNavItems().filter(item =>
+      shouldShow(item, pharmacyMode, isOwner, hasPermission) &&
+      matchSearch(item, searchQuery.trim()),
+    );
+  }, [searchQuery, pharmacyMode, isOwner, hasPermission]);
+
+  const isSearching = searchQuery.trim().length > 0;
+
+  const appTitle    = pharmacyMode ? "AMS نظام الصيدلية" : "AMS نظام المستشفى";
   const appSubtitle = pharmacyMode ? "نظام الصيدلية والمخازن" : "نظام المحاسبة والمخازن";
 
-  const style = {
-    "--sidebar-width": "16rem",
-    "--sidebar-width-icon": "3.5rem",
-  };
+  const style = { "--sidebar-width": "16rem", "--sidebar-width-icon": "3.5rem" };
 
   return (
     <SidebarProvider style={style as React.CSSProperties}>
       <div className="flex h-screen w-full bg-background" dir="rtl">
         <Sidebar side="right" collapsible="icon" className="no-print" data-sidebar="main">
-          <SidebarHeader className="border-b border-border/50 p-4">
-            <div className="flex flex-row-reverse items-center gap-3">
+
+          {/* ── رأس الشريط ──────────────────────────────────────────────── */}
+          <SidebarHeader className="border-b border-border/50 p-4 pb-2">
+            <div className="flex flex-row-reverse items-center gap-3 mb-2">
               <div className="p-2 rounded-lg bg-white/20 shrink-0">
                 <BookOpen className="h-5 w-5 text-white" />
               </div>
@@ -268,17 +267,34 @@ export function AppLayout({ children }: AppLayoutProps) {
                 <p className="text-xs text-white/70">{appSubtitle}</p>
               </div>
             </div>
+
+            {/* ── صندوق البحث ─────────────────────────────────────────── */}
+            <SidebarSearch query={searchQuery} onChange={setSearchQuery} />
           </SidebarHeader>
 
+          {/* ── المحتوى ──────────────────────────────────────────────────── */}
           <SidebarContent>
             <ScrollArea className="flex-1">
-              <NavGroup label="القائمة الرئيسية" items={mainNavItems} pharmacyMode={pharmacyMode} isOwner={isOwner} />
-              <NavGroup label="العيادات الخارجية" items={clinicNavItems} pharmacyMode={pharmacyMode} isOwner={isOwner} />
-              <NavGroup label="التقارير المالية" items={reportNavItems} pharmacyMode={pharmacyMode} isOwner={isOwner} />
-              <NavGroup label="النظام" items={systemNavItems} pharmacyMode={pharmacyMode} isOwner={isOwner} />
+              {isSearching ? (
+                /* وضع البحث: قائمة مسطّحة بالنتائج */
+                <SearchResults items={searchResults} location={location} />
+              ) : (
+                /* الوضع العادي: مجموعات منظّمة قابلة للطي */
+                visibleGroupItems.map(({ group, items }) => (
+                  <CollapsibleNavGroup
+                    key={group.id}
+                    group={group}
+                    isOpen={openGroups.has(group.id)}
+                    onToggle={() => toggleGroup(group.id)}
+                    visibleItems={items}
+                    location={location}
+                  />
+                ))
+              )}
             </ScrollArea>
           </SidebarContent>
 
+          {/* ── تذييل الشريط ─────────────────────────────────────────────── */}
           <SidebarFooter className="border-t border-border/50 p-3">
             <div className="group-data-[collapsible=icon]:hidden space-y-2">
               <div className="flex flex-row-reverse items-center justify-between gap-2">
@@ -294,11 +310,9 @@ export function AppLayout({ children }: AppLayoutProps) {
                 <SidebarToggleButton />
               </div>
               <Button
-                variant="ghost"
-                size="sm"
+                variant="ghost" size="sm"
                 className="w-full justify-start gap-2 text-white/80 hover:text-white hover:bg-white/10"
-                onClick={logout}
-                data-testid="button-logout"
+                onClick={logout} data-testid="button-logout"
               >
                 <LogOut className="h-4 w-4" />
                 تسجيل الخروج
@@ -316,6 +330,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               </Tooltip>
             </div>
           </SidebarFooter>
+
         </Sidebar>
 
         <div className="flex flex-col flex-1 min-w-0">
