@@ -20,7 +20,7 @@ import { DepartmentLookup, DoctorLookup } from "@/components/lookups";
 import ConsumablesGrid from "@/components/ConsumablesGrid";
 
 // ─── 1. ثوابت ─────────────────────────────────────────────────────────────────
-const SERVICE_TYPES = ["SERVICE", "ACCOMMODATION", "OPERATING_ROOM", "DEVICE", "GAS", "OTHER"] as const;
+const SERVICE_TYPES = ["SERVICE", "ACCOMMODATION", "OPERATING_ROOM", "NURSING", "DEVICE", "GAS", "OTHER"] as const;
 
 // ─── 2. أنواع ─────────────────────────────────────────────────────────────────
 export interface ServiceFormState {

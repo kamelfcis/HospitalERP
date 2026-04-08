@@ -256,6 +256,7 @@ export function InvoiceTab({
               applyTemplate={applyTemplate}
               warehouseId={warehouseId}
               invoiceDate={invoiceDate}
+              departmentId={departmentId}
             />
           </TabsContent>
 

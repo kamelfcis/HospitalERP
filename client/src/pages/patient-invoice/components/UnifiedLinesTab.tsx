@@ -125,7 +125,7 @@ interface UnifiedLinesTabProps {
   pendingQtyRef?: React.MutableRefObject<Map<string, string>>;
 
   // Mutation functions
-  addServiceLine: (svc: Service) => void;
+  addServiceLine: (svc: Service) => void | Promise<void>;
   addItemLine: (item: Item, type: ItemAddType) => void;
   updateLine: (tempId: string, field: string, value: unknown) => void;
   removeLine: (tempId: string) => void;
@@ -137,6 +137,8 @@ interface UnifiedLinesTabProps {
   // For ItemFastSearch
   warehouseId?: string;
   invoiceDate?: string;
+  // لتصفية الخدمات بالقسم في ServiceLookup
+  departmentId?: string;
 }
 
 export function UnifiedLinesTab({
@@ -149,6 +151,7 @@ export function UnifiedLinesTab({
   applyTemplate,
   warehouseId = "",
   invoiceDate,
+  departmentId,
 }: UnifiedLinesTabProps) {
   const [sourceMode, setSourceMode] = useState<"service" | "item">("service");
   const [itemAddType, setItemAddType] = useState<ItemAddType>("drug");
@@ -301,6 +304,7 @@ export function UnifiedLinesTab({
                     setSelectedServiceId("");
                   }
                 }}
+                departmentId={departmentId || undefined}
                 placeholder="بحث عن خدمة..."
                 disabled={!isDraft || applyingTemplate}
                 data-testid="input-service-search-unified"

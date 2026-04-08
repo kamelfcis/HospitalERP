@@ -46,6 +46,9 @@ export const priceLists = pgTable("price_lists", {
   // نوع قائمة الأسعار: service (خدمات) | pharmacy (صيدلية) | mixed (مختلط — مستقبلي)
   // يمنع ربط قوائم الخدمات بعقود الصيدلية والعكس.
   priceListType: text("price_list_type").notNull().default("service"),
+  // قائمة الأسعار الافتراضية لكل نوع — واحدة فقط لكل نوع (مُفرضة بـ UNIQUE INDEX على DB)
+  // تُستخدم كـ fallback عندما لا يوجد عقد أو العقد لا يحتوي على قائمة أسعار مربوطة
+  isDefault: boolean("is_default").notNull().default(false),
   validFrom: date("valid_from"),
   validTo: date("valid_to"),
   isActive: boolean("is_active").notNull().default(true),
@@ -415,6 +418,10 @@ export const patientInvoiceLines = pgTable("patient_invoice_lines", {
   // حالة تكلفة التسوية المؤجلة — pending: مؤجلة | partial: جزئية | resolved: مسواة
   // NULL = بند عادي (غير مرتبط بصرف مؤجل)
   costStatus: varchar("cost_status", { length: 20 }),
+  // ── تتبع مصدر السعر — audit trail للتسعير ───────────────────────────────
+  // price_source قيمه: service_base_price | contract_price_list | default_price_list | manual
+  // price_list_id_used: قائمة الأسعار التي استُخدمت لاشتقاق السعر
+  priceListIdUsed: varchar("price_list_id_used"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   headerIdx:         index("idx_pat_line_header").on(table.headerId),
@@ -586,6 +593,7 @@ export const serviceTypeLabels: Record<string, string> = {
   SERVICE: "خدمة",
   ACCOMMODATION: "إقامة",
   OPERATING_ROOM: "فتح غرفة عمليات",
+  NURSING: "تمريض",
   DEVICE: "جهاز",
   GAS: "غاز",
   OTHER: "أخرى"

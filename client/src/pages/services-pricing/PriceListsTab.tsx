@@ -125,6 +125,7 @@ export default function PriceListsTab() {
     setPlForm({
       code: pl.code, name: pl.name, currency: pl.currency,
       priceListType: (pl as any).priceListType || "service",
+      isDefault: (pl as any).isDefault ?? false,
       validFrom: pl.validFrom || "", validTo: pl.validTo || "",
       isActive: pl.isActive, notes: pl.notes || "",
     });
@@ -231,7 +232,7 @@ export default function PriceListsTab() {
                           );
                         })()}
                       </td>
-                      <td>
+                      <td className="flex items-center gap-1">
                         <Badge variant="outline"
                           className={`text-[10px] no-default-active-elevate ${
                             pl.isActive
@@ -240,6 +241,11 @@ export default function PriceListsTab() {
                           }`}>
                           {pl.isActive ? "نشط" : "غير نشط"}
                         </Badge>
+                        {(pl as any).isDefault && (
+                          <Badge variant="outline" className="text-[10px] no-default-active-elevate bg-amber-50 text-amber-700 border-amber-300 gap-0.5">
+                            ★ افتراضية
+                          </Badge>
+                        )}
                       </td>
                       <td>
                         <Button size="icon" variant="ghost"

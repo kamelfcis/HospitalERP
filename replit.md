@@ -26,7 +26,7 @@ The system uses a RESTful JSON API. Database interactions are managed by Drizzle
 ### Feature Specifications
 - **Financial Management**: Chart of Accounts, Cost Centers, Journal Entries, Fiscal Period controls, IFRS-compliant financial reports, and automatic journal entry generation.
 - **Inventory & Sales**: Supplier receiving, sales invoicing (barcode, FEFO), sales returns, patient invoicing, patient admissions, and master data management.
-- **Services & Price Lists**: CRUD operations for department-scoped services and price lists with inline editing and bulk adjustments.
+- **Services & Price Lists**: CRUD operations for department-scoped services and price lists with inline editing and bulk adjustments. Price lists support an `is_default` flag (DB UNIQUE constraint per type) with amber star badge in the UI. Service types include NURSING. Price resolution order: contract's `base_price_list_id` → default price list → service base price. Audit fields `price_source` and `price_list_id_used` on `patient_invoice_lines`.
 - **Service + Consumables Tree View in Invoices**: Sales invoice line items display services with their consumable sub-rows in a grouped tree view.
 - **Item Card Consumables Panel**: Service-category items in the item card have a dedicated panel for managing default consumables.
 - **Multi-Pharmacy Support**: Provides isolation for invoicing and cashier operations across multiple pharmacies.
@@ -37,7 +37,7 @@ The system uses a RESTful JSON API. Database interactions are managed by Drizzle
 - **Opening Stock**: Draft-to-posted document flow with per-line lot entry, Excel import/export, and GL journal generation upon posting.
 - **Stock Cycle Count**: Full inventory reconciliation with atomic GL journal generation and lot adjustments.
 - **Permission Groups Management**: Admin UI for managing groups, members, and per-module permissions with individual user overrides.
-- **Contracts Module**: Master data for insurance/contract companies, contracts, and member cards, including a 5-pass rule evaluator for contract coverage, claims GL accounting, and an approval workflow.
+- **Contracts Module**: Master data for insurance/contract companies, contracts, and member cards, including a 5-pass rule evaluator for contract coverage, claims GL accounting, and an approval workflow. Contracts support `base_price_list_id` linkage (selectable in the contract form) for contract-specific pricing. The contracts table displays the linked price list name.
 - **Account Mappings Module**: Dedicated UI for bulk updates of all automatic journal transaction types.
 - **Items Excel Import/Export**: Bulk management of items via xlsx with upsert functionality and barcode handling.
 - **Customer Credit Payments Module**: Manages customer credit and integrates with cashier handover summaries.

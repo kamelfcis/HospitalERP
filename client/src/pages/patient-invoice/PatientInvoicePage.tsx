@@ -99,6 +99,7 @@ export default function PatientInvoice() {
     warehouseId:      form.warehouseId,
     invoiceDate:      form.invoiceDate,
     departmentId:     form.departmentId,
+    contractId:       form.contractId,
     setItemSearch:    search.setItemSearch,
     setItemResults:   (v) => search.setItemResults(v as unknown as Parameters<typeof search.setItemResults>[0]),
     addingItemRef:    search.addingItemRef,

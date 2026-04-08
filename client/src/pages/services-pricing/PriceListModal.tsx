@@ -5,7 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
+import { Loader2, Star } from "lucide-react";
 
 // ─── أنواع ─────────────────────────────────────────────────────────────────────
 export interface PriceListFormState {
@@ -13,6 +13,7 @@ export interface PriceListFormState {
   name: string;
   currency: string;
   priceListType: string;
+  isDefault: boolean;
   validFrom: string;
   validTo: string;
   isActive: boolean;
@@ -21,7 +22,7 @@ export interface PriceListFormState {
 
 export const defaultPriceListForm: PriceListFormState = {
   code: "", name: "", currency: "EGP", priceListType: "service",
-  validFrom: "", validTo: "", isActive: true, notes: "",
+  isDefault: false, validFrom: "", validTo: "", isActive: true, notes: "",
 };
 
 export const priceListTypeLabels: Record<string, string> = {
@@ -98,12 +99,26 @@ export default function PriceListModal({ open, onClose, form, setForm, onSave, s
               data-testid="checkbox-pl-active" />
             <Label htmlFor="pl-active">نشط</Label>
           </div>
+          <div className="flex items-center gap-2">
+            <Checkbox id="pl-default" checked={form.isDefault}
+              onCheckedChange={v => set("isDefault", !!v)}
+              data-testid="checkbox-pl-default" />
+            <Label htmlFor="pl-default" className="flex items-center gap-1">
+              <Star className="h-3.5 w-3.5 text-amber-500" />
+              افتراضية لهذا النوع
+            </Label>
+          </div>
           <div className="space-y-1 col-span-2">
             <Label>ملاحظات</Label>
             <Textarea data-testid="input-pl-notes" value={form.notes}
               onChange={e => set("notes", e.target.value)} rows={2} />
           </div>
         </div>
+        {form.isDefault && (
+          <p className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 border border-amber-200 dark:border-amber-800 rounded px-2 py-1.5 mt-1">
+            تعيين هذه القائمة كافتراضية سيُلغي التعيين من أي قائمة أخرى من نفس النوع
+          </p>
+        )}
         <DialogFooter>
           <Button variant="outline" onClick={onClose} data-testid="button-cancel-pl">إلغاء</Button>
           <Button onClick={onSave} disabled={saving || !canSave} data-testid="button-save-pl">

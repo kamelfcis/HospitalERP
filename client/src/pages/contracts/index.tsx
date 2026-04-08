@@ -100,6 +100,11 @@ export default function ContractsPage() {
     enabled: !!selectedCompany,
   });
 
+  const { data: priceLists = [] } = useQuery<any[]>({
+    queryKey: ["/api/price-lists"],
+  });
+  const priceListMap = Object.fromEntries(priceLists.map((pl: any) => [pl.id, pl.name]));
+
   const { data: members = [], isLoading: membersLoading } = useQuery<ContractMember[]>({
     queryKey: ["/api/contract-members", selectedContract?.id],
     queryFn: () =>
@@ -287,6 +292,7 @@ export default function ContractsPage() {
                       <TableHead className="text-right">اسم العقد</TableHead>
                       <TableHead className="text-right">الفترة</TableHead>
                       <TableHead className="text-right">تغطية %</TableHead>
+                      <TableHead className="text-right">قائمة الأسعار</TableHead>
                       <TableHead className="text-right">الحالة</TableHead>
                       {canManage && <TableHead className="text-right">إجراءات</TableHead>}
                     </TableRow>
@@ -301,6 +307,11 @@ export default function ContractsPage() {
                         <TableCell>{c.contractName}</TableCell>
                         <TableCell className="text-muted-foreground whitespace-nowrap">{c.startDate} → {c.endDate}</TableCell>
                         <TableCell>{c.companyCoveragePct}%</TableCell>
+                        <TableCell className="text-muted-foreground text-[11px]">
+                          {(c as any).basePriceListId
+                            ? priceListMap[(c as any).basePriceListId] ?? "—"
+                            : <span className="text-muted-foreground/50">—</span>}
+                        </TableCell>
                         <TableCell>
                           <Badge variant={c.isActive ? "outline" : "destructive"} className="text-[10px]">
                             {c.isActive ? "نشط" : "موقوف"}

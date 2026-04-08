@@ -258,13 +258,34 @@ const methods = {
   },
 
   async createPriceList(this: DatabaseStorage, data: InsertPriceList): Promise<PriceList> {
-    const [row] = await db.insert(priceLists).values(data).returning();
-    return row;
+    return db.transaction(async (tx) => {
+      // إذا تم تعيين هذه القائمة كافتراضية — ألغِ التعيين من بقية القوائم من نفس النوع
+      if (data.isDefault) {
+        await tx
+          .update(priceLists)
+          .set({ isDefault: false, updatedAt: new Date() })
+          .where(and(eq(priceLists.priceListType, data.priceListType), eq(priceLists.isDefault, true)));
+      }
+      const [row] = await tx.insert(priceLists).values(data).returning();
+      return row;
+    });
   },
 
   async updatePriceList(this: DatabaseStorage, id: string, data: Partial<InsertPriceList>): Promise<PriceList | null> {
-    const [row] = await db.update(priceLists).set({ ...data, updatedAt: new Date() }).where(eq(priceLists.id, id)).returning();
-    return row || null;
+    return db.transaction(async (tx) => {
+      // إذا تم تعيين هذه القائمة كافتراضية — ألغِ التعيين من بقية القوائم من نفس النوع أولاً
+      if (data.isDefault) {
+        const [current] = await tx.select({ priceListType: priceLists.priceListType }).from(priceLists).where(eq(priceLists.id, id)).limit(1);
+        if (current) {
+          await tx
+            .update(priceLists)
+            .set({ isDefault: false, updatedAt: new Date() })
+            .where(and(eq(priceLists.priceListType, current.priceListType), eq(priceLists.isDefault, true)));
+        }
+      }
+      const [row] = await tx.update(priceLists).set({ ...data, updatedAt: new Date() }).where(eq(priceLists.id, id)).returning();
+      return row || null;
+    });
   },
 
   async getPriceListItems(this: DatabaseStorage, priceListId: string, params: { search?: string; departmentId?: string; category?: string; page?: number; pageSize?: number }): Promise<{ data: PriceListItemWithService[]; total: number }> {

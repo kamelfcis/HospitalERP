@@ -35,6 +35,8 @@ export interface LineLocal {
   contractRuleId: string | null;
   /** التصنيف التجاري — snapshot محدد وقت إنشاء البند، مقفول بعد finalize */
   businessClassification: string | null;
+  /** قائمة الأسعار التي استُخدمت لاشتقاق السعر — audit trail */
+  priceListIdUsed: string | null;
   /** trace — النموذج الذي أُنشئ منه البند (null لو لم يكن من نموذج) */
   templateId: string | null;
   templateNameSnapshot: string | null;

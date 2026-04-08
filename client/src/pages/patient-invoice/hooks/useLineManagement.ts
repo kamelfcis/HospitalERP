@@ -111,6 +111,7 @@ interface UseLineManagementParams {
   warehouseId: string;
   invoiceDate: string;
   departmentId: string;
+  contractId?: string;
   setItemSearch: (v: string) => void;
   setItemResults: (v: ItemSearchResult[]) => void;
   addingItemRef: React.MutableRefObject<Set<string>>;
@@ -122,6 +123,7 @@ export function useLineManagement({
   warehouseId,
   invoiceDate,
   departmentId,
+  contractId,
   setItemSearch,
   setItemResults,
   addingItemRef,
@@ -176,6 +178,7 @@ export function useLineManagement({
       listPrice:          (l as any).listPrice           ?? null,
       contractRuleId:     (l as any).contractRuleId      ?? null,
       businessClassification: l.businessClassification ?? (l as any).business_classification ?? null,
+      priceListIdUsed: (l as any).priceListIdUsed ?? (l as any).price_list_id_used ?? null,
       templateId:           (l as any).templateId           ?? (l as any).template_id            ?? null,
       templateNameSnapshot: (l as any).templateNameSnapshot ?? (l as any).template_name_snapshot ?? null,
       appliedAt:            (l as any).appliedAt            ?? (l as any).applied_at              ?? null,
@@ -207,8 +210,8 @@ export function useLineManagement({
     [lines]
   );
 
-  // ── Add service line ───────────────────────────────────────────────────────
-  const addServiceLine = useCallback((
+  // ── Add service line (async — يحلّ السعر من قائمة الأسعار إن وُجد) ────────
+  const addServiceLine = useCallback(async (
     svc: ServiceSearchResult,
     opts?: { templateId?: string | null; templateNameSnapshot?: string | null; appliedAt?: string | null; defaultQty?: number; doctorName?: string; nurseName?: string; notes?: string }
   ) => {
@@ -219,7 +222,29 @@ export function useLineManagement({
       serviceId: svc.id,
     });
     const qty       = opts?.defaultQty ?? 1;
-    const unitPrice = parseFloat(svc.basePrice || "0") || 0;
+
+    // ── حلّ السعر من قائمة الأسعار (إن وُجد عقد أو قائمة افتراضية) ──────────
+    let unitPrice   = parseFloat(svc.basePrice || "0") || 0;
+    let priceSource = "service_base_price";
+    let priceListIdUsed: string | null = null;
+
+    if (svc.id) {
+      try {
+        const params = new URLSearchParams();
+        if (contractId) params.set("contractId", contractId);
+        if (invoiceDate) params.set("evaluationDate", invoiceDate);
+        const res = await fetch(`/api/services/${svc.id}/resolve-price?${params.toString()}`, { credentials: "include" });
+        if (res.ok) {
+          const resolved = await res.json() as { price: number; source: string; priceListId?: string };
+          unitPrice       = resolved.price;
+          priceSource     = resolved.source;
+          priceListIdUsed = resolved.priceListId ?? null;
+        }
+      } catch {
+        // fallback آمن — نستخدم base_price بدون تغيير
+      }
+    }
+
     const newLine: LineLocal = {
       tempId: genId(),
       lineType: "service",
@@ -242,7 +267,8 @@ export function useLineManagement({
       lotId: null,
       expiryMonth: null,
       expiryYear: null,
-      priceSource: "service",
+      priceSource,
+      priceListIdUsed,
       sourceType: null,
       sourceId: null,
       coverageStatus:     null,
@@ -259,7 +285,7 @@ export function useLineManagement({
       appliedBy:            null,
     };
     setLines(prev => [...prev, newLine]);
-  }, []);
+  }, [contractId, invoiceDate]);
 
   // ── Add item line (with FEFO) ──────────────────────────────────────────────
   const addItemLine = useCallback(async (

@@ -4,6 +4,7 @@ import { storage } from "../storage";
 import { PERMISSIONS } from "@shared/permissions";
 import { requireAuth, checkPermission } from "./_shared";
 import { insertServiceSchema, insertPriceListSchema } from "@shared/schema";
+import { resolveServicePrice } from "../lib/service-price-resolver";
 
 export function registerServicesRoutes(app: Express) {
   // ===== Services =====
@@ -49,6 +50,37 @@ export function registerServicesRoutes(app: Express) {
       const service = await storage.getService(req.params.id as string);
       if (!service) return res.status(404).json({ message: "الخدمة غير موجودة" });
       res.json(service);
+    } catch (error: unknown) {
+      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
+    }
+  });
+
+  /**
+   * GET /api/services/:id/resolve-price
+   * يُحلّ سعر الخدمة بناءً على العقد والقوائم المتاحة.
+   * يُستخدم من واجهة فاتورة المريض لعرض السعر الصحيح قبل الحفظ.
+   * Query params:
+   *   contractId?      — معرّف العقد (يجلب base_price_list_id منه)
+   *   evaluationDate?  — تاريخ التقييم (افتراضي: اليوم)
+   */
+  app.get("/api/services/:id/resolve-price", requireAuth, async (req, res) => {
+    try {
+      const serviceId = req.params.id as string;
+      const { contractId, evaluationDate } = req.query as { contractId?: string; evaluationDate?: string };
+
+      let contractBasePriceListId: string | null = null;
+      if (contractId) {
+        const contract = await storage.getContractById(contractId);
+        contractBasePriceListId = (contract as any)?.basePriceListId ?? null;
+      }
+
+      const resolved = await resolveServicePrice({
+        serviceId,
+        contractBasePriceListId,
+        evaluationDate,
+      });
+
+      res.json(resolved);
     } catch (error: unknown) {
       res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
     }

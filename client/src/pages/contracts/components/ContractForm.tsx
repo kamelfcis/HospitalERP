@@ -1,7 +1,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { insertContractSchema } from "@shared/schema";
@@ -15,6 +15,9 @@ import {
 import {
   Form, FormControl, FormField, FormItem, FormLabel, FormMessage,
 } from "@/components/ui/form";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 
 function today() { return new Date().toISOString().slice(0, 10); }
@@ -40,6 +43,11 @@ interface Props {
 export function ContractForm({ open, onOpenChange, companyId, editing }: Props) {
   const { toast } = useToast();
 
+  const { data: priceLists = [] } = useQuery<any[]>({
+    queryKey: ["/api/price-lists"],
+    enabled: open,
+  });
+
   const form = useForm<ContractFormValues>({
     resolver: zodResolver(contractFormSchema),
     defaultValues: {
@@ -51,6 +59,7 @@ export function ContractForm({ open, onOpenChange, companyId, editing }: Props) 
       endDate:            editing?.endDate            ?? oneYearLater(),
       isActive:           editing?.isActive           ?? true,
       notes:              editing?.notes              ?? "",
+      basePriceListId:    (editing as any)?.basePriceListId ?? null,
     },
   });
 
@@ -131,6 +140,35 @@ export function ContractForm({ open, onOpenChange, companyId, editing }: Props) 
                 </FormItem>
               )} />
             </div>
+
+            {/* ── قائمة الأسعار الأساسية ──────────────────────────────── */}
+            <FormField control={form.control} name="basePriceListId" render={({ field }) => (
+              <FormItem>
+                <FormLabel>قائمة الأسعار الأساسية</FormLabel>
+                <Select
+                  value={field.value ?? "__none__"}
+                  onValueChange={v => field.onChange(v === "__none__" ? null : v)}
+                >
+                  <FormControl>
+                    <SelectTrigger data-testid="select-contract-price-list">
+                      <SelectValue placeholder="اختر قائمة أسعار (اختياري)" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="__none__">بدون قائمة أسعار</SelectItem>
+                    {priceLists
+                      .filter((pl: any) => pl.isActive)
+                      .map((pl: any) => (
+                        <SelectItem key={pl.id} value={pl.id}>
+                          {pl.name}
+                          {(pl as any).isDefault && " ★"}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )} />
 
             <FormField control={form.control} name="notes" render={({ field }) => (
               <FormItem>
