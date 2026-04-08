@@ -52,10 +52,12 @@ interface InvoiceHeaderBarProps {
   departmentId: string;
   setDepartmentId: (v: string) => void;
   departments: Department[] | undefined;
+  deptLocked?: boolean;
 
   warehouseId: string;
   setWarehouseId: (v: string) => void;
   warehouses: Record<string, unknown>[] | undefined;
+  whLocked?: boolean;
 
   admissionId: string;
   setAdmissionId: (v: string) => void;
@@ -90,8 +92,8 @@ export function InvoiceHeaderBar({
   patientId, patientName, patientCode, patientPhone, setPatientPhone,
   onPatientChange, onPatientClear,
   doctorName, setDoctorName,
-  departmentId, setDepartmentId, departments,
-  warehouseId, setWarehouseId, warehouses,
+  departmentId, setDepartmentId, departments, deptLocked,
+  warehouseId, setWarehouseId, warehouses, whLocked,
   admissionId, setAdmissionId, activeAdmissions,
   patientType, setPatientType,
   contractId, contractName,
@@ -419,7 +421,7 @@ export function InvoiceHeaderBar({
               <div className="w-px h-4 bg-border/50 shrink-0" />
               <div className="flex items-center gap-0.5 shrink-0">
                 <span className="text-[10px] text-muted-foreground">قسم</span>
-                <Select value={departmentId} onValueChange={setDepartmentId} disabled={!isDraft}>
+                <Select value={departmentId} onValueChange={setDepartmentId} disabled={!isDraft || deptLocked}>
                   <SelectTrigger className="h-6 text-[11px] w-28 px-1" data-testid="select-department"><SelectValue placeholder="اختر" /></SelectTrigger>
                   <SelectContent>
                     {(departments || []).map((d) => <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>)}
@@ -428,7 +430,7 @@ export function InvoiceHeaderBar({
               </div>
               <div className="flex items-center gap-0.5 shrink-0">
                 <span className="text-[10px] text-muted-foreground">مخزن</span>
-                <Select value={warehouseId} onValueChange={setWarehouseId} disabled={!isDraft}>
+                <Select value={warehouseId} onValueChange={setWarehouseId} disabled={!isDraft || whLocked}>
                   <SelectTrigger className="h-6 text-[11px] w-28 px-1" data-testid="select-warehouse"><SelectValue placeholder="اختر مخزن" /></SelectTrigger>
                   <SelectContent>
                     {(warehouses || []).filter((w: any) => w.isActive).map((w: any) => (

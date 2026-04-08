@@ -80,6 +80,11 @@ export default function PatientInvoice() {
     return (warehouses as any[]).filter((w: any) => allowedWarehouseIds.includes(String(w.id)));
   }, [warehouses, allowedWarehouseIds]);
 
+  // لو المستخدم مقيَّد بقسم/مخزن واحد فقط → اقفل الـ Select لمنع التشويش
+  // admin/owner يملك [] → allowedDepartmentIds.length === 0 → لا يُقفل
+  const deptLocked = allowedDepartmentIds.length > 0 && (visibleDepartments?.length ?? 0) <= 1;
+  const whLocked   = allowedWarehouseIds.length  > 0 && ((visibleWarehouses as any[] | undefined)?.length ?? 0) <= 1;
+
   // ── Form state (with user defaults for new invoices) ────────────────────────
   const userDefaults = useMemo(() => ({
     warehouseId:  user?.defaultWarehouseId  ? String(user.defaultWarehouseId)  : undefined,
@@ -453,9 +458,11 @@ export default function PatientInvoice() {
             departmentId={form.departmentId}
             setDepartmentId={form.setDepartmentId}
             departments={visibleDepartments}
+            deptLocked={deptLocked}
             warehouseId={form.warehouseId}
             setWarehouseId={form.setWarehouseId}
             warehouses={visibleWarehouses}
+            whLocked={whLocked}
             admissionId={form.admissionId}
             setAdmissionId={form.setAdmissionId}
             activeAdmissions={activeAdmissions}

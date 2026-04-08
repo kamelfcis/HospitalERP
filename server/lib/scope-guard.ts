@@ -46,6 +46,54 @@ export class ScopeViolationError extends Error {
 
 // ── Core resolvers ────────────────────────────────────────────────────────────
 
+export interface FullScope {
+  dept: DeptScope;
+  warehouse: WarehouseScope;
+}
+
+/**
+ * Unified resolver — 1 user query + 2 parallel queries (departments + warehouses).
+ * Preferred over calling the individual resolvers when both are needed at once
+ * (CREATE / UPDATE / FINALIZE) to avoid querying the users table twice.
+ */
+export async function resolveUserFullScope(userId: string): Promise<FullScope> {
+  const userRows = await db
+    .select({ role: users.role, allCashierUnits: users.allCashierUnits, departmentId: users.departmentId })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  const user = userRows[0];
+
+  const empty: FullScope = {
+    dept:      { isFullAccess: false, allowedDeptIds: [] },
+    warehouse: { isFullAccess: false, allowedWarehouseIds: [] },
+  };
+  if (!user) return empty;
+
+  if (user.role === "admin" || (user.role as string) === "owner" || user.allCashierUnits) {
+    return {
+      dept:      { isFullAccess: true, allowedDeptIds: [] },
+      warehouse: { isFullAccess: true, allowedWarehouseIds: [] },
+    };
+  }
+
+  // Fetch both tables in parallel (single round-trip to DB)
+  const [deptRows, whRows] = await Promise.all([
+    db.select({ id: userDepartments.departmentId }).from(userDepartments).where(eq(userDepartments.userId, userId)),
+    db.select({ id: userWarehouses.warehouseId }).from(userWarehouses).where(eq(userWarehouses.userId, userId)),
+  ]);
+
+  let allowedDeptIds = deptRows.map((r) => r.id);
+  if (allowedDeptIds.length === 0 && user.departmentId) {
+    allowedDeptIds = [user.departmentId];
+  }
+
+  return {
+    dept:      { isFullAccess: false, allowedDeptIds },
+    warehouse: { isFullAccess: false, allowedWarehouseIds: whRows.map((r) => r.id) },
+  };
+}
+
 /**
  * يُعيد نطاق أقسام المستخدم.
  *
@@ -54,6 +102,8 @@ export class ScopeViolationError extends Error {
  *   2. user_departments rows            → allowedDeptIds صريحة
  *   3. user.departmentId               → fallback للقسم الواحد
  *   4. لا شيء                         → allowedDeptIds = [] (لا قيود فعلية)
+ *
+ * استخدم resolveUserFullScope() عندما تحتاج كلاً من الأقسام والمخازن معاً.
  */
 export async function resolveUserDeptScope(userId: string): Promise<DeptScope> {
   const userRows = await db
@@ -74,7 +124,6 @@ export async function resolveUserDeptScope(userId: string): Promise<DeptScope> {
     .where(eq(userDepartments.userId, userId));
 
   let allowedDeptIds = deptRows.map((r) => r.id);
-
   if (allowedDeptIds.length === 0 && user.departmentId) {
     allowedDeptIds = [user.departmentId];
   }
@@ -84,6 +133,7 @@ export async function resolveUserDeptScope(userId: string): Promise<DeptScope> {
 
 /**
  * يُعيد نطاق مخازن المستخدم.
+ * استخدم resolveUserFullScope() عندما تحتاج كلاً من الأقسام والمخازن معاً.
  */
 export async function resolveUserWarehouseScope(userId: string): Promise<WarehouseScope> {
   const userRows = await db
@@ -152,6 +202,8 @@ export async function assertWarehouseScope(
 /**
  * يتحقق من صلاحية القسم والمخزن معاً لفاتورة معيّنة.
  * يستخدم في CREATE + UPDATE + FINALIZE routes.
+ *
+ * محسَّن: 1 user query + 2 parallel table queries بدل 4 queries.
  */
 export async function assertInvoiceScopeGuard(
   userId: string,
@@ -159,10 +211,27 @@ export async function assertInvoiceScopeGuard(
   warehouseId: string | null | undefined,
   context = "patient_invoice",
 ): Promise<void> {
-  await Promise.all([
-    assertDeptScope(userId, departmentId ?? null, context),
-    assertWarehouseScope(userId, warehouseId ?? null, context),
-  ]);
+  const { dept, warehouse } = await resolveUserFullScope(userId);
+
+  if (departmentId && !dept.isFullAccess && dept.allowedDeptIds.length > 0) {
+    if (!dept.allowedDeptIds.includes(departmentId)) {
+      log.warn(
+        { userId, departmentId, allowedDeptIds: dept.allowedDeptIds, context },
+        "[SCOPE_VIOLATION] department access denied",
+      );
+      throw new ScopeViolationError("غير مسموح لك بالوصول إلى هذا القسم");
+    }
+  }
+
+  if (warehouseId && !warehouse.isFullAccess && warehouse.allowedWarehouseIds.length > 0) {
+    if (!warehouse.allowedWarehouseIds.includes(warehouseId)) {
+      log.warn(
+        { userId, warehouseId, allowedWarehouseIds: warehouse.allowedWarehouseIds, context },
+        "[SCOPE_VIOLATION] warehouse access denied",
+      );
+      throw new ScopeViolationError("غير مسموح لك بالوصول إلى هذا المخزن");
+    }
+  }
 }
 
 // ── Service-department match ───────────────────────────────────────────────────
