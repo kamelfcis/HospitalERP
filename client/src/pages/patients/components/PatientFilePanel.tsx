@@ -1,12 +1,13 @@
 // ===== Imports =====
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import {
   Loader2, Printer, User, Phone, CreditCard, CalendarDays,
   Stethoscope, Pill, FlaskConical, Receipt, ChevronDown, ChevronUp,
   XCircle, Banknote, Bed, TrendingUp, TrendingDown, Activity,
-  AlertTriangle, Building2, UserCheck,
+  AlertTriangle, Building2, UserCheck, LayoutGrid,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -507,6 +508,7 @@ const TABS: { key: TabFilter; label: string; icon: React.ReactNode }[] = [
 
 export function PatientFilePanel({ patientId, showPrint = true }: PatientFilePanelProps) {
   const [activeTab, setActiveTab] = useState<TabFilter>("all");
+  const [, navigate] = useLocation();
 
   // ===== Derived Values =====
 
@@ -592,16 +594,26 @@ export function PatientFilePanel({ patientId, showPrint = true }: PatientFilePan
                 )}
               </div>
             </div>
-            {showPrint && (
+            <div className="flex items-center gap-2 shrink-0">
               <Button
-                variant="outline" size="sm" className="h-7 text-xs gap-1 print:hidden shrink-0"
-                onClick={() => window.print()}
-                data-testid="button-print-file"
+                variant="default" size="sm" className="h-7 text-xs gap-1 print:hidden"
+                onClick={() => navigate(`/patients/${patientId}/file`)}
+                data-testid="button-open-full-file"
               >
-                <Printer className="h-3 w-3" />
-                طباعة
+                <LayoutGrid className="h-3 w-3" />
+                الملف الكامل
               </Button>
-            )}
+              {showPrint && (
+                <Button
+                  variant="outline" size="sm" className="h-7 text-xs gap-1 print:hidden"
+                  onClick={() => window.print()}
+                  data-testid="button-print-file"
+                >
+                  <Printer className="h-3 w-3" />
+                  طباعة
+                </Button>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
