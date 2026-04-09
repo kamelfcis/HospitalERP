@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { visitAggregationCache } from "@shared/schema";
 
 export interface EncounterLineSummary {
   id: string;
@@ -126,9 +127,9 @@ export async function getVisitInvoiceSummary(visitId: string): Promise<VisitInvo
   const invoiceRes = await db.execute(sql`
     SELECT id, invoice_number, status, is_final_closed, invoice_date, version, net_amount
     FROM patient_invoice_headers
-    WHERE visit_id = ${visitId} AND status IN ('draft', 'finalized')
+    WHERE visit_id = ${visitId} AND status IN ('draft', 'finalizing', 'finalized')
     ORDER BY
-      CASE WHEN status = 'draft' THEN 0 ELSE 1 END,
+      CASE WHEN status = 'draft' THEN 0 WHEN status = 'finalizing' THEN 1 ELSE 2 END,
       created_at DESC
     LIMIT 1
   `);
@@ -269,7 +270,6 @@ export async function getVisitInvoiceSummary(visitId: string): Promise<VisitInvo
   const issues: string[] = [];
   if (!inv) issues.push("لا توجد فاتورة مرتبطة بالزيارة");
   if (orphanLines > 0) issues.push(`${orphanLines} بند بدون مقابلة طبية`);
-  if (!isFullyPaid && inv) issues.push(`متبقي ${remaining.toFixed(2)} جنيه`);
   if (allLines.length === 0 && inv) issues.push("الفاتورة فارغة بدون بنود");
 
   return {
@@ -300,7 +300,7 @@ export async function getVisitInvoiceSummary(visitId: string): Promise<VisitInvo
       discount: totalDiscount,
       net: totalNet,
       paid: totalPaid,
-      remaining: Math.max(remaining, 0),
+      remaining,
       lineCount: allLines.length,
       encounterCount: encountersArray.length,
     },
@@ -328,8 +328,117 @@ export async function getVisitInvoiceSummary(visitId: string): Promise<VisitInvo
       allLinesHaveEncounter: allHaveEncounter,
       totalsMatch: !inv || Math.abs(parseFloat(String(inv.net_amount ?? totalNet)) - totalNet) < 0.01,
       isFullyPaid,
-      canFinalize: !!inv && inv.status === "draft" && allHaveEncounter && isFullyPaid && issues.length === 0,
+      canFinalize: !!inv && inv.status === "draft" && allHaveEncounter && Math.abs(parseFloat(String(inv.net_amount ?? totalNet)) - totalNet) < 0.01 && issues.length === 0,
       issues,
     },
   };
+}
+
+export async function refreshVisitAggregationCache(visitId: string): Promise<void> {
+  try {
+    const result = await db.execute(sql`
+      WITH inv AS (
+        SELECT id, status, net_amount
+        FROM patient_invoice_headers
+        WHERE visit_id = ${visitId} AND status IN ('draft', 'finalizing', 'finalized')
+        ORDER BY CASE WHEN status = 'draft' THEN 0 WHEN status = 'finalizing' THEN 1 ELSE 2 END, created_at DESC
+        LIMIT 1
+      ),
+      line_stats AS (
+        SELECT
+          COALESCE(SUM(quantity::numeric * unit_price::numeric), 0) AS gross,
+          COALESCE(SUM(discount_amount::numeric), 0) AS discount,
+          COALESCE(SUM(total_price::numeric), 0) AS net,
+          COUNT(*) AS line_count,
+          COUNT(*) FILTER (WHERE encounter_id IS NULL) AS orphan_count
+        FROM patient_invoice_lines pil
+        JOIN inv ON inv.id = pil.header_id
+        WHERE pil.is_void = false
+      ),
+      pay_stats AS (
+        SELECT COALESCE(SUM(amount::numeric), 0) AS paid
+        FROM patient_invoice_payments pip
+        JOIN inv ON inv.id = pip.header_id
+      ),
+      enc_stats AS (
+        SELECT COUNT(*) AS enc_count
+        FROM encounters WHERE visit_id = ${visitId} AND status != 'cancelled'
+      ),
+      dept_breakdown AS (
+        SELECT json_agg(json_build_object(
+          'departmentId', e.department_id,
+          'net', sub.net,
+          'lineCount', sub.cnt
+        )) AS breakdown
+        FROM (
+          SELECT encounter_id, SUM(total_price::numeric) AS net, COUNT(*) AS cnt
+          FROM patient_invoice_lines pil
+          JOIN inv ON inv.id = pil.header_id
+          WHERE pil.is_void = false AND pil.encounter_id IS NOT NULL
+          GROUP BY encounter_id
+        ) sub
+        JOIN encounters e ON e.id = sub.encounter_id
+      ),
+      enc_breakdown AS (
+        SELECT json_agg(json_build_object(
+          'encounterId', e.id,
+          'type', e.encounter_type,
+          'departmentId', e.department_id,
+          'status', e.status,
+          'lineCount', COALESCE(sub.cnt, 0),
+          'net', COALESCE(sub.net, 0)
+        )) AS breakdown
+        FROM encounters e
+        LEFT JOIN (
+          SELECT encounter_id, COUNT(*) AS cnt, SUM(total_price::numeric) AS net
+          FROM patient_invoice_lines pil
+          JOIN inv ON inv.id = pil.header_id
+          WHERE pil.is_void = false
+          GROUP BY encounter_id
+        ) sub ON sub.encounter_id = e.id
+        WHERE e.visit_id = ${visitId} AND e.status != 'cancelled'
+      )
+      INSERT INTO visit_aggregation_cache (
+        visit_id, invoice_id, gross_amount, discount_amount, net_amount,
+        paid_amount, remaining, line_count, encounter_count, orphan_line_count,
+        invoice_status, department_breakdown, encounter_breakdown,
+        last_refreshed_at, updated_at
+      )
+      SELECT
+        ${visitId},
+        inv.id,
+        ls.gross,
+        ls.discount,
+        ls.net,
+        ps.paid,
+        ls.net - ps.paid,
+        ls.line_count,
+        es.enc_count,
+        ls.orphan_count,
+        inv.status,
+        db.breakdown,
+        eb.breakdown,
+        NOW(),
+        NOW()
+      FROM inv, line_stats ls, pay_stats ps, enc_stats es,
+           dept_breakdown db, enc_breakdown eb
+      ON CONFLICT (visit_id) DO UPDATE SET
+        invoice_id = EXCLUDED.invoice_id,
+        gross_amount = EXCLUDED.gross_amount,
+        discount_amount = EXCLUDED.discount_amount,
+        net_amount = EXCLUDED.net_amount,
+        paid_amount = EXCLUDED.paid_amount,
+        remaining = EXCLUDED.remaining,
+        line_count = EXCLUDED.line_count,
+        encounter_count = EXCLUDED.encounter_count,
+        orphan_line_count = EXCLUDED.orphan_line_count,
+        invoice_status = EXCLUDED.invoice_status,
+        department_breakdown = EXCLUDED.department_breakdown,
+        encounter_breakdown = EXCLUDED.encounter_breakdown,
+        last_refreshed_at = NOW(),
+        updated_at = NOW()
+    `);
+  } catch (err) {
+    console.error(`[AGG_CACHE] refresh failed for visit=${visitId}:`, err instanceof Error ? err.message : err);
+  }
 }

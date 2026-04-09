@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, boolean, timestamp, date, index, uniqueIndex, pgSequence, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, numeric, boolean, timestamp, date, index, uniqueIndex, pgSequence, jsonb } from "drizzle-orm/pg-core";
 
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -295,6 +295,24 @@ export const encounters = pgTable("encounters", {
   visitTypeIdx:     index("idx_enc_visit_type").on(table.visitId, table.encounterType),
   visitStatusIdx:   index("idx_enc_visit_status").on(table.visitId, table.status),
 }));
+
+export const visitAggregationCache = pgTable("visit_aggregation_cache", {
+  visitId:          varchar("visit_id").primaryKey().references(() => patientVisits.id),
+  invoiceId:        varchar("invoice_id"),
+  grossAmount:      numeric("gross_amount", { precision: 14, scale: 2 }).notNull().default("0"),
+  discountAmount:   numeric("discount_amount", { precision: 14, scale: 2 }).notNull().default("0"),
+  netAmount:        numeric("net_amount", { precision: 14, scale: 2 }).notNull().default("0"),
+  paidAmount:       numeric("paid_amount", { precision: 14, scale: 2 }).notNull().default("0"),
+  remaining:        numeric("remaining", { precision: 14, scale: 2 }).notNull().default("0"),
+  lineCount:        integer("line_count").notNull().default(0),
+  encounterCount:   integer("encounter_count").notNull().default(0),
+  orphanLineCount:  integer("orphan_line_count").notNull().default(0),
+  invoiceStatus:    varchar("invoice_status"),
+  departmentBreakdown: jsonb("department_breakdown"),
+  encounterBreakdown:  jsonb("encounter_breakdown"),
+  lastRefreshedAt:  timestamp("last_refreshed_at").notNull().defaultNow(),
+  updatedAt:        timestamp("updated_at").notNull().defaultNow(),
+});
 
 // ─── محرك الإقامة ─────────────────────────────────────────────────────────
 

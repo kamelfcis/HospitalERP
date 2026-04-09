@@ -7,6 +7,7 @@ import {
   encounters,
   type Encounter,
 } from "@shared/schema";
+import { refreshVisitAggregationCache } from "./invoice-aggregation";
 
 interface RoutedInvoice {
   invoiceId: string;
@@ -83,6 +84,68 @@ export async function findOrCreateDraftInvoice(params: {
   return { invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber, isNew: true };
 }
 
+async function findOrCreateEncounter(
+  tx: any,
+  params: {
+    visitId: string;
+    encounterType: "surgery" | "icu" | "ward" | "nursery" | "clinic" | "lab" | "radiology";
+    departmentId?: string | null;
+    encounterDoctorId?: string | null;
+    encounterMetadata?: Record<string, unknown> | null;
+    createdBy?: string | null;
+  }
+): Promise<{ encounter: Encounter; reused: boolean }> {
+  const existingRes = await tx.execute(sql`
+    SELECT * FROM encounters
+    WHERE visit_id = ${params.visitId}
+      AND encounter_type = ${params.encounterType}
+      AND status = 'active'
+      ${params.departmentId ? sql`AND department_id = ${params.departmentId}` : sql`AND department_id IS NULL`}
+    ORDER BY started_at DESC
+    LIMIT 1
+  `);
+
+  if (existingRes.rows.length > 0) {
+    const existing = existingRes.rows[0] as unknown as Encounter;
+    console.log(`[ENCOUNTER] reused ${existing.id} type=${params.encounterType} visit=${params.visitId} dept=${params.departmentId ?? 'none'}`);
+    return { encounter: existing, reused: true };
+  }
+
+  try {
+    const [encounter] = await tx.insert(encounters).values({
+      visitId: params.visitId,
+      departmentId: params.departmentId ?? null,
+      encounterType: params.encounterType,
+      status: "active",
+      doctorId: params.encounterDoctorId ?? null,
+      startedAt: new Date(),
+      metadata: params.encounterMetadata ?? null,
+      createdBy: params.createdBy ?? null,
+    } as any).returning();
+
+    console.log(`[ENCOUNTER] created ${encounter.id} type=${params.encounterType} visit=${params.visitId} dept=${params.departmentId ?? 'none'}`);
+    return { encounter, reused: false };
+  } catch (err: unknown) {
+    if ((err as any)?.code === "23505") {
+      const retryRes = await tx.execute(sql`
+        SELECT * FROM encounters
+        WHERE visit_id = ${params.visitId}
+          AND encounter_type = ${params.encounterType}
+          AND status = 'active'
+          ${params.departmentId ? sql`AND department_id = ${params.departmentId}` : sql`AND department_id IS NULL`}
+        ORDER BY started_at DESC
+        LIMIT 1
+      `);
+      if (retryRes.rows.length > 0) {
+        const existing = retryRes.rows[0] as unknown as Encounter;
+        console.log(`[ENCOUNTER] reused-after-conflict ${existing.id} type=${params.encounterType} visit=${params.visitId}`);
+        return { encounter: existing, reused: true };
+      }
+    }
+    throw err;
+  }
+}
+
 export async function addLinesToVisitInvoice(params: {
   visitId: string;
   patientName: string;
@@ -112,7 +175,7 @@ export async function addLinesToVisitInvoice(params: {
     sortOrder?: number;
     notes?: string | null;
   }>;
-}): Promise<{ invoiceId: string; invoiceNumber: string; encounterId: string; isNewInvoice: boolean }> {
+}): Promise<{ invoiceId: string; invoiceNumber: string; encounterId: string; isNewInvoice: boolean; encounterReused: boolean }> {
   return await db.transaction(async (tx) => {
     const routed = await findOrCreateDraftInvoice({
       visitId: params.visitId,
@@ -126,18 +189,14 @@ export async function addLinesToVisitInvoice(params: {
       contractName: params.contractName,
     }, tx);
 
-    const [encounter] = await tx.insert(encounters).values({
+    const { encounter, reused } = await findOrCreateEncounter(tx, {
       visitId: params.visitId,
-      departmentId: params.departmentId ?? null,
       encounterType: params.encounterType,
-      status: "active",
-      doctorId: params.encounterDoctorId ?? null,
-      startedAt: new Date(),
-      metadata: params.encounterMetadata ?? null,
-      createdBy: params.createdBy ?? null,
-    } as any).returning();
-
-    console.log(`[ENCOUNTER] created ${encounter.id} type=${params.encounterType} visit=${params.visitId}`);
+      departmentId: params.departmentId,
+      encounterDoctorId: params.encounterDoctorId,
+      encounterMetadata: params.encounterMetadata,
+      createdBy: params.createdBy,
+    });
 
     const existingMax = await tx.execute(
       sql`SELECT COALESCE(MAX(sort_order), 0) AS max_sort FROM patient_invoice_lines WHERE header_id = ${routed.invoiceId} AND is_void = false`
@@ -192,13 +251,17 @@ export async function addLinesToVisitInvoice(params: {
       updatedAt: new Date(),
     }).where(eq(patientInvoiceHeaders.id, routed.invoiceId));
 
-    console.log(`[ENCOUNTER_ROUTING] added ${params.lines.length} line(s) to invoice ${routed.invoiceNumber} encounter=${encounter.id} type=${params.encounterType}`);
+    console.log(`[ENCOUNTER_ROUTING] added ${params.lines.length} line(s) to invoice ${routed.invoiceNumber} encounter=${encounter.id} type=${params.encounterType} reused=${reused}`);
 
     return {
       invoiceId: routed.invoiceId,
       invoiceNumber: routed.invoiceNumber,
       encounterId: encounter.id,
       isNewInvoice: routed.isNew,
+      encounterReused: reused,
     };
+  }).then(async (result) => {
+    void refreshVisitAggregationCache(params.visitId);
+    return result;
   });
 }

@@ -544,6 +544,7 @@ interface VisitInvoiceSummary {
   readiness: {
     hasInvoice: boolean;
     allLinesHaveEncounter: boolean;
+    totalsMatch: boolean;
     isFullyPaid: boolean;
     canFinalize: boolean;
     issues: string[];
@@ -734,6 +735,7 @@ const EncounterBreakdownView = memo(function EncounterBreakdownView({
             isFinalClosed={summary.invoice?.isFinalClosed ?? false}
             onFinalize={onFinalize}
             isPending={isFinalizePending}
+            totals={summary.totals}
           />
         </div>
 
@@ -839,20 +841,36 @@ const EncounterPaymentsView = memo(function EncounterPaymentsView({
   );
 });
 
+const CLASSIFICATION_LABELS: Record<string, { label: string; colorClass: string }> = {
+  fully_paid: { label: "مدفوعة بالكامل", colorClass: "text-green-700 bg-green-50 border-green-200" },
+  accounts_receivable: { label: "ذمم مدينة (AR)", colorClass: "text-amber-700 bg-amber-50 border-amber-200" },
+  refund_due: { label: "مردود مستحق", colorClass: "text-red-700 bg-red-50 border-red-200" },
+};
+
 const FinalizationPanel = memo(function FinalizationPanel({
-  readiness, invoiceStatus, isFinalClosed, onFinalize, isPending,
+  readiness, invoiceStatus, isFinalClosed, onFinalize, isPending, totals,
 }: {
   readiness: VisitInvoiceSummary["readiness"];
   invoiceStatus: string | undefined;
   isFinalClosed: boolean;
   onFinalize: () => void;
   isPending: boolean;
+  totals: VisitInvoiceSummary["totals"];
 }) {
   if (isFinalClosed) {
     return (
       <div className="flex flex-col items-center gap-1 p-3 rounded-xl border border-green-200 bg-green-50">
         <Lock className="h-5 w-5 text-green-600" />
         <span className="text-xs font-semibold text-green-700">معتمد ومغلق نهائياً</span>
+      </div>
+    );
+  }
+
+  if (invoiceStatus === "finalizing") {
+    return (
+      <div className="flex flex-col items-center gap-1 p-3 rounded-xl border border-amber-200 bg-amber-50">
+        <Loader2 className="h-5 w-5 text-amber-600 animate-spin" />
+        <span className="text-xs font-semibold text-amber-700">جاري الاعتماد...</span>
       </div>
     );
   }
@@ -866,6 +884,14 @@ const FinalizationPanel = memo(function FinalizationPanel({
     );
   }
 
+  const remaining = totals.remaining;
+  const classification = remaining <= 0.01 && remaining >= -0.01
+    ? "fully_paid"
+    : remaining > 0.01
+      ? "accounts_receivable"
+      : "refund_due";
+  const classInfo = CLASSIFICATION_LABELS[classification];
+
   return (
     <div className="border rounded-xl p-3 flex flex-col gap-2">
       <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
@@ -876,14 +902,24 @@ const FinalizationPanel = memo(function FinalizationPanel({
       <div className="flex flex-col gap-1">
         <ReadinessCheck label="فاتورة موجودة" ok={readiness.hasInvoice} />
         <ReadinessCheck label="كل البنود مرتبطة" ok={readiness.allLinesHaveEncounter} />
-        <ReadinessCheck label="مدفوعة بالكامل" ok={readiness.isFullyPaid} />
+        <ReadinessCheck label="الإجماليات متطابقة" ok={readiness.totalsMatch} />
       </div>
 
+      {classInfo && (
+        <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md border text-[10px] font-medium ${classInfo.colorClass}`} data-testid="badge-payment-classification">
+          <Banknote className="h-3 w-3" />
+          <span>{classInfo.label}</span>
+          {classification !== "fully_paid" && (
+            <span className="font-mono mr-auto">{fmtMoney(Math.abs(remaining))}</span>
+          )}
+        </div>
+      )}
+
       {readiness.issues.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 mt-1">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-2 mt-1">
           {readiness.issues.map((issue, i) => (
-            <div key={i} className="flex items-start gap-1.5 text-[10px] text-amber-800">
-              <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" />
+            <div key={i} className="flex items-start gap-1.5 text-[10px] text-red-800">
+              <XCircle className="h-3 w-3 shrink-0 mt-0.5" />
               <span>{issue}</span>
             </div>
           ))}
@@ -911,7 +947,11 @@ const FinalizationPanel = memo(function FinalizationPanel({
                 تأكيد الاعتماد
               </AlertDialogTitle>
               <AlertDialogDescription>
-                سيتم اعتماد فاتورة الزيارة — لن يمكن تعديل البنود بعد الاعتماد.
+                {classification === "accounts_receivable"
+                  ? `سيتم اعتماد الفاتورة مع تسجيل ${fmtMoney(Math.abs(remaining))} كذمم مدينة`
+                  : classification === "refund_due"
+                    ? `سيتم اعتماد الفاتورة مع تسجيل ${fmtMoney(Math.abs(remaining))} كمردود مستحق`
+                    : "سيتم اعتماد فاتورة الزيارة — لن يمكن تعديل البنود بعد الاعتماد."}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

@@ -748,9 +748,34 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
       ON patient_invoice_lines (encounter_id)
       WHERE encounter_id IS NOT NULL AND is_void = false
     `);
+    await db.execute(sql`DROP INDEX IF EXISTS idx_enc_visit_type_active`);
+    await db.execute(sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_enc_visit_type_dept_active
+      ON encounters (visit_id, encounter_type, COALESCE(department_id, '00000000-0000-0000-0000-000000000000'))
+      WHERE status = 'active'
+    `);
     log("[STARTUP] Performance indexes ensured");
   } catch (err: unknown) {
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] performance index error");
+  }
+
+  // ── 5h-enum. Add 'finalizing' to patient_invoice_status enum ─────────────
+  try {
+    await db.execute(sql`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_enum
+          WHERE enumtypid = 'patient_invoice_status'::regtype AND enumlabel = 'finalizing'
+        ) THEN
+          ALTER TYPE patient_invoice_status ADD VALUE IF NOT EXISTS 'finalizing' BEFORE 'finalized';
+        END IF;
+      END
+      $$
+    `);
+    log("[STARTUP] patient_invoice_status 'finalizing' enum value ensured");
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] enum alter error");
   }
 
   // ── 5h-post. Seed default system settings for cashier GL ─────────────────

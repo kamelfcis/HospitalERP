@@ -1,0 +1,275 @@
+أنت Senior ERP/HMIS Architect + Senior Full-Stack + Database/Performance Engineer.
+النظام الحالي يعمل بالفعل ويحتوي على:
+
+* Visit-centric model ✔️
+* Encounter model (parent/child) ✔️
+* Draft Invoice واحدة لكل Visit ✔️
+* Aggregation Engine ✔️
+* Finalization Guard ✔️
+* Consolidated Invoice UI ✔️
+* نظام "إدارة الحسابات" لربط الشاشات بالقيود المحاسبية ✔️
+
+المطلوب الآن:
+**Production Hardening + Performance + Accounting Alignment + Profitability Readiness**
+بدون كسر أي جزء قائم، وبـ refactor تدريجي احترافي.
+
+---
+
+# 🎯 الهدف النهائي
+
+* نظام سريع (Instant load)
+* تجميع لحظي بدون lag
+* Finalization مرن وصحيح محاسبيًا
+* بدون تكرار أو race conditions
+* جاهز للتقارير المالية والربحية
+* متكامل مع إدارة الحسابات الحالية
+
+---
+
+# ⚠️ قواعد إلزامية (مهمة جدًا)
+
+## ممنوع:
+
+* ممنوع إنشاء محرك قيود محاسبية جديد
+* ممنوع hardcoded accounts داخل الكود
+* ممنوع bypass لشاشة "إدارة الحسابات"
+* ممنوع حساب totals في React
+* ممنوع N+1 queries
+* ممنوع duplicate draft invoices لنفس الزيارة
+* ممنوع إنشاء Visit جديدة لنفس الحالة
+
+## إلزامي:
+
+* Server-side truth
+* Atomic + idempotent operations
+* Index-driven queries
+* Incremental aggregation
+* Reuse الموجود بالكامل
+* التكامل مع **إدارة الحسابات** عند الحفظ النهائي فقط
+
+---
+
+# 🧠 الجزء 1: Finalization Logic (تصحيح محاسبي مهم)
+
+## عدّل FinalizationGuard:
+
+### بدل:
+
+"must be fully paid"
+
+### اجعل:
+
+```text
+3 حالات:
+
+1) Paid بالكامل → Close
+2) Remaining → Accounts Receivable (مريض/شركة)
+3) Refund → Reverse Entry
+```
+
+## المطلوب:
+
+* السماح بالاعتماد مع رصيد متبقي
+* تصنيف المتبقي كـ AR
+* ربطه بـ payer (cash / insurance)
+
+---
+
+# ⚡ الجزء 2: Incremental Aggregation (أداء عالي)
+
+## أنشئ:
+
+```text
+VisitAggregationCache
+```
+
+## يتحدث عند:
+
+* إضافة/تعديل/حذف line
+* payment
+* transfer
+* finalize
+
+## الهدف:
+
+* فتح الفاتورة خلال milliseconds
+* منع full recompute
+
+---
+
+# 💣 الجزء 3: Concurrency & Safety
+
+## قبل finalize:
+
+```text
+status = "finalizing"
+```
+
+## مع:
+
+* row lock (FOR UPDATE)
+* منع double submit
+* rollback آمن
+
+---
+
+# 🧠 الجزء 4: Smart Encounter Routing
+
+## القاعدة:
+
+```text
+if encounter موجود لنفس النوع → reuse
+else → create
+```
+
+## مثال:
+
+* 10 تحاليل → نفس LAB encounter
+* أشعة متعددة → نفس RAD encounter
+
+---
+
+# 🧾 الجزء 5: Data Integrity Rules
+
+## enforce:
+
+* كل line لها encounter_id
+* لا orphan lines
+* لا invoice بدون visit_id
+* draft واحدة فقط لكل visit
+
+---
+
+# ⚡ الجزء 6: Query & Index Optimization
+
+## راجع:
+
+* aggregation queries
+* invoice loading
+* patient search
+
+## أصلح:
+
+* casts في WHERE
+* functions تعطل index
+* أي N+1
+
+---
+
+# 🎨 الجزء 7: UX تحسينات
+
+## Encounter Timeline:
+
+```text
+Surgery ✔ → ICU ● → Ward ○
+           ↘ Lab
+```
+
+## عناصر أساسية:
+
+* status colors
+* timestamps
+* doctor
+
+## عناصر UI:
+
+* Totals Bar ثابت
+* Payments Panel
+* Finalization Panel
+
+---
+
+# 🔐 الجزء 8: التكامل مع إدارة الحسابات (Critical)
+
+## النظام الحالي:
+
+* شاشة "إدارة الحسابات" تربط العمليات بالقيود
+* القيد يُنشأ أوتوماتيك عند الحفظ النهائي
+
+## إذن:
+
+### ممنوع:
+
+* إنشاء accounting engine جديد
+* أو تحديد حسابات داخل الكود
+
+### المطلوب:
+
+1. عند Finalization:
+
+   * استخدم نفس posting pipeline الحالية
+   * لا تغير منطق القيود
+
+2. أضف فقط:
+
+   * visit_id
+   * encounter_id
+   * department
+   * payer context
+
+3. اجعل FinalizationGuard يتحقق:
+
+   * أن account mappings موجودة
+
+4. أي تحليل إضافي:
+
+   * يتم عبر metadata / cost center
+   * وليس تغيير الحسابات
+
+---
+
+# 📊 الجزء 9: Profitability Readiness (تحضير المرحلة القادمة)
+
+## أضف دعم:
+
+* revenue per encounter
+* revenue per department
+* cost center linking
+* payer split (cash vs insurance)
+
+## بدون:
+
+* كسر النظام المحاسبي الحالي
+
+---
+
+# 🧩 الجزء 10: Logging & Audit
+
+## سجل:
+
+* encounter creation/reuse
+* routing
+* finalization
+* payments
+* errors
+
+---
+
+# 🚀 Execution Steps
+
+1. تعديل FinalizationGuard (AR + Refund)
+2. إضافة Aggregation Cache
+3. إضافة Concurrency Guard
+4. تحسين Encounter Routing
+5. تطبيق Data Integrity validations
+6. تحسين queries + indexes
+7. تحسين UI
+8. ربط Finalization بإدارة الحسابات
+9. إضافة logging
+10. اختبار شامل
+
+---
+
+# 🎯 النتيجة المطلوبة
+
+* فاتورة مجمعة تفتح فورًا
+* تجميع لحظي بدون lag
+* Finalization مرن
+* لا duplication
+* لا race conditions
+* قيود محاسبية صحيحة أوتوماتيك
+* جاهز للتقارير والربحية
+
+---
+
+ابدأ التنفيذ فورًا، مع الحفاظ الكامل على كل ما هو شغال، وعدم إعادة بناء أي جزء بدون داعي، والتركيز على الأداء والاستقرار والتكامل مع إدارة الحسابات.
