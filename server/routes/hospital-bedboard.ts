@@ -53,9 +53,12 @@ export function registerBedBoardRoutes(app: Express) {
     });
   });
 
-  app.get("/api/bed-board", requireAuth, checkHospitalAccess, async (_req, res) => {
+  app.get("/api/bed-board", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
-      res.json(await storage.getBedBoard());
+      const userId = (req.session as { userId?: string }).userId!;
+      const scope = await storage.getUserOperationalScope(userId);
+      const departmentIds = scope.isFullAccess ? undefined : (scope.allowedDepartmentIds.length > 0 ? scope.allowedDepartmentIds : undefined);
+      res.json(await storage.getBedBoard(departmentIds));
     } catch (e: unknown) {
       res.status(500).json({ message: e instanceof Error ? e.message : String(e) });
     }

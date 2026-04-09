@@ -86,35 +86,37 @@ export function registerRoomsRoutes(app: Express) {
   app.get("/api/floors", requireAuth, checkHospitalAccess, async (_req, res) => {
     try {
       const result = await db.execute(sql`
-        SELECT f.id, f.name_ar, f.sort_order,
+        SELECT f.id, f.name_ar, f.sort_order, f.department_id,
+               d.name_ar AS department_name,
                COUNT(r.id)::int AS room_count,
                (SELECT COUNT(*)::int FROM beds b JOIN rooms r2 ON r2.id = b.room_id WHERE r2.floor_id = f.id) AS bed_count
         FROM floors f
         LEFT JOIN rooms r ON r.floor_id = f.id
-        GROUP BY f.id
+        LEFT JOIN departments d ON d.id = f.department_id
+        GROUP BY f.id, d.name_ar
         ORDER BY f.sort_order, f.name_ar
       `);
       res.json(result.rows.map((r: any) => {
         const row = r as Record<string, unknown>;
-        return { id: row.id, nameAr: row.name_ar, sortOrder: row.sort_order, roomCount: row.room_count, bedCount: row.bed_count };
+        return { id: row.id, nameAr: row.name_ar, sortOrder: row.sort_order, departmentId: row.department_id || null, departmentName: row.department_name || null, roomCount: row.room_count, bedCount: row.bed_count };
       }));
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
   app.post("/api/floors", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
-      const { nameAr, sortOrder } = req.body;
+      const { nameAr, sortOrder, departmentId } = req.body;
       if (!nameAr) return res.status(400).json({ message: "اسم الدور مطلوب" });
-      const result = await db.insert(floors).values({ nameAr, sortOrder: sortOrder ?? 0 }).returning();
+      const result = await db.insert(floors).values({ nameAr, sortOrder: sortOrder ?? 0, departmentId: departmentId || null }).returning();
       res.json(result[0]);
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
   app.put("/api/floors/:id", requireAuth, checkHospitalAccess, async (req, res) => {
     try {
-      const { nameAr, sortOrder } = req.body;
+      const { nameAr, sortOrder, departmentId } = req.body;
       if (!nameAr) return res.status(400).json({ message: "اسم الدور مطلوب" });
-      const result = await db.update(floors).set({ nameAr, sortOrder: sortOrder ?? 0 }).where(eq(floors.id, req.params.id as string)).returning();
+      const result = await db.update(floors).set({ nameAr, sortOrder: sortOrder ?? 0, departmentId: departmentId || null }).where(eq(floors.id, req.params.id as string)).returning();
       if (result.length === 0) return res.status(404).json({ message: "الدور غير موجود" });
       res.json(result[0]);
     } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }

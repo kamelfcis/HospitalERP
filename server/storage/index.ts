@@ -572,7 +572,7 @@ export interface IStorage {
   upsertSurgeryCategoryPrice(category: string, price: string): Promise<SurgeryCategoryPrice>;
   updateInvoiceSurgeryType(invoiceId: string, surgeryTypeId: string | null): Promise<void>;
   // Bed Board
-  getBedBoard(): Promise<Array<Floor & { rooms: Array<Room & { beds: Array<Bed & { patientName?: string; admissionNumber?: string }> }> }>>;
+  getBedBoard(departmentIds?: string[]): Promise<Array<Floor & { departmentId?: string | null; departmentName?: string | null; rooms: Array<Room & { beds: Array<Bed & { patientName?: string; admissionNumber?: string }> }> }>>;
   getAvailableBeds(): Promise<Array<Bed & { roomNameAr: string; floorNameAr: string }>>;
   admitPatientToBed(params: { bedId: string; patientName: string; patientPhone?: string; patientId?: string; departmentId?: string; serviceId?: string; doctorName?: string; notes?: string; paymentType?: string; insuranceCompany?: string; surgeryTypeId?: string }): Promise<{ bed: Bed; admissionId: string; invoiceId: string; segmentId?: string }>;
   transferPatientBed(params: { sourceBedId: string; targetBedId: string; newServiceId?: string; newInvoiceId?: string }): Promise<{ sourceBed: Bed; targetBed: Bed }>;

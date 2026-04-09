@@ -31,6 +31,8 @@ export interface FloorData {
   id: string;
   nameAr: string;
   sortOrder: number;
+  departmentId?: string | null;
+  departmentName?: string | null;
   rooms: RoomData[];
 }
 

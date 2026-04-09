@@ -155,8 +155,8 @@ export default function BedBoard() {
       )}
 
       {/* ── Floor sections ────────────────────────────────────────────────── */}
-      {board.map((floor) => (
-        <FloorSection key={floor.id} floor={floor} onAction={handleAction} />
+      {board.map((floor, idx) => (
+        <FloorSection key={floor.id} floor={floor} floorIndex={idx} onAction={handleAction} />
       ))}
 
       {/* ── Modals ───────────────────────────────────────────────────────── */}

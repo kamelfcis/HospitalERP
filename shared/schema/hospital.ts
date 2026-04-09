@@ -340,9 +340,11 @@ export const floors = pgTable("floors", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   nameAr: text("name_ar").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
+  departmentId: varchar("department_id").references(() => departments.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   sortIdx: index("idx_floors_sort").on(table.sortOrder),
+  deptIdx: index("idx_floors_dept").on(table.departmentId),
 }));
 
 export const rooms = pgTable("rooms", {

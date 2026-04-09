@@ -36,10 +36,16 @@ import type { DatabaseStorage } from "./index";
 import type { InsertAdmission, InsertPatientInvoiceHeader } from "@shared/schema";
 
 const methods = {
-  async getBedBoard(this: DatabaseStorage) {
+  async getBedBoard(this: DatabaseStorage, departmentIds?: string[]) {
+    const deptFilter = departmentIds && departmentIds.length > 0
+      ? sql`AND (f.department_id = ANY(ARRAY[${sql.join(departmentIds.map(d => sql`${d}`), sql`, `)}]::text[]))`
+      : sql``;
+
     const result = await db.execute(sql`
       SELECT
         f.id   AS floor_id,   f.name_ar AS floor_name_ar, f.sort_order AS floor_sort,
+        f.department_id AS floor_dept_id,
+        d.name_ar AS floor_dept_name,
         r.id   AS room_id,    r.name_ar AS room_name_ar,  r.room_number, r.sort_order AS room_sort,
         r.service_id AS room_service_id,
         svc.name_ar AS room_service_name_ar, svc.base_price AS room_service_price,
@@ -49,8 +55,10 @@ const methods = {
       FROM floors f
       JOIN rooms r  ON r.floor_id = f.id
       LEFT JOIN services svc ON svc.id = r.service_id
+      LEFT JOIN departments d ON d.id = f.department_id
       JOIN beds  b  ON b.room_id  = r.id
       LEFT JOIN admissions a ON a.id = b.current_admission_id
+      WHERE 1=1 ${deptFilter}
       ORDER BY f.sort_order, r.sort_order, b.bed_number
     `);
 
@@ -59,6 +67,8 @@ const methods = {
       if (!floorsMap.has(row.floor_id as string)) {
         floorsMap.set(row.floor_id as string, {
           id: row.floor_id, nameAr: row.floor_name_ar, sortOrder: row.floor_sort,
+          departmentId: row.floor_dept_id || null,
+          departmentName: row.floor_dept_name || null,
           rooms: new Map<string, any>(),
         });
       }

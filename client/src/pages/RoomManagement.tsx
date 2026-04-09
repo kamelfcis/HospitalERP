@@ -43,6 +43,8 @@ interface FloorRow {
   id: string;
   nameAr: string;
   sortOrder: number;
+  departmentId: string | null;
+  departmentName: string | null;
   roomCount: number;
   bedCount: number;
 }
@@ -72,7 +74,7 @@ export default function RoomManagement() {
   const [expandedRooms, setExpandedRooms] = useState<Set<string>>(new Set());
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [floorForm, setFloorForm] = useState({ nameAr: "", sortOrder: 0 });
+  const [floorForm, setFloorForm] = useState({ nameAr: "", sortOrder: 0, departmentId: "" });
   const [roomForm, setRoomForm] = useState({ floorId: "", nameAr: "", roomNumber: "", serviceId: "" });
   const [bedForm, setBedForm] = useState({ roomId: "", bedNumber: "" });
 
@@ -93,6 +95,10 @@ export default function RoomManagement() {
     queryFn: () => fetch("/api/services?active=true&search=%D9%82%D8%A7%D9%85&pageSize=200").then(r => r.json()),
   });
   const servicesData = servicesResponse?.data;
+
+  const { data: departments } = useQuery<{ id: string; nameAr: string }[]>({
+    queryKey: ["/api/departments"],
+  });
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/floors"] });
@@ -152,7 +158,7 @@ export default function RoomManagement() {
   const closeDialog = () => {
     setDialogMode(null);
     setEditingId(null);
-    setFloorForm({ nameAr: "", sortOrder: 0 });
+    setFloorForm({ nameAr: "", sortOrder: 0, departmentId: "" });
     setRoomForm({ floorId: "", nameAr: "", roomNumber: "", serviceId: "" });
     setBedForm({ roomId: "", bedNumber: "" });
   };
@@ -160,13 +166,13 @@ export default function RoomManagement() {
   const openAddFloor = () => {
     setDialogMode("floor");
     setEditingId(null);
-    setFloorForm({ nameAr: "", sortOrder: (floorsData?.length ?? 0) + 1 });
+    setFloorForm({ nameAr: "", sortOrder: (floorsData?.length ?? 0) + 1, departmentId: "" });
   };
 
   const openEditFloor = (f: FloorRow) => {
     setDialogMode("floor");
     setEditingId(f.id);
-    setFloorForm({ nameAr: f.nameAr, sortOrder: f.sortOrder });
+    setFloorForm({ nameAr: f.nameAr, sortOrder: f.sortOrder, departmentId: f.departmentId ?? "" });
   };
 
   const openAddRoom = (floorId: string) => {
@@ -209,10 +215,14 @@ export default function RoomManagement() {
         toast({ title: "خطأ", description: "اسم الدور مطلوب", variant: "destructive" });
         return;
       }
+      const floorPayload = {
+        ...floorForm,
+        departmentId: floorForm.departmentId || null,
+      };
       if (editingId) {
-        updateFloor.mutate({ id: editingId, data: floorForm });
+        updateFloor.mutate({ id: editingId, data: floorPayload });
       } else {
-        createFloor.mutate(floorForm);
+        createFloor.mutate(floorPayload);
       }
     } else if (dialogMode === "room") {
       if (!roomForm.nameAr.trim()) {
@@ -306,6 +316,11 @@ export default function RoomManagement() {
                     <Badge variant="secondary" className="text-[10px] px-1.5 py-0" data-testid={`text-floor-stats-${floor.id}`}>
                       {floor.roomCount} غرفة — {floor.bedCount} سرير
                     </Badge>
+                    {floor.departmentName && (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-blue-300 text-blue-700 dark:text-blue-400" data-testid={`text-floor-dept-${floor.id}`}>
+                        {floor.departmentName}
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                     <Button variant="ghost" size="icon" className="h-6 w-6"
@@ -483,6 +498,23 @@ export default function RoomManagement() {
                     className="peachtree-input w-full text-xs font-mono"
                     data-testid="input-floor-sort"
                   />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">القسم (اختياري)</Label>
+                  <Select
+                    value={floorForm.departmentId || "__none__"}
+                    onValueChange={v => setFloorForm({ ...floorForm, departmentId: v === "__none__" ? "" : v })}
+                  >
+                    <SelectTrigger className="h-8 text-xs" data-testid="select-floor-department">
+                      <SelectValue placeholder="بدون قسم" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">بدون قسم</SelectItem>
+                      {departments?.map(d => (
+                        <SelectItem key={d.id} value={d.id}>{d.nameAr}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </>
             )}
