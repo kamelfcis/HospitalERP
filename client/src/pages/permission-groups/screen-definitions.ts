@@ -303,7 +303,7 @@ export const SCREEN_MATRIX: ScreenCategoryDef[] = [
   {
     id:            "hospital-patients",
     label:         "المستشفى والمرضى",
-    actionColumns: ["create", "edit", "delete", "finalize", "discount", "payments", "transfer_doctor", "merge", "registry_view"],
+    actionColumns: ["create", "edit", "delete", "finalize", "approve", "discount", "payments", "transfer_doctor", "merge", "registry_view"],
     screens: [
       {
         id:          "reception",
@@ -324,6 +324,7 @@ export const SCREEN_MATRIX: ScreenCategoryDef[] = [
           { type: "payments",        permKey: "patient_invoices.payments" },
           { type: "discount",        permKey: "patient_invoices.discount" },
           { type: "transfer_doctor", permKey: "patient_invoices.transfer_doctor" },
+          { type: "approve",         permKey: "invoice.approve_zero_price" },
         ],
       },
       {
@@ -387,6 +388,7 @@ export const SCREEN_MATRIX: ScreenCategoryDef[] = [
         actions: [
           { type: "consult",        permKey: "doctor.consultation" },
           { type: "view_statement", permKey: "doctor.view_statement" },
+          { type: "view_all",       permKey: "clinic.intake.view" },
           { type: "intake",         permKey: "clinic.intake.manage" },
           { type: "manage",         permKey: "clinic.favorites.manage" },
         ],
