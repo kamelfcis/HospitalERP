@@ -563,6 +563,7 @@ export function UserFormDialog({
             {/* ── نطاق الأقسام والعيادات لغير الكاشير ──────── */}
             {!showCashierScope && (departments.length > 0 || clinics.length > 0) && (
               <ScopeSelector
+                variant="general"
                 pharmacies={[]}
                 departments={departments}
                 clinics={clinics}

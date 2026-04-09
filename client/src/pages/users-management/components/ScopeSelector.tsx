@@ -16,12 +16,14 @@ interface ScopeSelectorProps {
   onPharmaciesChange:   (ids: string[]) => void;
   onDepartmentsChange:  (ids: string[]) => void;
   onClinicsChange:      (ids: string[]) => void;
+  variant?:             "cashier" | "general";
 }
 
 export function ScopeSelector({
   pharmacies, departments, clinics,
   allowedPharmacyIds, allowedDepartmentIds, allowedClinicIds,
   onPharmaciesChange, onDepartmentsChange, onClinicsChange,
+  variant = "cashier",
 }: ScopeSelectorProps) {
   function toggleItem(list: string[], id: string, onChange: (ids: string[]) => void) {
     if (list.includes(id)) onChange(list.filter(x => x !== id));
@@ -30,9 +32,13 @@ export function ScopeSelector({
 
   return (
     <div className="space-y-3 rounded-md border p-3">
-      <Label className="font-semibold text-sm">نطاق الكاشير — الوحدات المسموحة</Label>
+      <Label className="font-semibold text-sm">
+        {variant === "cashier" ? "نطاق الكاشير — الوحدات المسموحة" : "نطاق الأقسام المسموحة"}
+      </Label>
       <p className="text-xs text-muted-foreground">
-        اختر الصيدليات والأقسام التي يعمل فيها هذا الكاشير. اتركها فارغة لقصره على قسمه الافتراضي.
+        {variant === "cashier"
+          ? "اختر الصيدليات والأقسام التي يعمل فيها هذا الكاشير. اتركها فارغة لقصره على قسمه الافتراضي."
+          : "اختر الأقسام التي يستطيع هذا الموظف الوصول إليها (مثلاً لوحة الأسرّة). اتركها فارغة لقصره على قسمه الافتراضي."}
       </p>
 
       {pharmacies.length > 0 && (
