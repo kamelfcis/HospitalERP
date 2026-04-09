@@ -374,8 +374,23 @@ const methods = {
       JOIN accounts a ON a.id = t.gl_account_id
       WHERE ut.user_id = ${userId}
     `);
-    if (!rows.rows.length) return null;
-    const r = rows.rows[0] as any;
+    if (rows.rows.length) {
+      const r = rows.rows[0] as any;
+      return {
+        id: r.id, name: r.name, glAccountId: r.gl_account_id,
+        isActive: r.is_active, notes: r.notes, createdAt: r.created_at,
+        glAccountCode: r.gl_account_code, glAccountName: r.gl_account_name,
+      };
+    }
+    const fallback = await db.execute(sql`
+      SELECT t.*, a.code AS gl_account_code, a.name AS gl_account_name
+      FROM users u
+      JOIN treasuries t ON t.gl_account_id = u.cashier_gl_account_id
+      JOIN accounts a ON a.id = t.gl_account_id
+      WHERE u.id = ${userId} AND u.cashier_gl_account_id IS NOT NULL
+    `);
+    if (!fallback.rows.length) return null;
+    const r = fallback.rows[0] as any;
     return {
       id: r.id, name: r.name, glAccountId: r.gl_account_id,
       isActive: r.is_active, notes: r.notes, createdAt: r.created_at,
