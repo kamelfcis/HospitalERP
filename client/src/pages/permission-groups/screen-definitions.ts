@@ -18,11 +18,12 @@ export type ActionType =
   | "create" | "edit" | "delete"
   | "post" | "finalize" | "approve" | "execute" | "reverse"
   | "manage"
-  | "collect" | "refund" | "view_totals" | "all_units"
+  | "collect" | "refund" | "view_totals" | "all_units" | "open_shift"
   | "discount" | "payments" | "transfer_doctor"
   | "view_all" | "view_own" | "book" | "consult" | "view_statement"
-  | "pharmacy_orders" | "batch"
-  | "merge" | "registry_view";
+  | "pharmacy_orders" | "batch" | "intake"
+  | "merge" | "registry_view"
+  | "settle" | "override";
 
 export const ACTION_LABELS: Record<ActionType, string> = {
   create:           "إنشاء",
@@ -38,6 +39,7 @@ export const ACTION_LABELS: Record<ActionType, string> = {
   refund:           "مرتجع",
   view_totals:      "ملخص الوردية",
   all_units:        "كل الوحدات",
+  open_shift:       "فتح وردية",
   discount:         "خصم",
   payments:         "مدفوعات",
   transfer_doctor:  "تحويل طبيب",
@@ -48,8 +50,11 @@ export const ACTION_LABELS: Record<ActionType, string> = {
   view_statement:   "كشف الطبيب",
   pharmacy_orders:  "أوامر صيدلية",
   batch:            "إدخال جماعي",
+  intake:           "استقبال وقياسات",
   merge:            "دمج",
   registry_view:    "سجل الفواتير",
+  settle:           "تسوية",
+  override:         "تجاوز / استثناء",
 };
 
 export interface ScreenActionDef {
@@ -167,7 +172,7 @@ export const SCREEN_MATRIX: ScreenCategoryDef[] = [
         id:          "suppliers",
         label:       "إدارة الموردين",
         menuPermKey: "receiving.view",
-        actions: [],
+        actions:     [],
       },
       {
         id:          "supplier-receiving",
@@ -190,12 +195,26 @@ export const SCREEN_MATRIX: ScreenCategoryDef[] = [
         ],
       },
       {
+        id:          "supplier-payments",
+        label:       "سداد الموردين",
+        menuPermKey: "supplier_payments.view",
+        actions:     [],
+      },
+      {
         id:          "store-transfers",
         label:       "التحويلات المخزنية",
         menuPermKey: "transfers.view",
         actions: [
           { type: "create",  permKey: "transfers.create" },
           { type: "execute", permKey: "transfers.execute" },
+        ],
+      },
+      {
+        id:          "opening-stock",
+        label:       "الرصيد الافتتاحي للمخزن",
+        menuPermKey: "opening_stock.manage",
+        actions: [
+          { type: "manage", permKey: "opening_stock.manage" },
         ],
       },
       {
@@ -207,14 +226,84 @@ export const SCREEN_MATRIX: ScreenCategoryDef[] = [
           { type: "post",   permKey: "stock_count.post" },
         ],
       },
+      {
+        id:          "shortage-notebook",
+        label:       "كشكول النواقص",
+        menuPermKey: "shortage.view",
+        actions: [
+          { type: "manage", permKey: "shortage.manage" },
+        ],
+      },
+      {
+        id:          "oversell-resolution",
+        label:       "صرف بدون رصيد (معلّق)",
+        menuPermKey: "oversell.view",
+        actions: [
+          { type: "manage",  permKey: "oversell.manage" },
+          { type: "approve", permKey: "oversell.approve" },
+        ],
+      },
     ],
   },
 
-  // ── المبيعات والمرضى ──────────────────────────────────────────────────────
+  // ── المبيعات والتحصيل ─────────────────────────────────────────────────────
   {
-    id:            "sales-patients",
-    label:         "المبيعات والمرضى",
-    actionColumns: ["create", "edit", "delete", "finalize", "discount", "payments", "transfer_doctor", "registry_view"],
+    id:            "sales-collection",
+    label:         "المبيعات والتحصيل",
+    actionColumns: ["create", "finalize", "collect", "refund", "view_totals", "all_units", "open_shift", "registry_view"],
+    screens: [
+      {
+        id:          "sales-invoices",
+        label:       "فواتير البيع",
+        menuPermKey: "sales.view",
+        actions: [
+          { type: "create",        permKey: "sales.create" },
+          { type: "finalize",      permKey: "sales.finalize" },
+          { type: "registry_view", permKey: "sales.registry_view" },
+        ],
+      },
+      {
+        id:          "customer-payments",
+        label:       "تحصيل الآجل",
+        menuPermKey: "credit_payment.view",
+        actions: [
+          { type: "collect", permKey: "credit_payment.manage" },
+        ],
+      },
+      {
+        id:          "delivery-payments",
+        label:       "تحصيل التوصيل المنزلي",
+        menuPermKey: "delivery_payment.view",
+        actions: [
+          { type: "collect", permKey: "delivery_payment.manage" },
+        ],
+      },
+      {
+        id:          "cashier-collection",
+        label:       "شاشة تحصيل الكاشير",
+        menuPermKey: "cashier.view",
+        actions: [
+          { type: "open_shift",  permKey: "cashier.open_shift" },
+          { type: "collect",     permKey: "cashier.collect" },
+          { type: "refund",      permKey: "cashier.refund" },
+          { type: "view_totals", permKey: "cashier.view_shift_totals" },
+          { type: "all_units",   permKey: "cashier.all_units" },
+        ],
+      },
+      {
+        id:          "cashier-handover",
+        label:       "تقرير تسليم الدرج",
+        menuPermKey: "cashier.handover_view",
+        actions:     [],
+      },
+    ],
+  },
+
+  // ── المستشفى والمرضى ──────────────────────────────────────────────────────
+  {
+    id:            "hospital-patients",
+    label:         "المستشفى والمرضى",
+    actionColumns: ["create", "edit", "delete", "finalize", "discount", "payments", "transfer_doctor", "merge", "registry_view"],
     screens: [
       {
         id:          "reception",
@@ -222,16 +311,6 @@ export const SCREEN_MATRIX: ScreenCategoryDef[] = [
         menuPermKey: "patients.view",
         actions: [
           { type: "create", permKey: "patients.create" },
-        ],
-      },
-      {
-        id:          "sales-invoices",
-        label:       "فواتير البيع",
-        menuPermKey: "sales.view",
-        actions: [
-          { type: "create",       permKey: "sales.create" },
-          { type: "finalize",     permKey: "sales.finalize" },
-          { type: "registry_view", permKey: "sales.registry_view" },
         ],
       },
       {
@@ -285,31 +364,11 @@ export const SCREEN_MATRIX: ScreenCategoryDef[] = [
     ],
   },
 
-  // ── الكاشير ──────────────────────────────────────────────────────────────
-  {
-    id:            "cashier",
-    label:         "الكاشير",
-    actionColumns: ["collect", "refund", "view_totals", "all_units"],
-    screens: [
-      {
-        id:          "cashier-collection",
-        label:       "شاشة تحصيل الكاشير",
-        menuPermKey: "cashier.view",
-        actions: [
-          { type: "collect",    permKey: "cashier.collect" },
-          { type: "refund",     permKey: "cashier.refund" },
-          { type: "view_totals", permKey: "cashier.view_shift_totals" },
-          { type: "all_units",  permKey: "cashier.all_units" },
-        ],
-      },
-    ],
-  },
-
   // ── العيادات الخارجية ─────────────────────────────────────────────────────
   {
     id:            "clinic",
     label:         "العيادات الخارجية",
-    actionColumns: ["view_all", "book", "manage", "consult", "view_statement", "execute", "pharmacy_orders", "batch", "discount"],
+    actionColumns: ["view_all", "book", "manage", "consult", "view_statement", "execute", "pharmacy_orders", "batch", "discount", "intake"],
     screens: [
       {
         id:          "clinic-booking",
@@ -328,6 +387,8 @@ export const SCREEN_MATRIX: ScreenCategoryDef[] = [
         actions: [
           { type: "consult",        permKey: "doctor.consultation" },
           { type: "view_statement", permKey: "doctor.view_statement" },
+          { type: "intake",         permKey: "clinic.intake.manage" },
+          { type: "manage",         permKey: "clinic.favorites.manage" },
         ],
       },
       {
@@ -360,7 +421,7 @@ export const SCREEN_MATRIX: ScreenCategoryDef[] = [
         id:          "pharmacy-orders",
         label:       "أوامر أدوية الصيدلية",
         menuPermKey: "clinic.pharmacy_orders",
-        actions: [],
+        actions:     [],
       },
     ],
   },
@@ -375,19 +436,19 @@ export const SCREEN_MATRIX: ScreenCategoryDef[] = [
         id:          "bed-board",
         label:       "لوحة الأسرّة",
         menuPermKey: "patient_invoices.view",
-        actions: [],
+        actions:     [],
       },
       {
         id:          "room-management",
         label:       "إدارة الأدوار والغرف",
         menuPermKey: "patient_invoices.view",
-        actions: [],
+        actions:     [],
       },
       {
         id:          "surgery-types",
         label:       "أنواع العمليات الجراحية",
         menuPermKey: "patient_invoices.view",
-        actions: [],
+        actions:     [],
       },
       {
         id:          "admissions",
@@ -396,6 +457,41 @@ export const SCREEN_MATRIX: ScreenCategoryDef[] = [
         actions: [
           { type: "create", permKey: "admissions.create" },
           { type: "manage", permKey: "admissions.manage" },
+        ],
+      },
+    ],
+  },
+
+  // ── العقود والتأمين ───────────────────────────────────────────────────────
+  {
+    id:            "contracts",
+    label:         "العقود والتأمين",
+    actionColumns: ["create", "manage", "approve", "settle", "override"],
+    screens: [
+      {
+        id:          "contracts",
+        label:       "العقود والشركات",
+        menuPermKey: "contracts.view",
+        actions: [
+          { type: "manage", permKey: "contracts.manage" },
+        ],
+      },
+      {
+        id:          "contract-claims",
+        label:       "مطالبات التأمين",
+        menuPermKey: "contracts.claims.view",
+        actions: [
+          { type: "manage", permKey: "contracts.claims.manage" },
+          { type: "settle", permKey: "contracts.claims.settle" },
+        ],
+      },
+      {
+        id:          "approvals",
+        label:       "طلبات الموافقة المسبقة",
+        menuPermKey: "approvals.view",
+        actions: [
+          { type: "approve",  permKey: "approvals.manage" },
+          { type: "override", permKey: "approvals.override" },
         ],
       },
     ],
@@ -433,7 +529,7 @@ export const SCREEN_MATRIX: ScreenCategoryDef[] = [
       },
       {
         id:          "account-ledger",
-        label:       "كشف حساب",
+        label:       "كشف حساب / حركة صنف",
         menuPermKey: "reports.account_ledger",
         actions:     [],
       },
@@ -452,6 +548,14 @@ export const SCREEN_MATRIX: ScreenCategoryDef[] = [
         menuPermKey: "departments.view",
         actions: [
           { type: "manage", permKey: "departments.manage" },
+        ],
+      },
+      {
+        id:          "pharmacies",
+        label:       "الصيدليات",
+        menuPermKey: "pharmacies.manage",
+        actions: [
+          { type: "manage", permKey: "pharmacies.manage" },
         ],
       },
       {
