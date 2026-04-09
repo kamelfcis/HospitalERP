@@ -24,6 +24,7 @@ interface LineGridProps {
   type: string;
   typeLines: LineLocal[];
   isDraft: boolean;
+  departmentId?: string;
   itemSearch: string;
   setItemSearch: (v: string) => void;
   setItemResults: (v: Item[]) => void;
@@ -47,6 +48,7 @@ export function LineGrid({
   type,
   typeLines,
   isDraft,
+  departmentId,
   itemSearch,
   setItemSearch,
   setItemResults,
@@ -133,6 +135,7 @@ export function LineGrid({
                   setSelectedServiceId("");
                 }
               }}
+              departmentId={departmentId}
               placeholder="بحث عن خدمة..."
               disabled={!isDraft}
               data-testid="input-service-search"
