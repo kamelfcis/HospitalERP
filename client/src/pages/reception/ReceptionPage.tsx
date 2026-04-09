@@ -495,7 +495,7 @@ export default function ReceptionPage() {
           doctorName: admDoctor?.name || undefined,
           surgeryTypeId: selectedSurgery?.id || undefined,
           paymentType: admPaymentType,
-          insuranceCompany: paymentType !== "CASH" ? (resolution.state.resolved?.companyName ?? insuranceCo || undefined) : undefined,
+          insuranceCompany: paymentType !== "CASH" ? ((resolution.state.resolved?.companyName) ?? (insuranceCo || undefined)) : undefined,
         },
       }, {
         onSuccess: () => {
