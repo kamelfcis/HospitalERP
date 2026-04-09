@@ -64,7 +64,7 @@ export function ScopeSelector({
       {departments.length > 0 && (
         <div className="space-y-1.5">
           <p className="text-xs font-medium text-muted-foreground">الأقسام</p>
-          <ScrollArea className="max-h-28">
+          <ScrollArea className="max-h-52">
             <div className="space-y-1.5 pr-1">
               {departments.map(d => (
                 <label key={d.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded p-0.5">
