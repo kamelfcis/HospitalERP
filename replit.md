@@ -20,7 +20,7 @@ The system utilizes a RESTful JSON API. Database interactions are managed via Dr
 - **Inventory & Sales**: Supplier receiving, sales invoicing (barcode, FEFO), sales returns, patient invoicing, patient admissions, and master data management.
 - **Services & Price Lists**: CRUD for department-scoped services and price lists with inline editing and bulk adjustments. Supports default price lists and a specific price resolution order.
 - **Multi-Pharmacy Support**: Provides operational isolation for invoicing and cashier operations across pharmacies.
-- **Cashier & Security**: Real-time SSE for invoice visibility, password-protected cash drawers, department-level invoice isolation, robust Role-Based Access Control (RBAC), and a complete cashier shift lifecycle.
+- **Cashier & Security**: Real-time SSE for invoice visibility, password-protected cash drawers, department-level invoice isolation, robust Role-Based Access Control (RBAC) with additive permission model (custom groups inherit role permissions and add on top), and a complete cashier shift lifecycle.
 - **Outpatient Clinic Module**: Features clinic booking, doctor consultations, orders, integration with sales/service orders, doctor-specific pricing, and structured consultation fields.
 - **Department Services Orders**: A unified module for ordering medical services (lab, radiology).
 - **Specialized Features**: Doctor Payable Transfer, Doctor Settlement, Stay Engine (patient accommodation), Bed Board, and Surgery Types System.

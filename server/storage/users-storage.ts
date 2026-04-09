@@ -85,9 +85,8 @@ const methods = {
   },
 
   // ── Permission Resolution ──────────────────────────────────────────────────
-  // الترتيب الصارم:
-  //  1. إذا permission_group_id مضبوط → اقرأ group_permissions
-  //  2. وإلا                          → اقرأ role_permissions (fallback)
+  //  1. دايماً اقرأ role_permissions كأساس
+  //  2. إذا permission_group_id مضبوط → ادمج group_permissions فوق الأساس
   async getUserEffectivePermissions(this: DatabaseStorage, userId: string): Promise<string[]> {
     const cached = _permCache.get(userId);
     if (cached && cached.expiresAt > Date.now()) return cached.perms;
@@ -95,27 +94,23 @@ const methods = {
     const user = await this.getUser(userId);
     if (!user) return [];
 
-    let basePermSet: Set<string>;
+    const rolePermsRaw = await db.execute(sql`
+      SELECT permission FROM role_permissions WHERE role = ${user.role}
+    `);
+    const permSet = new Set(
+      (rolePermsRaw.rows as { permission: string }[]).map(r => r.permission)
+    );
 
     if (user.permissionGroupId) {
-      // ── المسار الأساسي: قرأ من group_permissions ──────────────────────────
       const groupPermsRaw = await db.execute(sql`
         SELECT permission FROM group_permissions WHERE group_id = ${user.permissionGroupId}
       `);
-      basePermSet = new Set(
-        (groupPermsRaw.rows as { permission: string }[]).map(r => r.permission)
-      );
-    } else {
-      // ── Fallback: role_permissions للمستخدمين بدون مجموعة ─────────────────
-      const rolePermsRaw = await db.execute(sql`
-        SELECT permission FROM role_permissions WHERE role = ${user.role}
-      `);
-      basePermSet = new Set(
-        (rolePermsRaw.rows as { permission: string }[]).map(r => r.permission)
-      );
+      for (const r of groupPermsRaw.rows as { permission: string }[]) {
+        permSet.add(r.permission);
+      }
     }
 
-    const perms = Array.from(basePermSet);
+    const perms = Array.from(permSet);
     _permCache.set(userId, { perms, expiresAt: Date.now() + PERM_CACHE_TTL_MS });
     return perms;
   },
