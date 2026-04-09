@@ -599,86 +599,96 @@ const InvoiceHeaderCard = memo(function InvoiceHeaderCard({
 }) {
   const isDraft = !invoiceStatus || invoiceStatus === "draft";
   return (
-    <div className="rounded-xl border bg-gradient-to-l from-slate-50 to-white p-4">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <User className="h-4 w-4 text-blue-500 shrink-0" />
-            <div>
-              <p className="font-bold text-base leading-tight">{patientName}</p>
-              {patientCode && (
-                <span className="font-mono text-xs text-muted-foreground">{patientCode}</span>
-              )}
-            </div>
-            <div className="mr-auto flex items-center gap-1">
-              {isFinalClosed ? (
-                <div className="flex items-center gap-1 px-2 py-1 rounded-full border border-green-300 bg-green-50 text-green-700 text-xs font-semibold" data-testid="badge-lock-closed">
-                  <Lock className="h-3.5 w-3.5" />
-                  مغلق نهائياً
-                </div>
-              ) : (
-                <div className="flex items-center gap-1 px-2 py-1 rounded-full border border-amber-300 bg-amber-50 text-amber-700 text-xs font-semibold" data-testid="badge-lock-open">
-                  <LockOpen className="h-3.5 w-3.5" />
-                  {isDraft ? "مسودة" : invoiceStatus === "finalized" ? "معتمد" : "جارٍ..."}
-                </div>
-              )}
-            </div>
-          </div>
+    <div className="rounded-xl border bg-gradient-to-l from-slate-50 to-white px-4 py-3">
+      <div className="flex items-center gap-4 flex-wrap">
+        {/* Lock icon - prominent */}
+        <div
+          className={`flex items-center justify-center w-10 h-10 rounded-xl shrink-0 ${
+            isFinalClosed
+              ? "bg-gradient-to-br from-green-500 to-green-700 text-white shadow"
+              : isDraft
+                ? "bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow"
+                : "bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow"
+          }`}
+          data-testid={isFinalClosed ? "badge-lock-closed" : "badge-lock-open"}
+          title={isFinalClosed ? "مغلق نهائياً" : isDraft ? "مسودة" : "معتمد"}
+        >
+          {isFinalClosed
+            ? <Lock className="h-5 w-5" />
+            : isDraft
+              ? <LockOpen className="h-5 w-5" />
+              : <Lock className="h-5 w-5 opacity-80" />}
+        </div>
 
+        {/* Patient info */}
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <div className="flex items-center gap-2">
+            <User className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+            <p className="font-bold text-sm leading-tight">{patientName}</p>
+            {patientCode && <span className="font-mono text-xs text-muted-foreground">{patientCode}</span>}
+          </div>
           {visit?.doctor_name && (
-            <div className="flex items-center gap-2">
-              <Stethoscope className="h-3.5 w-3.5 text-teal-500 shrink-0" />
-              <span className="text-sm">{visit.doctor_name}</span>
+            <div className="flex items-center gap-1.5">
+              <Stethoscope className="h-3 w-3 text-teal-500 shrink-0" />
+              <span className="text-xs text-muted-foreground">{visit.doctor_name}</span>
             </div>
           )}
-
           {visit?.department_name && (
-            <div className="flex items-center gap-2">
-              <Building2 className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
-              <span className="text-sm text-muted-foreground">{visit.department_name}</span>
+            <div className="flex items-center gap-1.5">
+              <Building2 className="h-3 w-3 text-indigo-400 shrink-0" />
+              <span className="text-xs text-muted-foreground">{visit.department_name}</span>
             </div>
           )}
         </div>
 
-        <div className="flex flex-col gap-2">
+        {/* Divider */}
+        <div className="hidden sm:block w-px h-10 bg-border shrink-0" />
+
+        {/* Invoice info */}
+        <div className="flex flex-col gap-0.5">
           {invoiceNumber && (
-            <div className="flex items-center gap-2">
-              <FileText className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+            <div className="flex items-center gap-1.5">
+              <FileText className="h-3 w-3 text-slate-400 shrink-0" />
               <span className="font-mono text-sm font-semibold">{invoiceNumber}</span>
             </div>
           )}
-
           {visit?.admission_date && (
-            <div className="flex items-center gap-2">
-              <CalendarDays className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-              <span className="text-sm">
+            <div className="flex items-center gap-1.5">
+              <CalendarDays className="h-3 w-3 text-slate-400 shrink-0" />
+              <span className="text-xs">
                 دخول: <span className="font-medium">{fmtDate(visit.admission_date)}</span>
-                {visit.discharge_date && (
-                  <> — خروج: <span className="font-medium">{fmtDate(visit.discharge_date)}</span></>
-                )}
-                {!visit.discharge_date && <span className="text-amber-600 text-xs mr-2">لم يخرج بعد</span>}
+                {visit.discharge_date && <> — خروج: <span className="font-medium">{fmtDate(visit.discharge_date)}</span></>}
+                {!visit.discharge_date && <span className="text-amber-600 text-xs mr-1">لم يخرج بعد</span>}
               </span>
             </div>
           )}
-
           {visit?.visit_number && (
-            <div className="flex items-center gap-2">
-              <Badge
-                variant="outline"
-                className={`text-xs ${visit.visit_type === "inpatient"
-                  ? "border-indigo-400 text-indigo-700 bg-indigo-50"
-                  : "border-teal-400 text-teal-700 bg-teal-50"}`}
-              >
+            <div className="flex items-center gap-1.5">
+              <Badge variant="outline" className={`text-[10px] px-1 py-0 ${visit.visit_type === "inpatient" ? "border-indigo-400 text-indigo-700 bg-indigo-50" : "border-teal-400 text-teal-700 bg-teal-50"}`}>
                 {visit.visit_type === "inpatient" ? "داخلي" : "خارجي"}
               </Badge>
-              <span className="font-mono text-sm">{visit.visit_number}</span>
+              <span className="font-mono text-xs">{visit.visit_number}</span>
             </div>
           )}
+        </div>
+
+        {/* Status badge */}
+        <div className="mr-auto">
+          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold ${
+            isFinalClosed
+              ? "border-green-300 bg-green-50 text-green-700"
+              : isDraft
+                ? "border-amber-300 bg-amber-50 text-amber-700"
+                : "border-blue-300 bg-blue-50 text-blue-700"
+          }`}>
+            {isFinalClosed ? <Lock className="h-3.5 w-3.5" /> : isDraft ? <LockOpen className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+            {isFinalClosed ? "مغلق نهائياً" : isDraft ? "مسودة" : invoiceStatus === "finalized" ? "معتمد" : "جارٍ..."}
+          </div>
         </div>
       </div>
 
       {visit?.admission_notes && (
-        <div className="mt-3 pt-3 border-t text-sm text-muted-foreground">
+        <div className="mt-2 pt-2 border-t text-xs text-muted-foreground">
           <span className="font-medium text-foreground/70">ملاحظات: </span>
           {visit.admission_notes}
         </div>
@@ -1921,9 +1931,11 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
           isFinalizePending={finalizeMutation.isPending}
         />
       ) : (
-        <div className="flex flex-col lg:flex-row gap-4 items-start">
-          {/* Sidebar */}
-          <div className="w-full lg:w-56 shrink-0 flex flex-col gap-3">
+        <div className="flex flex-col xl:flex-row gap-4 items-start">
+          {/* ── Sidebar 1/3 ── */}
+          <div className="w-full xl:w-1/3 shrink-0 flex flex-col gap-3">
+
+            {/* Financial summary */}
             <FinancialSidebar
               totals={totalsForSidebar}
               isFinalClosed={isFinalClosed}
@@ -1934,17 +1946,27 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
               invoiceNumber={invoiceNumber}
             />
 
+            {/* Payments section — always visible in sidebar */}
+            <div className="bg-white border rounded-xl overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border-b">
+                <Banknote className="h-3.5 w-3.5 text-green-600" />
+                <span className="text-xs font-semibold text-green-700">المدفوعات</span>
+              </div>
+              <div className="p-2">
+                <InvoicePaymentsTab
+                  patientId={patientId}
+                  admissionId={admissionId}
+                  visitId={visitId}
+                  isFinalClosed={isFinalClosed}
+                  primaryInvoiceId={primaryInvoice?.id}
+                  primaryInvoiceStatus={invoiceStatus}
+                  onPaymentAdded={handlePaymentAdded}
+                />
+              </div>
+            </div>
+
             {primaryInvoice && (
               <>
-                <ClinicalInfoPanel
-                  invoiceId={primaryInvoice.id}
-                  isFinalClosed={isFinalClosed}
-                  invoiceStatus={invoiceStatus ?? "draft"}
-                  initialDiagnosis={diagnosis}
-                  initialNotes={notes}
-                  onSaved={handleClinicalSaved}
-                />
-
                 {!isFinalClosed && invoiceStatus === "draft" && (
                   <HeaderDiscountPanel
                     invoiceId={primaryInvoice.id}
@@ -1966,19 +1988,25 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
                     patientId={patientId}
                   />
                 )}
+
+                <ClinicalInfoPanel
+                  invoiceId={primaryInvoice.id}
+                  isFinalClosed={isFinalClosed}
+                  invoiceStatus={invoiceStatus ?? "draft"}
+                  initialDiagnosis={diagnosis}
+                  initialNotes={notes}
+                  onSaved={handleClinicalSaved}
+                />
               </>
             )}
           </div>
 
-          {/* Main tabs */}
-          <div className="flex-1 min-w-0">
+          {/* ── Main 2/3 ── */}
+          <div className="flex-1 min-w-0 xl:w-2/3">
             <Tabs defaultValue="services">
               <TabsList className="h-8 mb-3">
                 <TabsTrigger value="services" className="text-xs px-3" data-testid="tab-services">
                   الخدمات
-                </TabsTrigger>
-                <TabsTrigger value="payments" className="text-xs px-3" data-testid="tab-payments">
-                  المدفوعات
                 </TabsTrigger>
                 <TabsTrigger value="print" className="text-xs px-3" data-testid="tab-print">
                   <Printer className="h-3 w-3 ml-1" />
@@ -1992,18 +2020,6 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
                   admissionId={admissionId}
                   visitId={visitId}
                   isFinalClosed={isFinalClosed}
-                />
-              </TabsContent>
-
-              <TabsContent value="payments" className="mt-0">
-                <InvoicePaymentsTab
-                  patientId={patientId}
-                  admissionId={admissionId}
-                  visitId={visitId}
-                  isFinalClosed={isFinalClosed}
-                  primaryInvoiceId={primaryInvoice?.id}
-                  primaryInvoiceStatus={invoiceStatus}
-                  onPaymentAdded={handlePaymentAdded}
                 />
               </TabsContent>
 
