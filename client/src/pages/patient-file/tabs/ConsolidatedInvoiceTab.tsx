@@ -1406,11 +1406,15 @@ const DoctorTransferPanel = memo(function DoctorTransferPanel({
   const remaining = Math.max(0, netAmount - alreadyTransferred);
 
   const transferMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/patient-invoices/${invoiceId}/transfer-to-doctor`, {
-      doctorName: doctorName.trim(),
-      amount: parseFloat(amount),
-      notes: notes.trim() || undefined,
-    }),
+    mutationFn: () => {
+      const clientRequestId = crypto.randomUUID();
+      return apiRequest("POST", `/api/patient-invoices/${invoiceId}/transfer-to-doctor`, {
+        doctorName: doctorName.trim(),
+        amount: parseFloat(amount),
+        notes: notes.trim() || undefined,
+        clientRequestId,
+      });
+    },
     onSuccess: () => {
       toast({ title: "تم التحويل", description: "تم تحويل المستحقات للطبيب بنجاح" });
       setDoctorName("");
