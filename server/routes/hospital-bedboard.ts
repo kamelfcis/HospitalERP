@@ -57,9 +57,7 @@ export function registerBedBoardRoutes(app: Express) {
     try {
       const userId = (req.session as { userId?: string }).userId!;
       const scope = await storage.getUserOperationalScope(userId);
-      const userPerms = await storage.getUserPermissions(userId);
-      const hasBedBoardView = userPerms.includes(PERMISSIONS.BED_BOARD_VIEW);
-      const departmentIds = (scope.isFullAccess || hasBedBoardView) ? undefined : scope.allowedDepartmentIds;
+      const departmentIds = scope.isFullAccess ? undefined : scope.allowedDepartmentIds;
       res.json(await storage.getBedBoard(departmentIds));
     } catch (e: unknown) {
       res.status(500).json({ message: e instanceof Error ? e.message : String(e) });

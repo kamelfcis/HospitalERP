@@ -560,17 +560,17 @@ export function UserFormDialog({
               </>
             )}
 
-            {/* ── عيادات لغير الكاشير (استقبال / سكرتارية العيادات) ──────── */}
-            {!showCashierScope && clinics.length > 0 && (
+            {/* ── نطاق الأقسام والعيادات لغير الكاشير ──────── */}
+            {!showCashierScope && (departments.length > 0 || clinics.length > 0) && (
               <ScopeSelector
                 pharmacies={[]}
-                departments={[]}
+                departments={departments}
                 clinics={clinics}
                 allowedPharmacyIds={[]}
-                allowedDepartmentIds={[]}
+                allowedDepartmentIds={formData.allowedDepartmentIds}
                 allowedClinicIds={formData.allowedClinicIds}
                 onPharmaciesChange={() => {}}
-                onDepartmentsChange={() => {}}
+                onDepartmentsChange={ids => onFormChange({ allowedDepartmentIds: ids })}
                 onClinicsChange={ids => onFormChange({ allowedClinicIds: ids })}
               />
             )}
