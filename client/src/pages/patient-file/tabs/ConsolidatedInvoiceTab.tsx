@@ -102,7 +102,9 @@ function pvToVisitKey(pv: PatientVisit): string {
 function findPrimaryInvoice(invoices: AggregatedInvoice[]): AggregatedInvoice | undefined {
   return (
     invoices.find(i => i.isConsolidated && i.status === "finalized") ??
+    invoices.find(i => i.isConsolidated && i.status === "draft") ??
     invoices.find(i => i.status === "finalized" && !i.isConsolidated && invoices.length === 1) ??
+    invoices.find(i => i.status === "draft"     && !i.isConsolidated && invoices.length === 1) ??
     undefined
   );
 }
