@@ -1,0 +1,277 @@
+أنت Senior ERP/HMIS Architect + Senior Full-Stack Engineer تعمل على **نظام مستشفى قائم بالفعل**.
+المطلوب تنفيذ Refactor احترافي بدون كسر الموجود، مع إزالة التكرار، وتوحيد الـ workflow، واعتماد نموذج:
+
+**Patient → Visit واحدة → Encounter متعددة → Draft Invoice واحدة → Consolidated Invoice**
+
+---
+
+# 🎯 الهدف
+
+* كود نظيف + قابل للتوسع
+* أداء عالي (Query + Index driven)
+* تجميع لحظي وسريع في الفاتورة المجمعة
+* إزالة التكرار في الشاشات والمنطق
+* الحفاظ على كل ما هو شغال حالياً
+
+---
+
+# ⚠️ قواعد إلزامية
+
+## ممنوع:
+
+* ممنوع إنشاء Visit جديدة عند انتقال المريض بين الأقسام
+* ممنوع إنشاء فاتورة مالية مستقلة لكل قسم لنفس الحالة
+* ممنوع تكرار إدخال المريض من أكثر من مكان
+* ممنوع منطق حسابي في الفرونت
+* ممنوع N+1 queries
+* ممنوع كسر backward compatibility
+
+## إلزامي:
+
+* Server-side truth
+* Atomic transactions
+* Thin routes
+* Service layer واضحة
+* Componentization قوية
+* Indexing قوية
+* Real-time aggregation
+
+---
+
+# 🧠 الموديل المعتمد
+
+## Patient
+
+مصدر واحد فقط للبيانات
+
+## Visit (واحدة)
+
+تمثل الحالة العلاجية
+
+## Encounter (متعددة داخل نفس الزيارة)
+
+أنواعها:
+
+* surgery
+* icu
+* ward
+* nursery
+* clinic
+* lab
+* radiology
+
+### تدعم:
+
+* encounter_parent_id (child encounters مثل lab داخل ICU)
+
+---
+
+# 🔥 أهم نقطة (الشاشات التشغيلية — إلزامي)
+
+## الداخلي (Inpatient)
+
+```text
+الشاشة التشغيلية الوحيدة = Patient Invoice
+```
+
+* كل الأقسام (عمليات / عناية / إقامة / حضانة) تشتغل على:
+  👉 نفس شاشة **فاتورة المريض**
+
+* لا توجد شاشات منفصلة لكل قسم داخلي
+
+* الفصل يتم فقط عن طريق:
+
+  * encounter_id
+  * department
+  * classification
+
+* العرض يكون Tabs أو Filters داخل نفس الفاتورة
+
+---
+
+## الخارجي (Outpatient)
+
+```text
+كل قسم له شاشة تشغيلية مستقلة
+```
+
+* المعمل → شاشة خاصة (Lab Screen)
+* الأشعة → شاشة خاصة (Radiology Screen)
+* العيادات → شاشة خاصة (Clinic Screen)
+
+لكن:
+❗ هذه الشاشات لا تنشئ فواتير مستقلة
+❗ تضيف فقط بنود على Draft Invoice الخاصة بالزيارة
+
+---
+
+# 🔄 الـ Flow المطلوب
+
+## 🟢 الداخلي
+
+Bed → Admit
+→ Patient (find/create)
+→ Visit واحدة
+→ Encounter أولى
+→ Draft Invoice
+→ الأقسام تضيف بنود داخل نفس الفاتورة
+→ Transfer = غلق encounter + فتح أخرى
+→ Consolidated Invoice → Finalize
+
+---
+
+## 🔵 الخارجي
+
+Reception
+→ Patient
+→ Visit واحدة
+→ Encounter أولى (clinic/lab/rad)
+→ Draft Invoice (auto)
+→ شاشة القسم تضيف بنود
+→ Consolidated Invoice → Finalize
+
+---
+
+# 💾 Database
+
+## جدول encounters (إلزامي)
+
+* visit_id
+* encounter_parent_id
+* encounter_type (ENUM)
+* status
+* department_id
+* doctor_id
+* timestamps
+
+## تعديلات:
+
+* patient_invoice_lines → add encounter_id + context_type
+* stay_segments → add encounter_id
+* patient_visits → payer_type + insurance
+* patient_invoice_headers → posting_ready
+
+---
+
+# ⚡ الفهرسة (مهم جدًا)
+
+## encounters
+
+* (visit_id)
+* (visit_id, status)
+* (encounter_parent_id)
+
+## invoice_lines
+
+* (encounter_id)
+* (invoice_header_id)
+* (department_id)
+
+## invoice_headers
+
+* (visit_id, status)
+* partial index للفواتير المفتوحة
+
+❗ أصلح أي query يمنع استخدام index
+
+---
+
+# 🚀 التجميع اللحظي (Critical)
+
+## استخدم:
+
+InvoiceAggregationService
+
+### مسؤول عن:
+
+* تجميع البنود per encounter
+* تجميع per department
+* حساب totals
+* حساب payments
+* readiness
+
+## قواعد:
+
+* لا تجمع في الفرونت
+* لا تعمل recompute ثقيل
+* استخدم:
+
+  * grouped queries
+  * batch fetching
+  * cached/light aggregation
+
+---
+
+# 🧩 Backend Services (إلزامي)
+
+* PatientIntakeService
+* VisitOrchestrationService
+* EncounterLifecycleService
+* EncounterRoutingService
+* DraftInvoiceService (UPSERT)
+* InvoiceAggregationService
+* FinalizationGuardService
+
+---
+
+# 🎨 Frontend (Componentization)
+
+## مكونات مشتركة:
+
+* PatientIntakeForm (mode inpatient/outpatient)
+* PayerSelector
+* ServiceTypeSelector
+* DraftLineEditor
+* EncounterTimeline
+* ConsolidatedInvoiceViewer
+
+## قاعدة:
+
+❗ لا شاشة عملاقة
+❗ لا hook عملاقة
+❗ كل جزء reusable
+
+---
+
+# 🔐 Finalization
+
+## قبل الإغلاق:
+
+* تحقق كامل server-side
+* totals recompute
+* payer validation
+* mapping validation
+
+## الحالات:
+
+* Paid بالكامل → Close
+* Remaining → AR
+* Refund → Reverse
+
+---
+
+# 🧱 Execution Plan (مختصر)
+
+1. إنشاء encounters table + ربطها
+2. استخراج services
+3. توحيد patient intake
+4. تحويل كل الشاشات لإضافة بنود على Draft بدل إنشاء فواتير
+5. بناء aggregation engine
+6. تطوير شاشة consolidated invoice
+7. تحسين الأداء + indexing
+
+---
+
+# 🎯 النتيجة المطلوبة
+
+* سيستم بدون تكرار
+* Visit واحدة لكل حالة
+* Encounter واضحة لكل مرحلة
+* شاشة واحدة للداخلي (فاتورة المريض)
+* شاشات منفصلة للخارجي لكن بدون فواتير مستقلة
+* تجميع لحظي سريع
+* كود نظيف قابل للتوسع
+
+---
+
+ابدأ التنفيذ فورًا وفق هذا التصميم، بدون إعادة اختراع النظام، وبالاعتماد الكامل على الموجود، مع refactor تدريجي آمن واحترافي.

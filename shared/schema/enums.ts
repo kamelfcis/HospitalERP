@@ -38,6 +38,14 @@ export const patientInvoiceLineTypeEnum = pgEnum("patient_invoice_line_type", ["
 export const paymentMethodEnum = pgEnum("payment_method", ["cash", "card", "bank_transfer", "insurance"]);
 export const admissionStatusEnum = pgEnum("admission_status", ["active", "discharged", "cancelled"]);
 
+export const encounterTypeEnum = pgEnum("encounter_type", [
+  "surgery", "icu", "ward", "nursery", "clinic", "lab", "radiology"
+]);
+
+export const encounterStatusEnum = pgEnum("encounter_status", [
+  "active", "completed", "cancelled"
+]);
+
 export const userRoleEnum = pgEnum("user_role", [
   "owner",
   "admin",
