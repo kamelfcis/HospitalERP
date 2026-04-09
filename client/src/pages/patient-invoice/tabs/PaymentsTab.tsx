@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useTreasuriesLookup } from "@/hooks/lookups/useTreasuriesLookup";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,16 @@ interface PaymentsTabProps {
 export function PaymentsTab({ isDraft, payments, addPayment, updatePayment, removePayment }: PaymentsTabProps) {
   const { items: allTreasuries } = useTreasuriesLookup();
   const activeTreasuries = allTreasuries.filter(t => t.isActive !== false);
+  const singleTreasury = activeTreasuries.length === 1 ? activeTreasuries[0] : null;
+
+  useEffect(() => {
+    if (!singleTreasury) return;
+    payments.forEach(p => {
+      if (!p.treasuryId) {
+        updatePayment(p.tempId, "treasuryId", singleTreasury.id);
+      }
+    });
+  }, [singleTreasury, payments, updatePayment]);
 
   return (
     <div className="space-y-3">
@@ -93,20 +104,26 @@ export function PaymentsTab({ isDraft, payments, addPayment, updatePayment, remo
                 </td>
                 <td className="text-center">
                   {isDraft ? (
-                    <Select
-                      value={p.treasuryId ?? "none"}
-                      onValueChange={(v) => updatePayment(p.tempId, "treasuryId", v === "none" ? null : v)}
-                    >
-                      <SelectTrigger className="h-7 text-xs" data-testid={`select-pay-treasury-${i}`}>
-                        <SelectValue placeholder="بدون خزنة" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">بدون خزنة</SelectItem>
-                        {activeTreasuries.map(t => (
-                          <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    singleTreasury ? (
+                      <span className="text-xs text-muted-foreground" data-testid={`text-pay-treasury-${i}`}>
+                        {singleTreasury.name}
+                      </span>
+                    ) : (
+                      <Select
+                        value={p.treasuryId ?? "none"}
+                        onValueChange={(v) => updatePayment(p.tempId, "treasuryId", v === "none" ? null : v)}
+                      >
+                        <SelectTrigger className="h-7 text-xs" data-testid={`select-pay-treasury-${i}`}>
+                          <SelectValue placeholder="بدون خزنة" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">بدون خزنة</SelectItem>
+                          {activeTreasuries.map(t => (
+                            <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )
                   ) : (
                     activeTreasuries.find(t => t.id === p.treasuryId)?.name ?? allTreasuries.find(t => t.id === p.treasuryId)?.name ?? "—"
                   )}
