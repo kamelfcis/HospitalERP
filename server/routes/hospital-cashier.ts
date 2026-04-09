@@ -480,7 +480,15 @@ export function registerCashierRoutes(app: Express) {
 
   // ── Treasuries ──────────────────────────────────────────────
   app.get("/api/treasuries", requireAuth, checkAnyPermission(PERMISSIONS.CASHIER_HANDOVER_VIEW, PERMISSIONS.PATIENT_PAYMENTS), async (req, res) => {
-    try { res.json(await storage.getTreasuries()); }
+    try {
+      const userId = req.session.userId as string;
+      const perms = await storage.getUserEffectivePermissions(userId);
+      if (perms.includes(PERMISSIONS.CASHIER_HANDOVER_VIEW)) {
+        return res.json(await storage.getTreasuries());
+      }
+      const mine = await storage.getUserTreasury(userId);
+      return res.json(mine ? [mine] : []);
+    }
     catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
