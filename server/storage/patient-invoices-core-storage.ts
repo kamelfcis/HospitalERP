@@ -134,8 +134,18 @@ const methods = {
     `);
     const aptRow = (aptCtxRes.rows as Array<Record<string, unknown>>)[0] ?? null;
 
+    let effectiveDoctorName = headerRow.header.doctorName;
+    if (!effectiveDoctorName && headerRow.header.admissionId) {
+      const admRow = await db.execute(
+        sql`SELECT doctor_name FROM admissions WHERE id = ${headerRow.header.admissionId} LIMIT 1`
+      );
+      const admDoctorName = (admRow.rows[0] as Record<string, unknown>)?.doctor_name as string | null;
+      if (admDoctorName) effectiveDoctorName = admDoctorName;
+    }
+
     return {
       ...headerRow.header,
+      doctorName: effectiveDoctorName,
       patientCode: headerRow.patientCode || null,
       department: headerRow.department || undefined,
       lines: lines.map(l => ({ ...l.line, service: l.service || undefined, item: l.item || undefined })),
