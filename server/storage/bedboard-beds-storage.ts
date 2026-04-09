@@ -37,7 +37,11 @@ import type { InsertAdmission, InsertPatientInvoiceHeader } from "@shared/schema
 
 const methods = {
   async getBedBoard(this: DatabaseStorage, departmentIds?: string[]) {
-    const deptFilter = departmentIds && departmentIds.length > 0
+    if (departmentIds !== undefined && departmentIds.length === 0) {
+      return [];
+    }
+
+    const deptFilter = departmentIds
       ? sql`AND (f.department_id = ANY(ARRAY[${sql.join(departmentIds.map(d => sql`${d}`), sql`, `)}]::text[]))`
       : sql``;
 
