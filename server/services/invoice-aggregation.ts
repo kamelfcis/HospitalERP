@@ -133,7 +133,21 @@ export async function getVisitInvoiceSummary(visitId: string): Promise<VisitInvo
       created_at DESC
     LIMIT 1
   `);
-  const inv = invoiceRes.rows[0] as Record<string, unknown> | undefined;
+  let inv = invoiceRes.rows[0] as Record<string, unknown> | undefined;
+
+  if (!inv && v.admission_id) {
+    const fallbackInvRes = await db.execute(sql`
+      SELECT id, invoice_number, status, is_final_closed, invoice_date, version, net_amount
+      FROM patient_invoice_headers
+      WHERE admission_id = ${v.admission_id as string} AND status IN ('draft', 'finalizing', 'finalized')
+      ORDER BY
+        CASE WHEN status = 'draft' THEN 0 WHEN status = 'finalizing' THEN 1 ELSE 2 END,
+        created_at DESC
+      LIMIT 1
+    `);
+    inv = fallbackInvRes.rows[0] as Record<string, unknown> | undefined;
+  }
+
   const invoiceId = inv?.id as string | undefined;
 
   const encountersRes = await db.execute(sql`

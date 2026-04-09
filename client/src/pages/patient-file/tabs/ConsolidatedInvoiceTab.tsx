@@ -875,14 +875,37 @@ const EncounterLinesTable = memo(function EncounterLinesTable({ lines }: { lines
 });
 
 const EncounterBreakdownView = memo(function EncounterBreakdownView({
-  summary, visitId, onFinalize, isFinalizePending,
+  summary, visitId, patientId, admissionId, onFinalize, isFinalizePending,
 }: {
   summary: VisitInvoiceSummary;
   visitId: string;
+  patientId: string;
+  admissionId?: string;
   onFinalize: () => void;
   isFinalizePending: boolean;
 }) {
   const [activeEnc, setActiveEnc] = useState<string>("__all__");
+
+  const outpatientVisitId = !admissionId ? visitId : undefined;
+  const { data: livePayments, isLoading: paymentsLoading } = usePaymentsList({
+    patientId,
+    admissionId,
+    visitId: outpatientVisitId,
+    refetchInterval: summary.invoice?.isFinalClosed ? false : 15_000,
+  });
+
+  const normalizedPayments: VisitInvoiceSummary["payments"] = (livePayments ?? summary.payments).map((p: any) => ({
+    id:            p.id,
+    amount:        String(p.amount ?? "0"),
+    paymentMethod: p.payment_method ?? p.paymentMethod ?? "",
+    treasuryId:    p.treasury_id   ?? p.treasuryId   ?? null,
+    treasuryName:  p.treasury_name ?? p.treasuryName  ?? null,
+    notes:         p.notes         ?? null,
+    paymentDate:   p.payment_date  ?? p.paymentDate   ?? "",
+    createdAt:     String(p.created_at ?? p.createdAt ?? ""),
+  }));
+
+  const paymentsCount = livePayments ? livePayments.length : summary.payments.length;
 
   const encounterTabs = useMemo(() => {
     const tabs: Array<{ value: string; label: string; count: number; net: number }> = [
@@ -965,7 +988,7 @@ const EncounterBreakdownView = memo(function EncounterBreakdownView({
                 الجدول الزمني
               </TabsTrigger>
               <TabsTrigger value="enc-payments" className="text-xs px-3" data-testid="tab-enc-payments">
-                المدفوعات ({summary.payments.length})
+                المدفوعات ({paymentsCount})
               </TabsTrigger>
             </TabsList>
 
@@ -1001,7 +1024,11 @@ const EncounterBreakdownView = memo(function EncounterBreakdownView({
             </TabsContent>
 
             <TabsContent value="enc-payments" className="mt-0">
-              <EncounterPaymentsView payments={summary.payments} />
+              {paymentsLoading && !livePayments ? (
+                <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+              ) : (
+                <EncounterPaymentsView payments={normalizedPayments} />
+              )}
             </TabsContent>
           </Tabs>
         </div>
@@ -1886,6 +1913,8 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
         <EncounterBreakdownView
           summary={visitSummary!}
           visitId={selectedVisitId!}
+          patientId={patientId}
+          admissionId={admissionId}
           onFinalize={() => finalizeMutation.mutate(selectedVisitId!)}
           isFinalizePending={finalizeMutation.isPending}
         />
