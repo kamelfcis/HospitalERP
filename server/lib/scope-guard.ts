@@ -268,10 +268,7 @@ export async function assertServiceDeptMatch(
     if (svc.departmentId && svc.departmentId !== invoiceDeptId) {
       log.warn(
         { serviceId: svc.id, serviceDeptId: svc.departmentId, invoiceDeptId },
-        "[SCOPE_VIOLATION] service department mismatch",
-      );
-      throw new ScopeViolationError(
-        `خدمة غير تابعة لقسم هذه الفاتورة (${svc.id}) — تحقق من اختيار القسم الصحيح`,
+        "[SCOPE_WARN] service department mismatch (allowed — cross-dept service on patient invoice)",
       );
     }
   }
