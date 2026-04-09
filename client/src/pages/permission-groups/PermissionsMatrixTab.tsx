@@ -20,7 +20,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge }    from "@/components/ui/badge";
 import {
   Loader2, Save, ChevronDown, ChevronRight,
-  ChevronsDownUp, ChevronsUpDown, AlertTriangle, ChevronUp, Lock, Info,
+  ChevronsDownUp, ChevronsUpDown, AlertTriangle, ChevronUp, Shield, Info,
 } from "lucide-react";
 
 const ALL_PERM_KEYS = Object.values(PERMISSIONS) as string[];
@@ -103,35 +103,29 @@ function PermCheckbox({
 }) {
   const isInherited = rolePerms.has(permKey);
   const isGroupSelected = selected.has(permKey);
-  const isEffective = isInherited || isGroupSelected;
-
-  if (isInherited) {
-    return (
-      <label
-        className="flex items-center gap-1.5 cursor-default"
-        data-testid={testId}
-        title="صلاحية موروثة من الدور الأساسي — لا يمكن إزالتها من المجموعة"
-      >
-        <div className="relative flex items-center justify-center h-4 w-4">
-          <Checkbox checked={true} disabled className="opacity-60" />
-          <Lock className="absolute -top-0.5 -left-0.5 h-2.5 w-2.5 text-blue-500" />
-        </div>
-        <span className="text-xs text-blue-600 dark:text-blue-400">{label}</span>
-      </label>
-    );
-  }
 
   return (
     <label
       className="flex items-center gap-1.5 cursor-pointer"
       data-testid={testId}
+      title={isInherited ? "صلاحية موروثة من الدور الأساسي — مفعّلة دائماً حتى لو أُزيلت من المجموعة" : undefined}
     >
-      <Checkbox
-        checked={isEffective}
-        onCheckedChange={() => canEdit && onToggle(permKey)}
-        disabled={!canEdit}
-      />
-      <span className="text-xs text-muted-foreground">{label}</span>
+      <div className="relative flex items-center justify-center h-4 w-4">
+        <Checkbox
+          checked={isGroupSelected}
+          onCheckedChange={() => canEdit && onToggle(permKey)}
+          disabled={!canEdit}
+        />
+        {isInherited && (
+          <Shield className="absolute -top-0.5 -left-0.5 h-2.5 w-2.5 text-blue-500 pointer-events-none" />
+        )}
+      </div>
+      <span className={`text-xs ${isInherited ? "text-blue-600 dark:text-blue-400" : "text-muted-foreground"}`}>
+        {label}
+      </span>
+      {isInherited && !isGroupSelected && (
+        <span className="text-[9px] text-blue-500 dark:text-blue-400">(موروثة)</span>
+      )}
     </label>
   );
 }
@@ -149,12 +143,12 @@ const DomainSection = memo(function DomainSection({
   onTogglePerm: (k: string) => void;
   onToggleAll:  (keys: string[], on: boolean) => void;
 }) {
-  const allKeys       = useMemo(() => categoryPermKeys(category), [category]);
-  const editableKeys  = useMemo(() => allKeys.filter(k => !rolePerms.has(k)), [allKeys, rolePerms]);
-  const effectiveCount = allKeys.filter(k => selected.has(k) || rolePerms.has(k)).length;
-  const allEffective   = effectiveCount === allKeys.length;
-  const someEffective  = effectiveCount > 0 && !allEffective;
+  const allKeys        = useMemo(() => categoryPermKeys(category), [category]);
+  const selectedCount  = allKeys.filter(k => selected.has(k)).length;
+  const allSelected    = selectedCount === allKeys.length;
+  const someSelected   = selectedCount > 0 && !allSelected;
   const inheritedCount = allKeys.filter(k => rolePerms.has(k)).length;
+  const effectiveCount = allKeys.filter(k => selected.has(k) || rolePerms.has(k)).length;
 
   return (
     <div className="border rounded-lg overflow-hidden">
@@ -168,11 +162,11 @@ const DomainSection = memo(function DomainSection({
           : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
         }
 
-        {canEdit && editableKeys.length > 0 && (
-          <div onClick={e => { e.stopPropagation(); onToggleAll(editableKeys, !allEffective); }}>
+        {canEdit && (
+          <div onClick={e => { e.stopPropagation(); onToggleAll(allKeys, !allSelected); }}>
             <Checkbox
-              checked={allEffective ? true : someEffective ? "indeterminate" : false}
-              onCheckedChange={() => onToggleAll(editableKeys, !allEffective)}
+              checked={allSelected ? true : someSelected ? "indeterminate" : false}
+              onCheckedChange={() => onToggleAll(allKeys, !allSelected)}
               data-testid={`checkbox-domain-all-${category.id}`}
             />
           </div>
@@ -182,8 +176,8 @@ const DomainSection = memo(function DomainSection({
 
         {inheritedCount > 0 && (
           <Badge variant="outline" className="text-[10px] shrink-0 border-blue-300 text-blue-600 dark:text-blue-400 dark:border-blue-700 gap-0.5">
-            <Lock className="h-2.5 w-2.5" />
-            {inheritedCount}
+            <Shield className="h-2.5 w-2.5" />
+            {inheritedCount} موروثة
           </Badge>
         )}
         <Badge
@@ -305,11 +299,11 @@ export function PermissionsMatrixTab({ groupId, permissions, rolePermissions, ca
           <Info className="h-4 w-4 shrink-0 mt-0.5" />
           <div>
             <p className="font-medium">
-              <Lock className="inline h-3 w-3 -mt-0.5 ml-0.5" />
-              {inheritedCount} صلاحية موروثة من الدور الأساسي — لا يمكن إزالتها من المجموعة
+              <Shield className="inline h-3 w-3 -mt-0.5 ml-0.5" />
+              {inheritedCount} صلاحية موروثة من الدور الأساسي
             </p>
             <p className="mt-0.5 opacity-80">
-              الصلاحيات المُقفلة تأتي من دور المستخدم الأساسي. يمكنك إضافة صلاحيات إضافية فوقها.
+              الصلاحيات بعلامة <span className="text-blue-600 dark:text-blue-400">(موروثة)</span> مفعّلة دائماً من الدور حتى لو لم تُضَف للمجموعة. يمكنك إضافتها للمجموعة أو إزالتها بحرية.
             </p>
           </div>
         </div>
@@ -322,7 +316,7 @@ export function PermissionsMatrixTab({ groupId, permissions, rolePermissions, ca
           </Badge>
           {inheritedCount > 0 && (
             <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600 dark:text-blue-400 dark:border-blue-700 gap-0.5">
-              <Lock className="h-2.5 w-2.5" />
+              <Shield className="h-2.5 w-2.5" />
               {inheritedCount} موروثة
             </Badge>
           )}
