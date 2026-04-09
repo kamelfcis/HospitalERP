@@ -308,7 +308,7 @@ export const SCREEN_MATRIX: ScreenCategoryDef[] = [
       {
         id:          "reception",
         label:       "الاستقبال الموحد",
-        menuPermKey: "patients.view",
+        menuPermKey: "reception.view",
         actions: [
           { type: "create", permKey: "patients.create" },
         ],

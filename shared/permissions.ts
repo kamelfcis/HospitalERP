@@ -84,6 +84,8 @@ export const PERMISSIONS = {
 
   PHARMACIES_MANAGE: "pharmacies.manage",
 
+  RECEPTION_VIEW: "reception.view",
+
   PATIENTS_VIEW: "patients.view",
   PATIENTS_CREATE: "patients.create",
   PATIENTS_EDIT: "patients.edit",
@@ -214,6 +216,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.WAREHOUSES_VIEW,
     PERMISSIONS.DEPARTMENTS_VIEW,
     PERMISSIONS.PHARMACIES_MANAGE,
+    PERMISSIONS.RECEPTION_VIEW,
     PERMISSIONS.PATIENTS_VIEW,
     PERMISSIONS.DOCTORS_VIEW,
     PERMISSIONS.ADMISSIONS_VIEW,
@@ -406,6 +409,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
 
   reception: [
     PERMISSIONS.DASHBOARD_VIEW,
+    PERMISSIONS.RECEPTION_VIEW,
     PERMISSIONS.PATIENTS_VIEW,
     PERMISSIONS.PATIENTS_CREATE,
     PERMISSIONS.PATIENTS_EDIT,
@@ -602,6 +606,12 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: string; lab
     label: "الصيدليات",
     permissions: [
       { key: PERMISSIONS.PHARMACIES_MANAGE, label: "إدارة" },
+    ],
+  },
+  {
+    label: "الاستقبال الموحد",
+    permissions: [
+      { key: PERMISSIONS.RECEPTION_VIEW, label: "فتح شاشة الاستقبال" },
     ],
   },
   {
