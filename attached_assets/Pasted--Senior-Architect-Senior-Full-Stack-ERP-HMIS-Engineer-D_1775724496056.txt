@@ -1,0 +1,671 @@
+أنت مهندس برمجيات Senior Architect + Senior Full-Stack ERP/HMIS Engineer + Database/Performance Engineer، وتعمل على نظام Hospital ERP/HMIS قائم بالفعل، وليس مشروعًا جديدًا.
+المطلوب منك **البناء على الموجود فقط**، وعدم هدم أي مسارات شغالة، وعدم إدخال كسر وظيفي، مع تنفيذ Refactor احترافي وتنظيف التكرار وتوحيد الـ workflow وفقًا للتصميم التالي.
+
+# الهدف العام
+
+إعادة تنظيم دورة المريض في النظام بالكامل بشكل احترافي وقابل للتوسع، بحيث يكون عندنا:
+
+1. **Patient Code موحد** لكل مريض على مستوى النظام كله.
+2. **Internal Patient Flow** يبدأ من السرير / الغرفة.
+3. **Outpatient Flow** يبدأ من الاستقبال الخارجي.
+4. **Visit واحدة** للحالة العلاجية الواحدة.
+5. **Encounter / Segment متعددة داخل نفس الزيارة** بدل فتح زيارة جديدة لكل قسم.
+6. **Patient Invoice Draft تشغيلية** يشتغل عليها الإداري داخل كل قسم.
+7. **Master / Consolidated Invoice** للتجميع النهائي والتسوية والاعتماد المحاسبي.
+8. إزالة أي تكرار غير لازم في الشاشات أو الجداول أو الـ APIs أو الـ states أو الـ queries.
+9. الحفاظ على الموجود القائم حاليًا والبناء عليه دون تكسير.
+
+---
+
+# مبدأ معماري إلزامي
+
+## ممنوع عمل الآتي:
+
+* ممنوع اعتبار كل قسم Visit مستقلة.
+* ممنوع إنشاء Patient من أكثر من مدخل بدون توحيد.
+* ممنوع وجود أكثر من مصدر حقيقة لاسم المريض أو بياناته الأساسية.
+* ممنوع تكرار workflow بين الداخلي والخارجي بصورة تؤدي إلى شاشات مكررة بلا داع.
+* ممنوع هدم الموجود وإعادة كتابته من الصفر إذا أمكن عمل refactor تدريجي آمن.
+* ممنوع منطق ثقيل داخل routes أو مكونات React ضخمة أو hooks متضخمة أو query loops أو N+1.
+* ممنوع الاعتماد على client-calculated truth في أي totals أو accounting-critical data.
+* ممنوع أي خطوة تكسر backward compatibility بدون bridge واضح وآمن.
+
+## إلزامي:
+
+* Server-side truth
+* Atomic transactions
+* Idempotent operations
+* Thin routes
+* Service layer واضح
+* Storage/repository layer واضح
+* UI componentization قوية
+* Index-driven performance
+* الحفاظ على auditability
+* Feature-safe refactor
+* Explicit enums/statuses
+* Reuse الموجود بدل تكراره
+
+---
+
+# الرؤية التشغيلية النهائية المطلوب اعتمادها
+
+## أولاً: المريض الداخلي Inpatient
+
+### نقطة البداية:
+
+يدخل من **Bed Board / الغرفة / السرير**.
+
+### المطلوب:
+
+عند الضغط على سرير فارغ أو مكان متاح في القسم، يفتح **نفس شاشة استقبال المريض** لكن في وضع داخلي، وتكون مبنية على الموجود حاليًا إن أمكن.
+
+### عند استقبال المريض الداخلي:
+
+يتم في عملية ذرية واحدة:
+
+* البحث عن مريض موجود أو إنشاء مريض جديد.
+* إنشاء أو ربط **Patient Code موحد**.
+* إنشاء **Visit واحدة** للحالة.
+* إنشاء **Admission** لو الداخلي يحتاج admission entity.
+* إنشاء **Encounter / Segment أولى** بحسب بداية الحالة:
+
+  * Surgery
+  * ICU
+  * Ward / Accommodation
+  * Nursery
+  * أي نوع داخلي آخر
+* إنشاء **Patient Invoice Draft تشغيلية** مرتبطة بنفس الزيارة.
+* ربط السرير / الغرفة / القسم بالحالة.
+* تسجيل الطبيب المسؤول إن كان مطلوبًا.
+* تسجيل نوع الحالة / الخدمة الأساسية.
+* تسجيل payer mode: نقدي / تعاقد.
+* إن كان تعاقد: ربط الجهة / الشركة / العضوية / الكارنيه / رقم الانتساب.
+* إدخال الرقم القومي / الهوية / الهاتف / البيانات الأساسية من نفس المصدر الموحد للمريض.
+* تحديث حالة السرير إلى occupied.
+
+### مهم جدًا:
+
+* **المريض الداخلي لا يتم فتح زيارة جديدة له عند انتقاله من العمليات إلى العناية أو من العناية إلى القسم**.
+* الصحيح هو:
+
+  * نفس `visit_id`
+  * غلق Encounter/Segment قديمة
+  * فتح Encounter/Segment جديدة
+  * استمرار نفس Draft Invoice العامة
+  * مع فصل تشغيلي في العرض حسب الـ Encounter
+
+---
+
+## ثانيًا: المريض الخارجي Outpatient
+
+### نقطة البداية:
+
+يدخل من **الاستقبال الخارجي فقط**.
+
+### المطلوب:
+
+شاشة استقبال خارجي مبنية على الموجود، وتكون مهيأة فقط للخارجي، وتسمح بـ:
+
+* البحث عن مريض موجود أو إنشاء جديد.
+* استخدام نفس **Patient Code الموحد**.
+* إنشاء **Visit واحدة** للخارجي.
+* إنشاء **Encounter أولى** حسب نوع الخدمة:
+
+  * Clinic / Consultation
+  * Lab
+  * Radiology
+  * أي خدمة خارجية مستقبلًا
+* إنشاء **Patient Invoice Draft تشغيلية** تلقائيًا بمجرد تسجيل الزيارة.
+* تحديد نقدي / تعاقد.
+* في حالة الكشف: اختيار عيادة + طبيب.
+* في حالة المعمل أو الأشعة: تسجيل نوع الطلب/الخدمة من البداية.
+* عدم فتح شاشات منفصلة مكررة لتسجيل نفس بيانات المريض من جديد.
+
+### قاعدة إلزامية:
+
+* أي زيارة خارجية يتم إنشاؤها يجب أن يكون لها Draft Invoice من البداية.
+* أي عودة لنفس المريض في يوم/تاريخ آخر تعتبر Visit جديدة فقط إذا كانت زيارة علاجية جديدة فعلًا، وليس مجرد تنقل داخلي.
+
+---
+
+# Visit vs Encounter Model — إلزامي
+
+## المطلوب اعتماد النموذج التالي:
+
+### Visit
+
+هي المظلة الكبرى للحالة العلاجية الحالية.
+
+### Encounter / Segment
+
+هي المرحلة التشغيلية أو القسمية داخل نفس الزيارة، مثل:
+
+* Surgery Encounter
+* ICU Encounter
+* Ward Encounter
+* Nursery Encounter
+* Clinic Encounter
+* Lab Encounter
+* Radiology Encounter
+
+## الغرض:
+
+تحقيق فصل تشغيلي واضح دون تكسير التسلسل العلاجي أو المحاسبي.
+
+## مثال إلزامي:
+
+### لو مريض عمليات دخل عناية:
+
+* لا تنشئ Visit جديدة.
+* نفذ transfer event.
+* اقفل Surgery Encounter.
+* افتح ICU Encounter.
+* خلي نفس الزيارة ونفس الفاتورة العامة.
+* اعرض كل Encounter بشكل مستقل داخل واجهة الفاتورة.
+
+### لو مريض عناية عمل تحاليل:
+
+* لا تنشئ زيارة مستقلة ولا فاتورة مستقلة.
+* أنشئ Lab Order من داخل نفس الزيارة / encounter السياقية.
+* المعمل ينفذ.
+* النتيجة ترجع للزيارة.
+* الرسوم تنزل كسطور ضمن نفس الفاتورة مع تصنيف LAB.
+* يمكن إظهارها تشغيليًا تحت العناية أو كتجميع للمعمل، لكن مرجعيًا تظل على نفس الزيارة.
+
+---
+
+# تصميم الفواتير المطلوب
+
+## 1) Patient Invoice Draft (تشغيلية)
+
+هذه الشاشة هي شاشة العمل اليومية لكل قسم.
+
+### المطلوب:
+
+* قبل الفاتورة المجمعة، توجد **فاتورة مريض تشغيلية** يعمل عليها إداري القسم.
+* هذه ليست فاتورة اعتماد نهائي، بل Draft قابلة للإضافة والتعديل والحذف وفق صلاحيات واضحة.
+* يجب أن تكون مبنية على الموجود الحالي في شاشة Patient Invoice إن أمكن.
+
+### تستخدم لإدخال:
+
+* الخدمات
+* الأدوية
+* المستهلكات
+* الأجهزة
+* الإقامة
+* العمليات
+* التحاليل
+* الأشعة
+* أي بنود مستقبلية
+
+### كل سطر يجب أن يحمل على الأقل:
+
+* visit_id
+* encounter_id
+* patient_id
+* department_id
+* business_classification
+* source/order reference إن وجد
+* doctor/provider reference عند الحاجة
+* pricing source
+* payer context
+* draft/finalization metadata
+
+### مبدأ إلزامي:
+
+* كل قسم يرى فقط ما يخصه تشغيليًا.
+* لكن كل شيء يظل داخل نفس Visit.
+* مع فصل العرض حسب Encounter / classification / department.
+
+---
+
+## 2) Master / Consolidated Invoice
+
+هذه هي شاشة التجميع والتسوية والاعتماد.
+
+### المطلوب:
+
+شاشة فاتورة مجمعة مبنية على الموجود الحالي، لكن بعد تنظيف التكرار واعتماد model واضح.
+
+### يجب أن تقوم بـ:
+
+* تجميع كل Draft lines / subviews المرتبطة بنفس Visit.
+* عرض breakdown واضح حسب:
+
+  * Encounter
+  * Department
+  * Classification
+  * Orders
+* تمكين المستخدم من رؤية:
+
+  * العمليات
+  * العناية
+  * الإقامة
+  * المعمل
+  * الأشعة
+  * الأدوية
+  * المستهلكات
+  * الأجهزة
+  * المدفوعات
+  * الخصومات
+  * التسويات
+* يمكن وجود Tabs أو Sections أو Tree View أو Filters، لكن بدون تحويل كل قسم إلى Visit مستقلة.
+
+### مهم جدًا:
+
+الفاتورة المجمعة هي فقط نقطة:
+
+* التجميع
+* المراجعة
+* التسوية
+* اعتماد نهائي
+* توليد القيد المحاسبي
+* الإغلاق المالي
+
+### عند الاعتماد النهائي:
+
+* يمنع الاعتماد إذا كانت الحالة غير جاهزة وفق القواعد.
+* يتم recompute server-side لكل الأرقام.
+* يتم إنشاء snapshot نهائي لو مناسب للتصميم القائم.
+* يتم توليد القيود المحاسبية من مصدر موحد.
+* يتم غلق الفاتورة.
+* يتم منع أي تعديل غير مصرح به بعد الاعتماد.
+
+---
+
+# قواعد مالية وتشغيلية إلزامية
+
+## 1) لا اعتماد نهائي بدون تحقق صارم
+
+يجب عمل readiness/finalization checks تشمل على الأقل:
+
+* صحة ربط المريض
+* صحة visit/encounter mapping
+* عدم وجود lines broken references
+* حساب totals server-side
+* التحقق من المدفوع/المتبقي
+* التحقق من payer logic
+* التحقق من contract rules إن وجدت
+* التحقق من journal mappings اللازمة
+* التحقق من عدم الازدواج
+
+## 2) التصفير والتسوية
+
+اجعل النظام قابلاً لدعم:
+
+* دفع مقدم / تحت الحساب
+* تسوية نهائية
+* رد مبلغ
+* خصم
+* تحويل جزء لطبيب أو جهة أخرى إذا كان هذا موجودًا في النظام
+* عدم إغلاق الحالة بشكل مالي قبل الوصول إلى وضع مالي صحيح حسب القواعد
+
+## 3) المحاسبة
+
+* لا تعتمد على draft كإيراد نهائي.
+* الاعتراف النهائي المحاسبي يكون عند نقطة الاعتماد النهائي وفق النظام المعمول به.
+* اجعل التصميم يدعم التحليل حسب القسم / encounter / cost center.
+* لا تكسر أي تكامل حالي مع accounting engine أو account mappings أو journal generation.
+* إن كان موجودًا concept مثل journal_status / accounting_event_log / mapping fallback فلا تهدمه، بل ابنِ عليه.
+
+---
+
+# إزالة التكرار المطلوبة
+
+## راجع ونظف الآتي:
+
+1. تكرار شاشات إدخال المريض.
+2. تكرار منطق إنشاء المريض بين الداخلي والخارجي.
+3. تكرار visit grouping غير اللازم إذا كان visit_id وحده يكفي.
+4. أي استخدام زائد لـ visit_group_id إن كان يمكن الاستغناء عنه بأمان.
+5. تكرار منطق إدخال الخدمات في أكثر من شاشة بدون abstraction.
+6. أي hooks متضخمة تجمع CRUD + pricing + FEFO + validation + UI orchestration معًا.
+7. أي routes تحتوي business logic طويل.
+8. أي components ضخمة تفعل rendering + state management + calculations + permissions معًا.
+9. أي duplicated query patterns أو summary computations أو status derivations.
+10. أي duplicated invoice screens يمكن تحويلها إلى shared engine مع contextual wrappers.
+
+---
+
+# إعادة التنظيم المطلوبة (Refactor Plan)
+
+## المطلوب تنفيذ refactor احترافي تدريجي وآمن يشمل:
+
+### Backend
+
+* Thin routes
+* Services واضحة لكل domain
+* Storage/repository layer واضحة
+* Centralized validation
+* Centralized status transitions
+* Encounter lifecycle service
+* Visit orchestration service
+* Invoice aggregation/finalization service
+* Payment allocation service إن لزم
+* Transfer service بين الأقسام
+* Readiness/finalization guard service
+* Shared helpers بدون تكرار
+
+### Frontend
+
+* Componentization قوية جدًا
+* فصل:
+
+  * search components
+  * patient selectors
+  * payer selectors
+  * encounter views
+  * draft line editors
+  * totals panels
+  * payments panels
+  * finalization panels
+* ممنوع الشاشة العملاقة أو hook العملاقة
+* ابني reusable components بين الداخلي والخارجي، لكن مع contextual behavior واضح
+* اعمل shared patient intake engine مع mode = inpatient/outpatient
+* اعمل shared invoice line engine مع contextual rendering
+* اعمل consolidated invoice viewer مبني على normalized view model
+
+### Database / Query Layer
+
+* افحص الجداول الحالية وقرر أقل تعديل schema ممكن لتحقيق المطلوب
+* يفضّل إضافة ما يلزم بدل تغيير مدمر
+* إن احتجت encounter table أو encounter_type/status/parent relations أو transfer log فصممها بشكل clean
+* حافظ على backward compatibility
+* أضف indexes قوية مدروسة حسب الاستعلامات الفعلية
+* أصلح أي joins أو casts أو patterns تقتل الفهارس
+* راجع N+1 في الفواتير والتجميع والاستقبال والـ dropdowns والبحث
+
+---
+
+# التصميم الوظيفي المطلوب بالتفصيل
+
+## A) Patient Master
+
+اجعل للمريض Master record موحد يمثل المصدر الوحيد للبيانات الأساسية:
+
+* الاسم
+* الكود
+* النوع
+* السن/تاريخ الميلاد
+* الهاتف
+* الرقم القومي
+* بيانات التأمين/الكارنيه عند اللزوم
+* أي بيانات تعريفية أساسية أخرى
+
+### قواعد:
+
+* الاسم لا يتكرر كمصدر حقيقة في أكثر من مكان.
+* عند إضافة مريض من أي flow، يتم إنشاؤه أو ربطه في هذا الـ master.
+* لا تعتمد على نصوص حرة غير مربوطة إلا عند الضرورة القصوى وبـ controlled migration path.
+
+---
+
+## B) Internal Reception / Admission from Bed
+
+* استغلال الموجود في bed board
+* تحسين شاشة الاستقبال الحالية
+* دعم أي قسم جديد له غرف/أسرة دون كود مكرر
+* جعل نوع الخدمة / الحالة الداخلية واضحًا
+* doctor assignment حسب النوع
+* payer info من البداية
+* إنشاء visit + admission + encounter + draft invoice في transaction واحدة
+
+---
+
+## C) Outpatient Reception
+
+* شاشة خارجي فقط
+* لا تكرر patient intake من الصفر
+* تربط الكشف/المعمل/الأشعة من البداية
+* تنشئ visit + encounter + draft invoice
+* لا تجعل الخارجي يعتمد على خطوات يدوية مشتتة بعد ذلك
+
+---
+
+## D) Department Draft Patient Invoice
+
+قبل الفاتورة المجمعة، كل قسم لديه شاشة تشغيلية لإدخال:
+
+* خدمات
+* أدوية
+* مستهلكات
+* أجهزة
+* إقامات
+* أوامر منفذة
+* أي إضافات تخص القسم
+
+### لكن:
+
+* لا تنشئ فاتورة حقيقية مستقلة ماليًا لكل قسم
+* إنما sub-view / draft scope / encounter scope داخل نفس visit
+
+---
+
+## E) Consolidated Invoice
+
+* شاشة واحدة لتجميع كل شيء قبل الاعتماد
+* تعرض breakdown محترم
+* تسمح بالمراجعة والتسوية
+* تعتمد نهائيًا
+* تربط بالقيد
+* تغلق ماليًا
+* تظل قابلة للتوسع
+
+---
+
+# صلاحيات وأمان
+
+* راعِ permissions الحالية ولا تكسرها
+* اربط الأفعال بالصلاحيات الدقيقة وليس فقط screen view
+* اجعل الإداري يدخل البيانات التشغيلية
+* واجعل الاعتماد النهائي / الإقفال / التسوية وفق صلاحيات المحاسب أو المختص
+* لا تسمح بتعديل ما بعد الاعتماد إلا عبر flow رسمي مضبوط
+* حافظ على audit logs
+
+---
+
+# الأداء والفهرسة
+
+نفّذ مراجعة أداء حقيقية وليس شكلية:
+
+* راجع كل queries الخاصة بـ:
+
+  * patient search
+  * reception lookup
+  * bed occupancy
+  * visit loading
+  * encounter breakdown
+  * patient invoice loading
+  * consolidated invoice aggregation
+  * payments summary
+  * finalization checks
+* أضف الفهارس اللازمة على الأعمدة التي تُستخدم فعليًا في:
+
+  * joins
+  * filters
+  * sort
+  * partial conditions
+* أصلح أي patterns تمنع استخدام index
+* أزل أي N+1
+* استخدم batch fetching
+* حافظ على الاستجابة السريعة خصوصًا في شاشة الفاتورة وشاشة الاستقبال
+
+---
+
+# التوافق مع الموجود
+
+هذا مهم جدًا:
+
+* ابْنِ على الموجود ولا تهدمه
+* راجع الشاشات الحالية:
+
+  * bed board
+  * reception
+  * patient invoice
+  * consolidated invoice
+  * clinic/lab/radiology flows
+* استخلص منها reusable parts بدل نسخها
+* اعمل migration/refactor تدريجي
+* حافظ على الـ routes الحالية قدر الإمكان أو اعمل wrappers/redirect-safe adjustments
+* لا تكسر الـ DB schema الحالية إلا بحد أدنى مدروس
+* لو في statuses / enums / IDs شغالة حاليًا، استثمرها بدل استبدالها بالكامل دون داع
+
+---
+
+# المطلوب منك في التنفيذ
+
+نفّذ على مراحل واضحة واحترافية:
+
+## Phase 1 — Discovery & Mapping
+
+* استخرج خريطة الموجود حاليًا
+* حدد الشاشات والجداول والخدمات المتكررة
+* حدد أين سيتم البناء وأين سيتم الدمج وأين يلزم extraction
+* اعرض gap analysis دقيق
+
+## Phase 2 — Data/Domain Refactor
+
+* تصميم encounter model
+* ربطه بالموجود
+* تصميم انتقالات الحالة
+* إزالة التكرارات المنطقية
+
+## Phase 3 — Backend Refactor
+
+* استخراج services
+* تبسيط routes
+* توحيد orchestration
+* finalization guards
+* aggregation pipeline
+
+## Phase 4 — Frontend Refactor
+
+* shared intake flow
+* shared draft invoice engine
+* consolidated invoice refactor
+* tabs/filters/sections حسب encounter/classification
+* إزالة المكونات المتضخمة
+
+## Phase 5 — Performance & Indexing
+
+* query audit
+* add indexes
+* fix N+1
+* validate explain plans عند الحاجة
+
+## Phase 6 — Validation & Safety
+
+* ensure backward compatibility
+* migration safety
+* permission integrity
+* accounting integrity
+* no regressions
+
+---
+
+# شكل التسليم المطلوب
+
+لا تكتب كلامًا عامًا.
+أريد تنفيذًا عمليًا احترافيًا بالتنسيق التالي:
+
+1. **Discovery Map**
+
+   * الموجود حاليًا
+   * المتكرر
+   * ما سيتم الاحتفاظ به
+   * ما سيتم refactor له
+   * ما سيتم إلغاؤه أو دمجه
+
+2. **Target Architecture**
+
+   * domain model
+   * visit / encounter / invoice lifecycle
+   * statuses
+   * transitions
+   * patient flow الداخلي والخارجي
+
+3. **Schema / DB Plan**
+
+   * الجداول الحالية المستخدمة
+   * الجداول/الأعمدة المقترحة
+   * الفهارس المقترحة
+   * لماذا كل فهرس مطلوب
+
+4. **Backend Refactor Plan**
+
+   * routes to thin out
+   * services to extract
+   * shared helpers
+   * transaction boundaries
+   * idempotency/retry/validation strategy
+
+5. **Frontend Refactor Plan**
+
+   * components to extract
+   * hooks to split
+   * shared patient intake
+   * shared invoice line engine
+   * consolidated invoice UI structure
+
+6. **Execution Batches**
+
+   * Batch-by-batch implementation plan
+   * file-level impact
+   * what changes in each batch
+   * done looks like لكل batch
+
+7. **Risk Controls**
+
+   * backward compatibility
+   * migration safety
+   * permission safety
+   * accounting safety
+   * rollout strategy
+
+8. **Then implement**
+
+   * نفّذ فعليًا، وليس مجرد شرح
+   * اعطِ patch-ready code organization
+   * لا تترك architecture نصف منتهية
+   * أي extraction أو table أو enum أو index يجب أن يكون له مبرر واضح
+
+---
+
+# مبادئ جودة الكود الإلزامية
+
+* Clean Architecture thinking
+* Practical ERP/HMIS realism
+* No overengineering
+* No fake abstractions
+* No giant components
+* No giant hooks
+* No business logic in JSX
+* No business logic spread randomly across routes
+* No duplicate status derivation
+* No duplicate pricing or invoice calculations
+* No duplicate patient creation flows
+* No hidden coupling
+* No magical constants
+* Explicit types/enums/statuses
+* Readable names
+* Comment only where needed
+* Refactor for future extensibility
+
+---
+
+# تذكير نهائي مهم
+
+هذا النظام يعمل بالفعل وفيه أجزاء كبيرة شغالة.
+المطلوب **ليس اختراع نظام جديد**، بل:
+
+* فهم الموجود بدقة
+* إزالة التكرار
+* توحيد الـ flow
+* اعتماد visit + encounter model
+* دعم internal عبر bed/groom/room
+* دعم outpatient عبر reception
+* استمرار department-level operational draft invoice
+* ثم consolidated invoice للاعتماد
+* وكل هذا مع refactor قوي، componentization قوية، indexing قوية، وكود نظيف قابل للبناء عليه لاحقًا.
+
+ابدأ فورًا بالمراجعة العميقة للموجود، ثم قدّم Discovery Map احترافي، ثم نفّذ على batches متتابعة بشكل آمن ومدروس.
