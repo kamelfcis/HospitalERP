@@ -1,0 +1,289 @@
+أنت Senior ERP/HMIS Architect + Senior Full-Stack + Database/Performance Engineer.
+النظام قائم بالفعل وتم تنفيذ:
+
+* Visit-centric flow ✔️
+* Encounter model (مع parent-child) ✔️
+* Routing لكل الخدمات إلى Draft Invoice ✔️
+* Atomic transactions + Backfill ✔️
+
+المطلوب الآن: **Batch 3 — Aggregation Engine + Consolidated Invoice UI**
+بدون كسر أي جزء قائم، مع Refactor نظيف، Componentization قوية، وفهرسة قوية.
+
+---
+
+# 🎯 الهدف
+
+* تجميع لحظي سريع لكل بنود الزيارة
+* عرض احترافي للفواتير المجمعة (per encounter)
+* منع أي حسابات في الفرونت
+* أداء عالي بدون N+1
+* جاهزية للاعتماد المحاسبي
+
+---
+
+# ⚠️ قواعد إلزامية
+
+## ممنوع:
+
+* ممنوع حساب totals في React
+* ممنوع تجميع البيانات في الفرونت
+* ممنوع N+1 queries
+* ممنوع إعادة إنشاء Draft Invoice
+* ممنوع كسر المسارات الحالية
+
+## إلزامي:
+
+* Server-side aggregation
+* Idempotent operations
+* Atomic reads للـ aggregation
+* Query + Index driven performance
+* Reuse الموجود
+
+---
+
+# 🧠 الجزء 1: Aggregation Engine (Core)
+
+## أنشئ:
+
+```text
+InvoiceAggregationService
+```
+
+## المسؤوليات:
+
+1. تحميل كل بيانات الزيارة مرة واحدة (batch)
+2. تجميع:
+
+   * per encounter
+   * per department
+   * per classification
+3. حساب:
+
+   * إجمالي الإيراد
+   * إجمالي الخصومات
+   * إجمالي المدفوعات
+   * المتبقي
+4. تحديد:
+
+   * billing status
+   * readiness
+5. إرجاع ViewModel جاهز للواجهة
+
+---
+
+## 📦 Payload المطلوب (مثال)
+
+```json
+{
+  "visit": {...},
+  "encounters": [
+    {
+      "id": "...",
+      "type": "icu",
+      "lines": [...],
+      "totals": {...}
+    }
+  ],
+  "totals": {
+    "gross": 0,
+    "discount": 0,
+    "net": 0,
+    "paid": 0,
+    "remaining": 0
+  },
+  "payments": [...],
+  "readiness": {...}
+}
+```
+
+---
+
+# ⚡ الجزء 2: الأداء (Critical)
+
+## لازم تنفذ:
+
+* Batch queries فقط
+* No loops queries
+* No per-line DB calls
+* استخدام:
+
+  * JOINs محسوبة
+  * GROUP BY
+  * partial indexes
+
+## إضافة Cache خفيف:
+
+```text
+per visit cache
+```
+
+### يتحدث عند:
+
+* add/update/delete line
+* payment
+* transfer
+* finalize
+
+---
+
+# 💾 الفهرسة المطلوبة
+
+## patient_invoice_lines
+
+* (encounter_id)
+* (invoice_header_id)
+* (department_id)
+
+## encounters
+
+* (visit_id)
+* (encounter_parent_id)
+* (visit_id, status)
+
+## invoice_headers
+
+* (visit_id, status)
+* partial index للفواتير المفتوحة
+
+---
+
+# 🧩 الجزء 3: Backend Integration
+
+## عدّل:
+
+* كل routes الخاصة بالفاتورة المجمعة
+* لتستخدم:
+
+```text
+InvoiceAggregationService فقط
+```
+
+## لا تسمح بـ:
+
+* أي تجميع داخل controller
+* أي logic في routes
+
+---
+
+# 🎨 الجزء 4: Frontend (UI)
+
+## أنشئ:
+
+### 1) ConsolidatedInvoiceViewer
+
+* يعرض breakdown per encounter
+
+### 2) Encounter Tabs
+
+* عمليات
+* عناية
+* إقامة
+* معمل
+* أشعة
+
+### 3) Payments Panel
+
+### 4) Totals Summary Bar
+
+### 5) Finalization Panel
+
+---
+
+## ⚡ مهم:
+
+* لا تعيد fetch غير ضروري
+* استخدم memoization
+* stable query keys
+* لا تعيد render كل الصفحة عند تغيير سطر واحد
+
+---
+
+# 🧠 الجزء 5: Finalization Guard
+
+## أنشئ:
+
+```text
+FinalizationGuardService
+```
+
+## يتحقق من:
+
+* no orphan lines
+* كل line لها encounter
+* totals محسوبة server-side
+* payer valid
+* mapping موجود
+* readiness = true
+
+---
+
+# 🧾 الجزء 6: Finalization Flow
+
+## الحالات:
+
+1. Paid بالكامل → Close
+2. Remaining → AR
+3. Refund → Reverse
+
+## عند الاعتماد:
+
+* lock invoice
+* snapshot
+* set posting_ready = true
+* trigger accounting
+
+---
+
+# 🧠 الجزء 7: تحسينات إضافية (مهمة)
+
+## 1) Smart Encounter Routing
+
+* reuse encounter لو موجود
+* create child لو لازم
+
+## 2) Encounter Timeline
+
+* عرض:
+
+```text
+Surgery → ICU → Ward
+          ↘ Lab
+```
+
+## 3) Data Integrity
+
+* لا تسمح line بدون encounter_id
+* enforce على مستوى backend
+
+## 4) Concurrency
+
+* guard في executeClinicOrder
+* منع duplicate execution
+
+---
+
+# 🚀 Execution Steps
+
+1. إنشاء InvoiceAggregationService
+2. بناء aggregation queries
+3. إضافة caching
+4. تعديل routes
+5. بناء UI viewer
+6. بناء FinalizationGuard
+7. اختبار الأداء
+8. اختبار البيانات الحقيقية
+
+---
+
+# 🎯 النتيجة المطلوبة
+
+* تجميع لحظي سريع
+* شاشة فاتورة مجمعة احترافية
+* بدون تكرار
+* بدون lag
+* بدون أخطاء محاسبية
+* قابل للتوسع
+
+---
+
+ابدأ التنفيذ فورًا، مع الالتزام الصارم بالأداء، وعدم تكرار المنطق، وعدم كسر أي جزء قائم.

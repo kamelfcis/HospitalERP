@@ -733,9 +733,22 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
       ON patient_invoice_lines (item_id)
       WHERE item_id IS NOT NULL AND is_void = false
     `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_pih_visit_draft
+      ON patient_invoice_headers (visit_id, status)
+      WHERE visit_id IS NOT NULL AND status = 'draft'
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_pih_visit_status
+      ON patient_invoice_headers (visit_id, status)
+      WHERE visit_id IS NOT NULL
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_pil_encounter_active
+      ON patient_invoice_lines (encounter_id)
+      WHERE encounter_id IS NOT NULL AND is_void = false
+    `);
     log("[STARTUP] Performance indexes ensured");
-    // NOTE: purchase_invoice_lines(invoice_id) → idx_pi_lines_invoice (in Drizzle schema)
-    // NOTE: purchase_return_lines(purchase_invoice_line_id) → idx_prl_invoice_line (in Drizzle schema)
   } catch (err: unknown) {
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] performance index error");
   }
