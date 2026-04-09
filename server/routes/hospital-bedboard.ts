@@ -30,6 +30,7 @@ import { sql } from "drizzle-orm";
 import { bedBoardClients, broadcastBedBoardUpdate, requireAuth, checkHospitalAccess, checkPermission } from "./_shared";
 import { PERMISSIONS } from "@shared/permissions";
 import { findOrCreatePatient } from "../lib/find-or-create-patient";
+import { logger } from "../lib/logger";
 
 export function registerBedBoardRoutes(app: Express) {
   // ── SSE stream ──────────────────────────────────────────────
@@ -86,6 +87,9 @@ export function registerBedBoardRoutes(app: Express) {
     try {
       const { patientName, patientPhone, patientId, nationalId, departmentId, serviceId, doctorName, notes, paymentType, insuranceCompany, surgeryTypeId } = req.body;
       if (!patientName?.trim()) return res.status(400).json({ message: "اسم المريض مطلوب" });
+      if (doctorName !== undefined && typeof doctorName === "string") {
+        logger.info({ event: "BED_ADMIT_DOCTOR", doctorName, bedId: req.params.id }, "[BED_ADMIT] doctor_name received");
+      }
       let resolvedPatientId: string | undefined = patientId || undefined;
       if (!resolvedPatientId) {
         const pt = await findOrCreatePatient(patientName.trim(), patientPhone || null);

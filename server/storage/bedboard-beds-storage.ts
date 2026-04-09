@@ -226,7 +226,7 @@ const methods = {
         visitId: patientVisit.id,
         warehouseId,
         departmentId: params.departmentId || null,
-        doctorName: params.doctorName || null,
+        doctorName: admission.doctorName || null,
         patientId: resolvedPatientId,
         patientType: (params.paymentType === "contract" ? "contract" : "cash") as "contract" | "cash",
         contractName: params.paymentType === "contract" ? (params.insuranceCompany || null) : null,
