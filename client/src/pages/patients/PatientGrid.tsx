@@ -1,12 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Edit2, Trash2, FileText, FolderOpen, Ticket } from "lucide-react";
+import { Edit2, Trash2, FileText, FolderOpen } from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
 import { AmountCell, InvoiceStatusBadge, TotalsRow } from "./PatientCells";
 import type { PatientGridProps, PatientRowProps } from "./types";
 
-function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, canAdmit, onEdit, onDelete, onOpenInvoice, onViewFile, onNewVisit }: PatientRowProps) {
+function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, canAdmit, onEdit, onDelete, onOpenInvoice, onViewFile }: PatientRowProps) {
   const rowClass = `peachtree-grid-row${dimmed ? " opacity-50" : ""}`;
 
   return (
@@ -34,17 +34,6 @@ function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, canAdm
 
       <td>
         <div className="flex items-center justify-center gap-0.5">
-          {canAdmit && (
-            <Button
-              variant="ghost" size="icon" className="h-6 w-6 text-emerald-600"
-              title="تذكرة جديدة"
-              onClick={() => onNewVisit(p)}
-              data-testid={`button-new-visit-${p.id}`}
-            >
-              <Ticket className="h-3 w-3" />
-            </Button>
-          )}
-
           <Button
             variant="ghost" size="icon" className="h-6 w-6 text-purple-600"
             title="ملف المريض"
@@ -97,7 +86,7 @@ function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, canAdm
   );
 }
 
-export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInvoice, canEdit, canAdmit, onEdit, onDelete, onOpenInvoice, onViewFile, onNewVisit }: PatientGridProps) {
+export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInvoice, canEdit, canAdmit, onEdit, onDelete, onOpenInvoice, onViewFile }: PatientGridProps) {
   if (isLoading) {
     return (
       <div className="p-3 space-y-2">
@@ -155,7 +144,6 @@ export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInv
                   onDelete={onDelete}
                   onOpenInvoice={onOpenInvoice}
                   onViewFile={onViewFile}
-                  onNewVisit={onNewVisit}
                 />
               ))}
 
@@ -182,7 +170,6 @@ export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInv
                       onDelete={onDelete}
                       onOpenInvoice={onOpenInvoice}
                       onViewFile={onViewFile}
-                      onNewVisit={onNewVisit}
                     />
                   ))}
                 </>

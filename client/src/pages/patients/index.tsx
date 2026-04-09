@@ -11,7 +11,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Search, Users, FolderOpen, ArrowRight, Building2, AlertCircle, ChevronRight, ChevronLeft } from "lucide-react";
+import { Search, Users, FolderOpen, ArrowRight, Building2, AlertCircle, ChevronRight, ChevronLeft } from "lucide-react";
 import type { Patient } from "@shared/schema";
 import type { PatientStats, PrefilledPatient } from "./types";
 import { useDebounce } from "./useDebounce";
@@ -100,11 +100,6 @@ export default function Patients() {
     onError: (e: Error) => toast({ title: "خطأ في الحذف", description: e.message, variant: "destructive" }),
   });
 
-  function handleAddNew() {
-    setEditingPatient(null);
-    setPrefilledPatient(null);
-    setDialogOpen(true);
-  }
   function handleEdit(p: PatientStats) {
     setPrefilledPatient(null);
     setEditingPatient(p as unknown as Patient);
@@ -123,18 +118,6 @@ export default function Patients() {
     setSelectedPatientId(patientId);
     setSelectedPatientRow(row);
     setActiveTab("file");
-  }
-  function handleNewVisit(patient: PatientStats) {
-    setEditingPatient(null);
-    setPrefilledPatient({
-      id:          patient.id,
-      fullName:    patient.fullName,
-      phone:       patient.phone,
-      age:         patient.age,
-      nationalId:  patient.nationalId,
-      patientCode: patient.patientCode,
-    });
-    setDialogOpen(true);
   }
   function handleCloseDialog() {
     setDialogOpen(false);
@@ -184,16 +167,7 @@ export default function Patients() {
               </TabsTrigger>
             </TabsList>
           </div>
-          {canCreate && (
-            <Button
-              size="sm" onClick={handleAddNew}
-              className="h-7 text-xs px-3"
-              data-testid="button-add-patient"
-            >
-              استقبال مريض
-              <Plus className="h-3 w-3 mr-1" />
-            </Button>
-          )}
+          
         </div>
 
         {/* محتوى تاب القائمة */}
@@ -297,7 +271,6 @@ export default function Patients() {
               onDelete={handleDelete}
               onOpenInvoice={handleOpenInvoice}
               onViewFile={handleViewFile}
-              onNewVisit={handleNewVisit}
             />
           </div>
 
@@ -343,17 +316,7 @@ export default function Patients() {
                   <ArrowRight className="h-3.5 w-3.5" />
                   العودة للقائمة
                 </Button>
-                {selectedPatientRow && (
-                  <Button
-                    size="sm" variant="outline"
-                    className="h-7 text-xs gap-1 text-emerald-700 border-emerald-300"
-                    onClick={() => handleNewVisit(selectedPatientRow)}
-                    data-testid="button-new-visit-from-file"
-                  >
-                    <Plus className="h-3 w-3" />
-                    تذكرة جديدة
-                  </Button>
-                )}
+                
               </div>
               <PatientFilePanel patientId={selectedPatientId} />
             </div>

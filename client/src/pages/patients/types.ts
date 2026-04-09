@@ -57,7 +57,6 @@ export interface PatientGridProps {
   onDelete:       (p: PatientStats) => void;
   onOpenInvoice:  (invoiceId: string) => void;
   onViewFile:     (patientId: string) => void;
-  onNewVisit:     (patient: PatientStats) => void;
 }
 
 export interface PatientRowProps {
@@ -71,5 +70,4 @@ export interface PatientRowProps {
   onDelete:       (p: PatientStats) => void;
   onOpenInvoice:  (invoiceId: string) => void;
   onViewFile:     (patientId: string) => void;
-  onNewVisit:     (patient: PatientStats) => void;
 }
