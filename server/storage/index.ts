@@ -194,6 +194,7 @@ export interface IStorage {
   deleteUser(id: string): Promise<boolean>;
   getUsers(): Promise<User[]>;
   getUserEffectivePermissions(userId: string): Promise<string[]>;
+  getUserEffectivePermissionsDetailed(userId: string): Promise<{ permission: string; source: "role" | "group" | "both" }[]>;
   getRolePermissions(role: string): Promise<RolePermission[]>;
   setRolePermissions(role: string, permissions: string[]): Promise<void>;
 

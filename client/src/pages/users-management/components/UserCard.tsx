@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button }            from "@/components/ui/button";
 import { Badge }             from "@/components/ui/badge";
-import { Pencil, Trash2, UserCircle, Wallet, Lock, Warehouse, Building2, Pill } from "lucide-react";
+import { Pencil, Trash2, UserCircle, Wallet, Lock, Warehouse, Building2, Pill, ShieldCheck } from "lucide-react";
 import { ROLE_LABELS } from "@shared/permissions";
 import { ScopeBadge } from "../../cashier/components/ScopeBadge";
 import type { UserData } from "../types";
@@ -16,9 +16,10 @@ interface UserCardProps {
   onEdit:           (u: UserData) => void;
   onDelete:         (id: string) => void;
   onOpenAcctScope:  (u: UserData) => void;
+  onViewPermissions: (u: UserData) => void;
 }
 
-export function UserCard({ user, canEdit, canDelete, departments, pharmacies, warehouses, onEdit, onDelete, onOpenAcctScope }: UserCardProps) {
+export function UserCard({ user, canEdit, canDelete, departments, pharmacies, warehouses, onEdit, onDelete, onOpenAcctScope, onViewPermissions }: UserCardProps) {
   const deptName  = user.departmentId       ? departments.find(d => d.id === user.departmentId)?.nameAr       : null;
   const pharmName = user.pharmacyId         ? pharmacies.find(p => p.id === user.pharmacyId)?.nameAr          : null;
   const whName    = user.defaultWarehouseId ? warehouses.find(w => w.id === user.defaultWarehouseId)?.nameAr  : null;
@@ -86,6 +87,14 @@ export function UserCard({ user, canEdit, canDelete, departments, pharmacies, wa
           </div>
 
           <div className="flex items-center gap-1">
+            <Button
+              variant="ghost" size="icon"
+              onClick={() => onViewPermissions(user)}
+              data-testid={`button-user-perms-${user.id}`}
+              title="الصلاحيات الفعّالة"
+            >
+              <ShieldCheck className="h-4 w-4 text-blue-500" />
+            </Button>
             {canEdit && (
               <>
                 <Button

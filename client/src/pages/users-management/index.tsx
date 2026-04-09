@@ -10,6 +10,7 @@ import { Loader2, Plus } from "lucide-react";
 import { UserCard } from "./components/UserCard";
 import { UserFormDialog } from "./components/UserFormDialog";
 import { AccountScopeDialog } from "./components/AccountScopeDialog";
+import { UserEffectivePermissionsDialog } from "./components/UserEffectivePermissionsDialog";
 import type { UserData, UserFormData } from "./types";
 import type { Account } from "@shared/schema";
 
@@ -39,6 +40,9 @@ export default function UsersManagement() {
 
   const [showScopeDialog, setShowScopeDialog] = useState(false);
   const [scopeUser,        setScopeUser]       = useState<UserData | null>(null);
+
+  const [showPermsDialog, setShowPermsDialog] = useState(false);
+  const [permsUser,        setPermsUser]       = useState<UserData | null>(null);
 
   const { data: users = [], isLoading } = useQuery<UserData[]>({ queryKey: ["/api/users"] });
   const { items: departmentItems }      = useDepartmentsLookup();
@@ -235,6 +239,7 @@ export default function UsersManagement() {
               onEdit={handleOpenEdit}
               onDelete={(id) => deleteMutation.mutate(id)}
               onOpenAcctScope={handleOpenAcctScope}
+              onViewPermissions={(u) => { setPermsUser(u); setShowPermsDialog(true); }}
             />
           ))}
         </div>
@@ -263,6 +268,16 @@ export default function UsersManagement() {
         onOpenChange={(open) => {
           setShowScopeDialog(open);
           if (!open) setScopeUser(null);
+        }}
+      />
+
+      <UserEffectivePermissionsDialog
+        userId={permsUser?.id ?? ""}
+        userName={permsUser?.fullName ?? ""}
+        open={showPermsDialog}
+        onOpenChange={(open) => {
+          setShowPermsDialog(open);
+          if (!open) setPermsUser(null);
         }}
       />
 

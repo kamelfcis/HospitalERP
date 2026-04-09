@@ -289,6 +289,29 @@ export async function registerAuthRoutes(app: Express) {
     }
   });
 
+  app.get(
+    "/api/users/:id/effective-permissions",
+    requireAuth,
+    checkPermission(PERMISSIONS.USERS_VIEW),
+    async (req, res) => {
+      try {
+        const user = await storage.getUser(req.params.id);
+        if (!user) {
+          return res.status(404).json({ message: "المستخدم غير موجود" });
+        }
+        const detailed = await storage.getUserEffectivePermissionsDetailed(req.params.id);
+        res.json({
+          userId: req.params.id,
+          role: user.role,
+          groupId: user.permissionGroupId ?? null,
+          permissions: detailed,
+        });
+      } catch (error: any) {
+        res.status(500).json({ message: error.message });
+      }
+    }
+  );
+
   app.get("/api/users/:id/departments", async (req, res) => {
     try {
       const depts = await storage.getUserDepartments(req.params.id);
