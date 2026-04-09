@@ -14,34 +14,63 @@ interface Props {
   onAction: (action: string, bed: BedData) => void;
 }
 
-const GRADIENT: Record<string, string> = {
-  EMPTY:          "from-emerald-400 to-emerald-600",
-  OCCUPIED:       "from-blue-500 to-indigo-700",
-  NEEDS_CLEANING: "from-amber-400 to-orange-500",
-  MAINTENANCE:    "from-red-400 to-rose-600",
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  EMPTY:          "متاح",
-  OCCUPIED:       "مشغول",
-  NEEDS_CLEANING: "تنظيف",
-  MAINTENANCE:    "صيانة",
+const STATUS_STYLES: Record<string, {
+  bg: string;
+  border: string;
+  accent: string;
+  text: string;
+  pill: string;
+  label: string;
+}> = {
+  EMPTY: {
+    bg: "bg-emerald-50/80 dark:bg-emerald-950/30",
+    border: "border-emerald-200 dark:border-emerald-800/60",
+    accent: "bg-emerald-500 dark:bg-emerald-600",
+    text: "text-emerald-900 dark:text-emerald-100",
+    pill: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300",
+    label: "متاح",
+  },
+  OCCUPIED: {
+    bg: "bg-blue-50/80 dark:bg-blue-950/30",
+    border: "border-blue-200 dark:border-blue-800/60",
+    accent: "bg-blue-500 dark:bg-blue-600",
+    text: "text-blue-900 dark:text-blue-100",
+    pill: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300",
+    label: "مشغول",
+  },
+  NEEDS_CLEANING: {
+    bg: "bg-amber-50/60 dark:bg-amber-950/25",
+    border: "border-amber-200 dark:border-amber-800/50",
+    accent: "bg-amber-400 dark:bg-amber-600",
+    text: "text-amber-900 dark:text-amber-100",
+    pill: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
+    label: "تنظيف",
+  },
+  MAINTENANCE: {
+    bg: "bg-rose-50/60 dark:bg-rose-950/25",
+    border: "border-rose-200 dark:border-rose-800/50",
+    accent: "bg-rose-400 dark:bg-rose-600",
+    text: "text-rose-900 dark:text-rose-100",
+    pill: "bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300",
+    label: "صيانة",
+  },
 };
 
 export function BedCard({ bed, onAction }: Props) {
-  const gradient = GRADIENT[bed.status];
+  const s = STATUS_STYLES[bed.status] ?? STATUS_STYLES.EMPTY;
   const isOccupied = bed.status === "OCCUPIED";
 
   return (
     <div
-      className={`relative bg-gradient-to-br ${gradient} text-white rounded-xl shadow-sm hover:shadow-md transition-all duration-150 hover:-translate-y-0.5 min-w-[120px] max-w-[160px] flex flex-col`}
+      className={`relative ${s.bg} ${s.border} border rounded-xl shadow-sm hover:shadow transition-all duration-150 min-w-[120px] max-w-[160px] flex flex-col overflow-hidden`}
       data-testid={`bed-card-${bed.id}`}
     >
-      {/* Top row: bed number + menu */}
-      <div className="flex items-center justify-between px-2.5 pt-2 pb-1">
-        <div className="flex items-center gap-1 min-w-0">
-          <BedDouble className="h-3.5 w-3.5 shrink-0 opacity-80" />
-          <span className="font-extrabold text-sm leading-none tracking-tight truncate">
+      <div className={`absolute top-0 left-0 right-0 h-[3px] ${s.accent} rounded-t-xl`} />
+
+      <div className="flex items-center justify-between px-2.5 pt-3 pb-1">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <BedDouble className={`h-3.5 w-3.5 shrink-0 ${s.text} opacity-60`} />
+          <span className={`font-bold text-sm leading-none tracking-tight truncate ${s.text}`}>
             {bed.bedNumber}
           </span>
         </div>
@@ -50,7 +79,7 @@ export function BedCard({ bed, onAction }: Props) {
             <Button
               variant="ghost"
               size="icon"
-              className="h-5 w-5 rounded-full shrink-0 text-white/80 hover:text-white hover:bg-white/20 focus-visible:ring-1 focus-visible:ring-white"
+              className="h-5 w-5 rounded-full shrink-0 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10 focus-visible:ring-1"
               aria-label={`قائمة السرير ${bed.bedNumber}`}
               data-testid={`bed-menu-${bed.id}`}
             >
@@ -96,35 +125,32 @@ export function BedCard({ bed, onAction }: Props) {
         </DropdownMenu>
       </div>
 
-      {/* Status pill */}
       <div className="px-2.5 pb-1">
-        <span className="inline-block text-[9px] font-semibold bg-white/20 rounded-full px-2 py-0.5">
-          {STATUS_LABEL[bed.status]}
+        <span className={`inline-block text-[9px] font-semibold rounded-full px-2 py-0.5 ${s.pill}`}>
+          {s.label}
         </span>
       </div>
 
-      {/* Patient info (occupied only) */}
       {isOccupied && (bed.patientName || bed.admissionNumber) && (
-        <div className="mx-2 mb-2 mt-0.5 rounded-lg bg-white/15 px-2 py-1.5 space-y-0.5">
+        <div className="mx-2 mb-2 mt-0.5 rounded-lg bg-white/60 dark:bg-white/5 border border-blue-100 dark:border-blue-800/30 px-2 py-1.5 space-y-0.5">
           {bed.patientName && (
             <div className="flex items-center gap-1 min-w-0">
-              <User className="h-2.5 w-2.5 shrink-0 opacity-80" />
-              <p className="text-[10px] font-semibold leading-tight truncate" data-testid={`bed-patient-${bed.id}`}>
+              <User className="h-2.5 w-2.5 shrink-0 text-blue-500 dark:text-blue-400 opacity-70" />
+              <p className="text-[10px] font-semibold leading-tight truncate text-foreground" data-testid={`bed-patient-${bed.id}`}>
                 {bed.patientName}
               </p>
             </div>
           )}
           {bed.admissionNumber && (
-            <p className="text-[9px] font-mono opacity-70 ps-4 truncate" data-testid={`bed-admission-${bed.id}`}>
+            <p className="text-[9px] font-mono text-muted-foreground ps-4 truncate" data-testid={`bed-admission-${bed.id}`}>
               {bed.admissionNumber}
             </p>
           )}
         </div>
       )}
 
-      {/* Hint for non-occupied */}
       {!isOccupied && (
-        <p className="px-2.5 pb-2 text-[9px] opacity-60 select-none">
+        <p className="px-2.5 pb-2 text-[9px] text-muted-foreground select-none">
           {bed.status === "EMPTY" && "جاهز للاستقبال"}
           {bed.status === "NEEDS_CLEANING" && "بانتظار التنظيف"}
           {bed.status === "MAINTENANCE" && "تحت الصيانة"}

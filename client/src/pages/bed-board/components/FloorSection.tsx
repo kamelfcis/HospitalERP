@@ -3,16 +3,15 @@ import { BedDouble, Building2, Tag } from "lucide-react";
 import { BedCard } from "./BedCard";
 import type { FloorData, RoomData, BedData } from "../types";
 
-// ─── Palette: one color per floor (rotates by index) ───────────────────────
-const FLOOR_GRADIENTS = [
-  "from-teal-500 to-cyan-600",
-  "from-indigo-500 to-violet-600",
-  "from-rose-500 to-pink-600",
-  "from-amber-500 to-orange-600",
-  "from-emerald-500 to-green-600",
-  "from-sky-500 to-blue-600",
-  "from-purple-500 to-fuchsia-600",
-  "from-slate-500 to-slate-700",
+const FLOOR_THEMES = [
+  { header: "bg-slate-600 dark:bg-slate-700",   stat: "bg-slate-500/40" },
+  { header: "bg-blue-700/90 dark:bg-blue-800",  stat: "bg-blue-600/40" },
+  { header: "bg-teal-700/85 dark:bg-teal-800",  stat: "bg-teal-600/40" },
+  { header: "bg-indigo-700/85 dark:bg-indigo-800", stat: "bg-indigo-600/40" },
+  { header: "bg-cyan-700/85 dark:bg-cyan-800",  stat: "bg-cyan-600/40" },
+  { header: "bg-stone-600 dark:bg-stone-700",   stat: "bg-stone-500/40" },
+  { header: "bg-zinc-600 dark:bg-zinc-700",     stat: "bg-zinc-500/40" },
+  { header: "bg-sky-700/85 dark:bg-sky-800",    stat: "bg-sky-600/40" },
 ];
 
 function RoomCard({
@@ -30,10 +29,9 @@ function RoomCard({
 
   return (
     <div
-      className="bg-white dark:bg-card border border-border rounded-2xl shadow-sm flex flex-col min-w-[160px] max-w-xs"
+      className="bg-white dark:bg-card border border-border rounded-xl shadow-sm flex flex-col min-w-[160px] max-w-xs"
       data-testid={`room-section-${room.id}`}
     >
-      {/* Room header */}
       <div className="px-3 pt-3 pb-2 border-b border-dashed border-border/60">
         <div className="flex items-start justify-between gap-1 flex-wrap">
           <div>
@@ -44,7 +42,7 @@ function RoomCard({
             <div className="mt-0.5">
               {room.serviceNameAr ? (
                 <span
-                  className="inline-flex items-center gap-0.5 text-[10px] text-teal-700 dark:text-teal-300 font-medium"
+                  className="inline-flex items-center gap-0.5 text-[10px] text-blue-600 dark:text-blue-400 font-medium"
                   data-testid={`room-grade-badge-${room.id}`}
                 >
                   <Tag className="h-2.5 w-2.5" />
@@ -58,17 +56,21 @@ function RoomCard({
               )}
             </div>
           </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <span className="text-[10px] text-muted-foreground">{occupied}/{totalBeds}</span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-[10px] text-muted-foreground font-mono">{occupied}/{totalBeds}</span>
             <div
-              className="w-1.5 h-1.5 rounded-full"
-              style={{ backgroundColor: empty > 0 ? "#22c55e" : occupied === totalBeds ? "#3b82f6" : "#f59e0b" }}
+              className={`w-2 h-2 rounded-full ring-1 ring-white dark:ring-gray-800 ${
+                empty > 0
+                  ? "bg-emerald-500 dark:bg-emerald-600"
+                  : occupied === totalBeds
+                    ? "bg-blue-500 dark:bg-blue-600"
+                    : "bg-amber-400 dark:bg-amber-500"
+              }`}
             />
           </div>
         </div>
       </div>
 
-      {/* Beds */}
       <div className="p-2 flex flex-row flex-wrap gap-2">
         {room.beds.map((bed) => (
           <BedCard
@@ -100,34 +102,32 @@ interface Props {
 }
 
 export function FloorSection({ floor, floorIndex, onAction }: Props) {
-  const gradient = FLOOR_GRADIENTS[floorIndex % FLOOR_GRADIENTS.length];
+  const theme = FLOOR_THEMES[floorIndex % FLOOR_THEMES.length];
   const allBeds = floor.rooms.flatMap(r => r.beds);
   const occupied = allBeds.filter(b => b.status === "OCCUPIED").length;
   const empty = allBeds.filter(b => b.status === "EMPTY").length;
 
   return (
-    <div className="rounded-2xl border border-border overflow-hidden shadow-sm" data-testid={`floor-section-${floor.id}`}>
-      {/* Floor header */}
-      <div className={`bg-gradient-to-l ${gradient} px-4 py-3 flex items-center justify-between gap-3 flex-wrap`}>
+    <div className="rounded-xl border border-border overflow-hidden shadow-sm" data-testid={`floor-section-${floor.id}`}>
+      <div className={`${theme.header} px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap`}>
         <div className="flex items-center gap-2">
-          <BedDouble className="h-5 w-5 text-white/90 shrink-0" />
-          <h2 className="text-base font-bold text-white tracking-wide">{floor.nameAr}</h2>
+          <BedDouble className="h-[18px] w-[18px] text-white/80 shrink-0" />
+          <h2 className="text-sm font-bold text-white">{floor.nameAr}</h2>
           {floor.departmentName && (
-            <Badge className="bg-white/20 hover:bg-white/30 text-white border-0 text-xs px-2 py-0.5">
-              <Building2 className="h-3 w-3 ml-1" />
+            <Badge className="bg-white/15 hover:bg-white/20 text-white/90 border-0 text-[11px] px-2 py-0 font-normal">
+              <Building2 className="h-3 w-3 ml-1 opacity-70" />
               {floor.departmentName}
             </Badge>
           )}
         </div>
-        <div className="flex items-center gap-2 text-white/90 text-xs">
-          <span className="bg-white/20 rounded-full px-2.5 py-0.5 font-medium">{floor.rooms.length} غرفة</span>
-          <span className="bg-emerald-700/50 rounded-full px-2.5 py-0.5 font-medium">{empty} فارغ</span>
-          <span className="bg-blue-700/50 rounded-full px-2.5 py-0.5 font-medium">{occupied} مشغول</span>
+        <div className="flex items-center gap-1.5 text-white/90 text-[11px]">
+          <span className={`${theme.stat} rounded-full px-2 py-0.5 font-medium`}>{floor.rooms.length} غرفة</span>
+          <span className="bg-emerald-600/30 rounded-full px-2 py-0.5 font-medium">{empty} فارغ</span>
+          <span className="bg-blue-500/30 rounded-full px-2 py-0.5 font-medium">{occupied} مشغول</span>
         </div>
       </div>
 
-      {/* Rooms — horizontal wrap */}
-      <div className="bg-muted/30 dark:bg-muted/10 p-3 flex flex-row flex-wrap gap-3">
+      <div className="bg-muted/20 dark:bg-muted/10 p-3 flex flex-row flex-wrap gap-3">
         {floor.rooms.map((room) => (
           <RoomCard key={room.id} room={room} floor={floor} onAction={onAction} />
         ))}
