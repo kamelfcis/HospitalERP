@@ -10,16 +10,72 @@ import { useState, useCallback, useMemo, memo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest }  from "@/lib/queryClient";
 import { useToast }    from "@/hooks/use-toast";
+import { PERMISSIONS } from "@shared/permissions";
 import {
-  SCREEN_MATRIX, ACTION_LABELS, type ScreenCategoryDef,
+  SCREEN_MATRIX, ACTION_LABELS, getUncoveredPermissions, type ScreenCategoryDef,
 } from "./screen-definitions";
 import { Button }   from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge }    from "@/components/ui/badge";
 import {
   Loader2, Save, ChevronDown, ChevronRight,
-  ChevronsDownUp, ChevronsUpDown,
+  ChevronsDownUp, ChevronsUpDown, AlertTriangle, ChevronUp,
 } from "lucide-react";
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  UncoveredPermissionsAlert — تنبيه صلاحيات غير مسجّلة في المصفوفة
+// ─────────────────────────────────────────────────────────────────────────────
+const ALL_PERM_KEYS = Object.values(PERMISSIONS) as string[];
+
+function UncoveredPermissionsAlert() {
+  const [expanded, setExpanded] = useState(false);
+  const uncovered = useMemo(() => getUncoveredPermissions(ALL_PERM_KEYS), []);
+
+  if (uncovered.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 p-3 text-sm">
+      <button
+        type="button"
+        onClick={() => setExpanded(v => !v)}
+        className="flex items-center gap-2 w-full text-right"
+      >
+        <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+        <span className="font-semibold text-amber-800 dark:text-amber-300 flex-1 text-right">
+          {uncovered.length} صلاحية غير مسجّلة في شاشة الصلاحيات
+        </span>
+        <Badge variant="outline" className="border-amber-400 text-amber-700 dark:text-amber-400 text-[10px]">
+          تحتاج تسجيل
+        </Badge>
+        {expanded
+          ? <ChevronUp   className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+          : <ChevronDown className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+        }
+      </button>
+
+      {expanded && (
+        <div className="mt-2 pt-2 border-t border-amber-200 dark:border-amber-700">
+          <p className="text-xs text-amber-700 dark:text-amber-400 mb-2">
+            الصلاحيات التالية موجودة في الكود لكن لم تُضَف إلى <code className="bg-amber-100 dark:bg-amber-900 px-1 rounded">screen-definitions.ts</code> بعد:
+          </p>
+          <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
+            {uncovered.map(k => (
+              <code
+                key={k}
+                className="text-[11px] bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-300 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-700"
+              >
+                {k}
+              </code>
+            ))}
+          </div>
+          <p className="text-[11px] text-amber-600 dark:text-amber-500 mt-2">
+            أضفها إلى الملف <code className="bg-amber-100 dark:bg-amber-900 px-1 rounded">client/src/pages/permission-groups/screen-definitions.ts</code> لتظهر هنا.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Helper — all perm keys for a category
@@ -200,6 +256,9 @@ export function PermissionsMatrixTab({ groupId, permissions, canEdit }: Props) {
 
   return (
     <div className="space-y-3">
+      {/* تنبيه صلاحيات غير مسجّلة */}
+      <UncoveredPermissionsAlert />
+
       {/* شريط الأدوات */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-3">

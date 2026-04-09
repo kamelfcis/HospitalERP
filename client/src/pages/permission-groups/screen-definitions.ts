@@ -623,3 +623,13 @@ export function getAllMatrixPermKeys(): string[] {
   }
   return [...keys];
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Helper: صلاحيات موجودة في PERMISSIONS لكن غير مُسجَّلة في المصفوفة
+//  استخدام: أي صلاحية جديدة تُضاف لـ shared/permissions.ts دون تسجيلها هنا
+//  ستظهر كتحذير في شاشة مجموعات الصلاحيات تلقائياً.
+// ─────────────────────────────────────────────────────────────────────────────
+export function getUncoveredPermissions(allDefinedKeys: string[]): string[] {
+  const covered = new Set(getAllMatrixPermKeys());
+  return allDefinedKeys.filter(k => !covered.has(k));
+}
