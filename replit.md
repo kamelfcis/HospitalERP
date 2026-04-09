@@ -26,7 +26,8 @@ The system utilizes a RESTful JSON API. Database interactions are managed via Dr
 - **Specialized Features**: Doctor Payable Transfer, Doctor Settlement, Stay Engine (patient accommodation), Bed Board, and Surgery Types System.
 - **Opening Stock**: Draft-to-posted document flow with lot entry, Excel import/export, and GL journal generation.
 - **Stock Cycle Count**: Full inventory reconciliation with atomic GL journal generation.
-- **Permission Groups Management**: Admin UI for managing groups, members, and per-module permissions.
+- **Permission Groups Management**: Admin UI for managing groups, members, and per-module permissions. Separate permissions for Bed Board (`bed_board.view`), Room Management (`rooms.manage`), and Surgery Types (`surgery_types.manage`).
+- **Clinic Scope Isolation**: Strict per-user clinic filtering. `user_clinics` and `clinic_user_clinic_assignments` tables unified via `getUserClinicIds()`. Reception users and doctors see only patients/visits of their assigned clinics. Enforced on backend (all clinic routes + patient-visits) and frontend (clinic dropdown auto-filters). Department scope for bed board also per-user.
 - **Contracts Module**: Master data for insurance/contract companies, contracts, and member cards, including a 5-pass rule evaluator for coverage and an approval workflow.
 - **Account Mappings Module**: UI for bulk updates of automatic journal transaction types.
 - **Customer Credit Payments Module**: Manages customer credit and integrates with cashier handover summaries.

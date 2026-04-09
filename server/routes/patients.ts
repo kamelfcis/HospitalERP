@@ -1107,11 +1107,33 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
-  // GET /api/patient-visits — قائمة الزيارات (مع فلاتر)
+  // GET /api/patient-visits — قائمة الزيارات (مع فلاتر + عزل بالعيادات)
   app.get("/api/patient-visits", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
       const { date, visitType, status, deptId, search } = req.query as Record<string,string>;
       const today = date || new Date().toISOString().split("T")[0];
+
+      const userId = (req.session as { userId?: string }).userId!;
+      const user = await storage.getUser(userId);
+      const isAdmin = user?.role === "admin" || user?.role === "owner";
+
+      let clinicDeptFilter = sql``;
+      if (!isAdmin) {
+        const clinicIds = await storage.getUserClinicIds(userId);
+        if (clinicIds.length > 0) {
+          const clinicDeptRows = await db.execute(sql`
+            SELECT DISTINCT department_id FROM clinic_clinics
+            WHERE id = ANY(ARRAY[${sql.join(clinicIds.map(id => sql`${id}`), sql`, `)}]::text[])
+              AND department_id IS NOT NULL
+          `);
+          const deptIds = (clinicDeptRows.rows as Array<{ department_id: string }>).map(r => r.department_id);
+          if (deptIds.length > 0) {
+            clinicDeptFilter = sql`AND (pv.department_id IS NULL OR pv.department_id = ANY(ARRAY[${sql.join(deptIds.map(id => sql`${id}`), sql`, `)}]::text[]))`;
+          } else {
+            clinicDeptFilter = sql`AND pv.department_id IS NULL`;
+          }
+        }
+      }
 
       const rows = await db.execute(sql`
         SELECT
@@ -1124,6 +1146,7 @@ export function registerPatientsRoutes(app: Express) {
         JOIN patients p ON p.id = pv.patient_id
         LEFT JOIN departments d ON d.id = pv.department_id
         WHERE DATE(pv.created_at) = ${today}::date
+          ${clinicDeptFilter}
           ${visitType ? sql`AND pv.visit_type = ${visitType}` : sql``}
           ${status ? sql`AND pv.status = ${status}` : sql``}
           ${deptId ? sql`AND pv.department_id = ${deptId}` : sql``}

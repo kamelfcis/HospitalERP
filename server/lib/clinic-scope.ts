@@ -12,6 +12,7 @@
 
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { storage } from "../storage";
 
 export type ClinicScope =
   | { all: true }
@@ -22,6 +23,7 @@ export type ClinicScope =
  *
  * - If the user holds `clinic.view_all` → { all: true }
  * - Otherwise → { all: false, clinicIds: [...their assigned clinic IDs] }
+ *   Reads from both `clinic_user_clinic_assignments` AND `user_clinics` tables.
  *
  * @param userId  - session user ID
  * @param perms   - effective permission strings (already fetched by the route)
@@ -33,12 +35,7 @@ export async function resolveClinicScope(
   if (perms.includes("clinic.view_all")) {
     return { all: true };
   }
-  const rows = await db.execute(
-    sql`SELECT clinic_id FROM clinic_user_clinic_assignments WHERE user_id = ${userId}`
-  );
-  const clinicIds = (rows.rows as Array<{ clinic_id: string }>).map(
-    (r) => r.clinic_id
-  );
+  const clinicIds = await storage.getUserClinicIds(userId);
   return { all: false, clinicIds };
 }
 

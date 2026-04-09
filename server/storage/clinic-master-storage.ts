@@ -194,7 +194,7 @@ const methods = {
       return rows.rows as Array<Record<string, unknown>>;
     }
     const rows = await db.execute(sql`
-      SELECT c.*, d.name_ar AS department_name,
+      SELECT DISTINCT c.*, d.name_ar AS department_name,
              w.name_ar AS pharmacy_name,
              sv.name_ar AS consultation_service_name,
              sv.base_price AS consultation_service_base_price,
@@ -204,7 +204,11 @@ const methods = {
       LEFT JOIN warehouses w ON w.id = c.default_pharmacy_id
       LEFT JOIN services sv ON sv.id = c.consultation_service_id
       LEFT JOIN treasuries tr ON tr.id = c.treasury_id
-      JOIN clinic_user_clinic_assignments a ON a.clinic_id = c.id AND a.user_id = ${userId}
+      WHERE c.id IN (
+        SELECT clinic_id FROM clinic_user_clinic_assignments WHERE user_id = ${userId}
+        UNION
+        SELECT clinic_id FROM user_clinics WHERE user_id = ${userId}
+      )
       ORDER BY c.name_ar
     `);
     return rows.rows as Array<Record<string, unknown>>;
@@ -254,7 +258,11 @@ const methods = {
 
   async getUserClinicIds(this: DatabaseStorage, userId: string): Promise<string[]> {
     const rows = await db.execute(sql`
-      SELECT clinic_id FROM clinic_user_clinic_assignments WHERE user_id = ${userId}
+      SELECT DISTINCT clinic_id FROM (
+        SELECT clinic_id FROM clinic_user_clinic_assignments WHERE user_id = ${userId}
+        UNION
+        SELECT clinic_id FROM user_clinics WHERE user_id = ${userId}
+      ) combined
     `);
     return (rows.rows as Array<{ clinic_id: string }>).map(r => r.clinic_id);
   },
