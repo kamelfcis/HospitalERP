@@ -108,7 +108,7 @@ function PermCheckbox({
     <label
       className="flex items-center gap-1.5 cursor-pointer"
       data-testid={testId}
-      title={isInherited ? "صلاحية موروثة من الدور الأساسي — مفعّلة دائماً حتى لو أُزيلت من المجموعة" : undefined}
+      title={isInherited ? "صلاحية افتراضية من الدور — أضفها للمجموعة لتفعيلها" : undefined}
     >
       <div className="relative flex items-center justify-center h-4 w-4">
         <Checkbox
@@ -124,7 +124,7 @@ function PermCheckbox({
         {label}
       </span>
       {isInherited && !isGroupSelected && (
-        <span className="text-[9px] text-blue-500 dark:text-blue-400">(موروثة)</span>
+        <span className="text-[9px] text-blue-500 dark:text-blue-400">(افتراضية)</span>
       )}
     </label>
   );
@@ -148,7 +148,6 @@ const DomainSection = memo(function DomainSection({
   const allSelected    = selectedCount === allKeys.length;
   const someSelected   = selectedCount > 0 && !allSelected;
   const inheritedCount = allKeys.filter(k => rolePerms.has(k)).length;
-  const effectiveCount = allKeys.filter(k => selected.has(k) || rolePerms.has(k)).length;
 
   return (
     <div className="border rounded-lg overflow-hidden">
@@ -177,14 +176,14 @@ const DomainSection = memo(function DomainSection({
         {inheritedCount > 0 && (
           <Badge variant="outline" className="text-[10px] shrink-0 border-blue-300 text-blue-600 dark:text-blue-400 dark:border-blue-700 gap-0.5">
             <Shield className="h-2.5 w-2.5" />
-            {inheritedCount} موروثة
+            {inheritedCount} افتراضية
           </Badge>
         )}
         <Badge
-          variant={effectiveCount > 0 ? "default" : "outline"}
+          variant={selectedCount > 0 ? "default" : "outline"}
           className="text-[10px] shrink-0"
         >
-          {effectiveCount} / {allKeys.length}
+          {selectedCount} / {allKeys.length}
         </Badge>
       </div>
 
@@ -248,9 +247,8 @@ export function PermissionsMatrixTab({ groupId, permissions, rolePermissions, ca
     () => new Set(SCREEN_MATRIX.map(c => c.id))
   );
 
-  const groupOnlyCount = Array.from(selected).filter(k => !rolePerms.has(k)).length;
   const inheritedCount = rolePerms.size;
-  const effectiveCount = new Set([...selected, ...rolePerms]).size;
+  const effectiveCount = selected.size;
   const allSectionsOpen = openSections.size === SCREEN_MATRIX.length;
 
   const saveMutation = useMutation({
@@ -300,10 +298,10 @@ export function PermissionsMatrixTab({ groupId, permissions, rolePermissions, ca
           <div>
             <p className="font-medium">
               <Shield className="inline h-3 w-3 -mt-0.5 ml-0.5" />
-              {inheritedCount} صلاحية موروثة من الدور الأساسي
+              {inheritedCount} صلاحية افتراضية من الدور
             </p>
             <p className="mt-0.5 opacity-80">
-              الصلاحيات بعلامة <span className="text-blue-600 dark:text-blue-400">(موروثة)</span> مفعّلة دائماً من الدور حتى لو لم تُضَف للمجموعة. يمكنك إضافتها للمجموعة أو إزالتها بحرية.
+              الصلاحيات بعلامة <span className="text-blue-600 dark:text-blue-400">(افتراضية)</span> متاحة من الدور الأساسي. لتفعيلها لازم تكون محددة في المجموعة — لو شلتها من المجموعة هتتوقف.
             </p>
           </div>
         </div>
@@ -317,12 +315,7 @@ export function PermissionsMatrixTab({ groupId, permissions, rolePermissions, ca
           {inheritedCount > 0 && (
             <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600 dark:text-blue-400 dark:border-blue-700 gap-0.5">
               <Shield className="h-2.5 w-2.5" />
-              {inheritedCount} موروثة
-            </Badge>
-          )}
-          {groupOnlyCount > 0 && (
-            <Badge variant="outline" className="text-[10px] border-green-300 text-green-600 dark:text-green-400 dark:border-green-700">
-              +{groupOnlyCount} إضافية
+              {inheritedCount} افتراضية من الدور
             </Badge>
           )}
           <button

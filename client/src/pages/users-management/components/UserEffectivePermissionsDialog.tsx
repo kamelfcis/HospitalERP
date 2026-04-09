@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Loader2, Shield, ShieldCheck, ShieldPlus, Search, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, ShieldCheck, ShieldOff, Search, ChevronDown, ChevronRight } from "lucide-react";
 import { ROLE_LABELS } from "@shared/permissions";
 import {
   SCREEN_MATRIX, ACTION_LABELS,
@@ -12,7 +12,8 @@ import {
 
 interface PermEntry {
   permission: string;
-  source: "role" | "group" | "both";
+  source: "group" | "role_default";
+  active: boolean;
 }
 
 interface EffectiveResponse {
@@ -28,24 +29,6 @@ interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }
-
-const SOURCE_LABELS: Record<string, string> = {
-  role:  "الدور",
-  group: "المجموعة",
-  both:  "الدور + المجموعة",
-};
-
-const SOURCE_COLORS: Record<string, string> = {
-  role:  "border-blue-300 text-blue-700 dark:text-blue-400 dark:border-blue-700 bg-blue-50 dark:bg-blue-950/30",
-  group: "border-green-300 text-green-700 dark:text-green-400 dark:border-green-700 bg-green-50 dark:bg-green-950/30",
-  both:  "border-purple-300 text-purple-700 dark:text-purple-400 dark:border-purple-700 bg-purple-50 dark:bg-purple-950/30",
-};
-
-const SOURCE_ICON: Record<string, typeof Shield> = {
-  role:  Shield,
-  group: ShieldPlus,
-  both:  ShieldCheck,
-};
 
 function findPermInMatrix(permKey: string): { category?: ScreenCategoryDef; screen?: ScreenDef; actionLabel?: string } {
   for (const cat of SCREEN_MATRIX) {
@@ -86,7 +69,7 @@ export function UserEffectivePermissionsDialog({ userId, userName, open, onOpenC
     const sections: {
       catId: string;
       catLabel: string;
-      items: { permKey: string; screenLabel: string; actionLabel: string; source: "role" | "group" | "both" }[];
+      items: { permKey: string; screenLabel: string; actionLabel: string; active: boolean; source: string }[];
     }[] = [];
 
     for (const cat of SCREEN_MATRIX) {
@@ -101,6 +84,7 @@ export function UserEffectivePermissionsDialog({ userId, userName, open, onOpenC
             permKey: pk,
             screenLabel: screen.label,
             actionLabel: actionLabel ?? "وصول",
+            active: entry.active,
             source: entry.source,
           });
           permMap.delete(pk);
@@ -118,6 +102,7 @@ export function UserEffectivePermissionsDialog({ userId, userName, open, onOpenC
           permKey: pk,
           screenLabel: pk,
           actionLabel: "",
+          active: entry.active,
           source: entry.source,
         });
       }
@@ -138,9 +123,8 @@ export function UserEffectivePermissionsDialog({ userId, userName, open, onOpenC
     })).filter(sec => sec.items.length > 0);
   }, [grouped, search]);
 
-  const roleCnt  = perms.filter(p => p.source === "role").length;
-  const groupCnt = perms.filter(p => p.source === "group").length;
-  const bothCnt  = perms.filter(p => p.source === "both").length;
+  const activeCnt   = perms.filter(p => p.active).length;
+  const inactiveCnt = perms.filter(p => !p.active).length;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -161,24 +145,19 @@ export function UserEffectivePermissionsDialog({ userId, userName, open, onOpenC
             <div className="flex items-center gap-2 flex-wrap">
               {data?.role && (
                 <Badge variant="outline" className="text-xs gap-1">
-                  <Shield className="h-3 w-3" />
                   الدور: {ROLE_LABELS[data.role] ?? data.role}
                 </Badge>
               )}
-              <Badge variant="outline" className={`text-[10px] ${SOURCE_COLORS.role}`}>
-                {roleCnt} من الدور
+              <Badge variant="secondary" className="text-xs gap-1">
+                <ShieldCheck className="h-3 w-3" />
+                {activeCnt} مفعّلة
               </Badge>
-              <Badge variant="outline" className={`text-[10px] ${SOURCE_COLORS.group}`}>
-                {groupCnt} من المجموعة
-              </Badge>
-              {bothCnt > 0 && (
-                <Badge variant="outline" className={`text-[10px] ${SOURCE_COLORS.both}`}>
-                  {bothCnt} مشتركة
+              {inactiveCnt > 0 && (
+                <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-600 dark:text-amber-400 dark:border-amber-700 gap-0.5">
+                  <ShieldOff className="h-3 w-3" />
+                  {inactiveCnt} غير مفعّلة (متاحة من الدور)
                 </Badge>
               )}
-              <Badge variant="secondary" className="text-[10px]">
-                {perms.length} إجمالي
-              </Badge>
             </div>
 
             <div className="relative">
@@ -195,6 +174,7 @@ export function UserEffectivePermissionsDialog({ userId, userName, open, onOpenC
             <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
               {filtered.map(sec => {
                 const isOpen = openSections.has(sec.catId) || search.trim().length > 0;
+                const activeInSection = sec.items.filter(i => i.active).length;
                 return (
                   <div key={sec.catId} className="border rounded-lg overflow-hidden">
                     <button
@@ -212,35 +192,43 @@ export function UserEffectivePermissionsDialog({ userId, userName, open, onOpenC
                         : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
                       }
                       <span className="font-semibold text-sm flex-1">{sec.catLabel}</span>
-                      <Badge variant="secondary" className="text-[10px]">{sec.items.length}</Badge>
+                      <Badge variant="secondary" className="text-[10px]">
+                        {activeInSection} / {sec.items.length}
+                      </Badge>
                     </button>
 
                     {isOpen && (
                       <div className="divide-y">
-                        {sec.items.map(it => {
-                          const Icon = SOURCE_ICON[it.source] ?? Shield;
-                          return (
-                            <div
-                              key={it.permKey}
-                              className="px-3 py-1.5 flex items-center gap-3 hover:bg-muted/20 transition-colors text-sm"
-                              data-testid={`perm-row-${it.permKey}`}
+                        {sec.items.map(it => (
+                          <div
+                            key={it.permKey}
+                            className={`px-3 py-1.5 flex items-center gap-3 transition-colors text-sm ${
+                              it.active ? "hover:bg-muted/20" : "opacity-50 bg-muted/10"
+                            }`}
+                            data-testid={`perm-row-${it.permKey}`}
+                          >
+                            {it.active
+                              ? <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-green-600 dark:text-green-400" />
+                              : <ShieldOff className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                            }
+                            <span className="flex-1 min-w-0">
+                              <span className={it.active ? "font-medium" : "line-through"}>{it.screenLabel}</span>
+                              {it.actionLabel && (
+                                <span className="text-muted-foreground text-xs mr-1.5">({it.actionLabel})</span>
+                              )}
+                            </span>
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] shrink-0 ${
+                                it.active
+                                  ? "border-green-300 text-green-700 dark:text-green-400 dark:border-green-700"
+                                  : "border-amber-300 text-amber-600 dark:text-amber-400 dark:border-amber-700"
+                              }`}
                             >
-                              <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                              <span className="flex-1 min-w-0">
-                                <span className="font-medium">{it.screenLabel}</span>
-                                {it.actionLabel && (
-                                  <span className="text-muted-foreground text-xs mr-1.5">({it.actionLabel})</span>
-                                )}
-                              </span>
-                              <Badge
-                                variant="outline"
-                                className={`text-[10px] shrink-0 ${SOURCE_COLORS[it.source]}`}
-                              >
-                                {SOURCE_LABELS[it.source]}
-                              </Badge>
-                            </div>
-                          );
-                        })}
+                              {it.active ? "مفعّلة" : "غير مفعّلة"}
+                            </Badge>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>

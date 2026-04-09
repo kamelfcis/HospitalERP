@@ -842,6 +842,38 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] enable_deferred_cost_issue seed error");
   }
 
+  // ── 5h-post2b. One-time sync role_permissions → group_permissions for system groups ──
+  // Guarded by system_settings flag — only runs once so admin removals are preserved
+  try {
+    const [flagRow] = (await db.execute(sql`
+      SELECT value FROM system_settings WHERE key = 'role_group_sync_done'
+    `)).rows as { value: string }[];
+    if (!flagRow) {
+      const syncResult = await db.execute(sql`
+        INSERT INTO group_permissions (group_id, permission)
+        SELECT pg.id, rp.permission
+        FROM permission_groups pg
+        JOIN role_permissions rp ON rp.role = pg.system_key
+        WHERE pg.system_key IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM group_permissions gp
+            WHERE gp.group_id = pg.id AND gp.permission = rp.permission
+          )
+        ON CONFLICT DO NOTHING
+      `);
+      const count = (syncResult as any).rowCount ?? 0;
+      await db.execute(sql`
+        INSERT INTO system_settings (key, value) VALUES ('role_group_sync_done', 'true')
+        ON CONFLICT (key) DO NOTHING
+      `);
+      log(`[STARTUP] one-time role→group sync: ${count} permission(s) added, flag set`);
+    } else {
+      log("[STARTUP] role→group sync already completed (flag set)");
+    }
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] role→group sync error");
+  }
+
   // ── 5h-post3. Backfill CASHIER_OPEN_SHIFT → system groups ───────────────
   try {
     await db.execute(sql`

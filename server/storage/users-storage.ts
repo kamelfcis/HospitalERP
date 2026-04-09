@@ -5,23 +5,20 @@
  *
  *  ── نموذج الصلاحيات الرسمي (Formal Permission Model) ──
  *
- *  Effective Permissions = Role Permissions ∪ Group Permissions
- *
  *  ترتيب حل الصلاحيات (Permission Resolution):
  *  ──────────────────────────────────────────────────
- *  1. role_permissions   — الأساس دائماً (حسب users.role)
- *  2. group_permissions  — إضافات فوق الأساس (إذا كان للمستخدم permission_group_id)
+ *  1. إذا كان للمستخدم permission_group_id → الصلاحيات = group_permissions فقط
+ *  2. إذا لم يكن للمستخدم مجموعة → الصلاحيات = role_permissions (fallback)
  *
  *  القواعد:
- *   - الصلاحيات تراكمية (additive) — لا يوجد deny أو سلب
- *   - role_permissions تُقرأ دائماً أولاً كأساس لكل مستخدم
- *   - إذا كان للمستخدم permission_group_id → تُضاف group_permissions فوق الأساس
- *   - إذا لم يكن للمستخدم مجموعة → الصلاحيات = role_permissions فقط
- *   - لا يوجد user-level overrides — لا يمكن سلب صلاحية موروثة من الدور
- *   - المجموعة لا تستبدل الدور، بل تضيف عليه
+ *   - المجموعة هي المصدر الوحيد عند وجودها
+ *   - الأدمن يتحكم بالكامل: يضيف أو يزيل أي صلاحية بما فيها الموروثة من الدور
+ *   - role_permissions تُعرض كمرجع للأدمن فقط (ما كان يوفره الدور)
+ *   - عند إنشاء مجموعة نظامية جديدة، تُنسخ role_permissions كقيم أولية
+ *   - لا يوجد deny — المجموعة تحدد ما هو مفعّل فقط
  *
  *  getUserEffectivePermissionsDetailed():
- *   - يُرجع كل صلاحية مع مصدرها: role / group / both
+ *   - يُرجع كل صلاحية فعّالة مع مرجع الدور: effective / role_only (غير مفعّلة)
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -95,10 +92,9 @@ const methods = {
   },
 
   // ── Permission Resolution ──────────────────────────────────────────────────
-  //  Effective = role_permissions(user.role) ∪ group_permissions(user.groupId)
-  //  1. دايماً اقرأ role_permissions كأساس
-  //  2. إذا permission_group_id مضبوط → ادمج group_permissions فوق الأساس
-  //  3. لا يوجد deny — تراكمية فقط
+  //  المجموعة هي المصدر الوحيد عند وجودها — role_permissions كـ fallback فقط
+  //  1. إذا permission_group_id مضبوط → group_permissions فقط
+  //  2. إذا لم يكن → role_permissions حسب users.role
   async getUserEffectivePermissions(this: DatabaseStorage, userId: string): Promise<string[]> {
     const cached = _permCache.get(userId);
     if (cached && cached.expiresAt > Date.now()) return cached.perms;
@@ -106,33 +102,31 @@ const methods = {
     const user = await this.getUser(userId);
     if (!user) return [];
 
-    const rolePermsRaw = await db.execute(sql`
-      SELECT permission FROM role_permissions WHERE role = ${user.role}
-    `);
-    const permSet = new Set(
-      (rolePermsRaw.rows as { permission: string }[]).map(r => r.permission)
-    );
+    let perms: string[];
 
     if (user.permissionGroupId) {
       const groupPermsRaw = await db.execute(sql`
         SELECT permission FROM group_permissions WHERE group_id = ${user.permissionGroupId}
       `);
-      for (const r of groupPermsRaw.rows as { permission: string }[]) {
-        permSet.add(r.permission);
-      }
+      perms = (groupPermsRaw.rows as { permission: string }[]).map(r => r.permission);
+    } else {
+      const rolePermsRaw = await db.execute(sql`
+        SELECT permission FROM role_permissions WHERE role = ${user.role}
+      `);
+      perms = (rolePermsRaw.rows as { permission: string }[]).map(r => r.permission);
     }
 
-    const perms = Array.from(permSet);
     _permCache.set(userId, { perms, expiresAt: Date.now() + PERM_CACHE_TTL_MS });
     return perms;
   },
 
   // ── Detailed Permission Resolution (with source) ──────────────────────────
-  //  Returns each effective permission with its source: 'role' | 'group' | 'both'
+  //  Returns effective permissions + role reference for informational display
+  //  source: 'group' = active from group, 'role_default' = in role but not in group (inactive)
   async getUserEffectivePermissionsDetailed(
     this: DatabaseStorage,
     userId: string
-  ): Promise<{ permission: string; source: "role" | "group" | "both" }[]> {
+  ): Promise<{ permission: string; source: "group" | "role_default"; active: boolean }[]> {
     const user = await this.getUser(userId);
     if (!user) return [];
 
@@ -143,27 +137,31 @@ const methods = {
       (rolePermsRaw.rows as { permission: string }[]).map(r => r.permission)
     );
 
-    const groupSet = new Set<string>();
     if (user.permissionGroupId) {
       const groupPermsRaw = await db.execute(sql`
         SELECT permission FROM group_permissions WHERE group_id = ${user.permissionGroupId}
       `);
-      for (const r of groupPermsRaw.rows as { permission: string }[]) {
-        groupSet.add(r.permission);
-      }
-    }
+      const groupSet = new Set(
+        (groupPermsRaw.rows as { permission: string }[]).map(r => r.permission)
+      );
 
-    const allPerms = new Set([...roleSet, ...groupSet]);
-    const result: { permission: string; source: "role" | "group" | "both" }[] = [];
-    for (const perm of Array.from(allPerms).sort()) {
-      const inRole  = roleSet.has(perm);
-      const inGroup = groupSet.has(perm);
-      result.push({
+      const result: { permission: string; source: "group" | "role_default"; active: boolean }[] = [];
+      for (const perm of Array.from(groupSet).sort()) {
+        result.push({ permission: perm, source: "group", active: true });
+      }
+      for (const perm of Array.from(roleSet).sort()) {
+        if (!groupSet.has(perm)) {
+          result.push({ permission: perm, source: "role_default", active: false });
+        }
+      }
+      return result;
+    } else {
+      return Array.from(roleSet).sort().map(perm => ({
         permission: perm,
-        source: inRole && inGroup ? "both" : inRole ? "role" : "group",
-      });
+        source: "role_default" as const,
+        active: true,
+      }));
     }
-    return result;
   },
 
   async getRolePermissions(this: DatabaseStorage, role: string): Promise<RolePermission[]> {
