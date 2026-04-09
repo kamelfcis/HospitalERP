@@ -68,7 +68,10 @@ export const clinicAppointments = pgTable("clinic_appointments", {
   companyId:               varchar("company_id").references(() => companies.id),
   contractId:              varchar("contract_id").references(() => contracts.id),
   contractMemberId:        varchar("contract_member_id").references(() => contractMembers.id),
+  visitId:                 varchar("visit_id"),
+  encounterId:             varchar("encounter_id"),
 }, (t) => [
+  index("idx_clinic_appts_visit_id").on(t.visitId),
   index("idx_clinic_appts_clinic_date").on(t.clinicId, t.appointmentDate),
   index("idx_clinic_appts_clinic_date_status").on(t.clinicId, t.appointmentDate, t.status),
   index("idx_clinic_appts_doctor_date").on(t.doctorId, t.appointmentDate),

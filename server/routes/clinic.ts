@@ -237,6 +237,7 @@ export function registerClinicRoutes(app: Express) {
         doctorId, appointmentDate, appointmentTime, notes,
         paymentType, insuranceCompany, payerReference,
         companyId, contractId, contractMemberId,
+        visitId,
       } = req.body;
       if (!patientName?.trim()) return res.status(400).json({ message: "اسم المريض مطلوب" });
       if (!doctorId) return res.status(400).json({ message: "الطبيب مطلوب" });
@@ -285,6 +286,7 @@ export function registerClinicRoutes(app: Express) {
         companyId: companyId || undefined,
         contractId: contractId || undefined,
         contractMemberId: contractMemberId || undefined,
+        visitId: visitId || undefined,
       });
       broadcastToClinic(req.params.id as string, "appointment_changed", { ts: Date.now() });
       res.status(201).json(snakeToCamel(appointment));
@@ -869,10 +871,11 @@ export function registerClinicRoutes(app: Express) {
 
   app.post("/api/dept-service-orders", requireAuth, checkPermission("dept_services.create"), async (req, res) => {
     try {
-      const { patientName, patientPhone, doctorId, doctorName, departmentId,
+      const { patientName, patientPhone, patientId, doctorId, doctorName, departmentId,
         orderType, contractName, treasuryId, services, discountPercent,
         discountAmount, notes, clinicOrderIds,
-        visitGroupId,   // ← Phase-2: nullable UUID لمجموعة الزيارة
+        visitGroupId,
+        visitId,
       } = req.body;
 
       if (!patientName || !departmentId || !services?.length) {
@@ -896,11 +899,12 @@ export function registerClinicRoutes(app: Express) {
       }
 
       const result = await storage.saveDeptServiceOrder({
-        patientName, patientPhone, doctorId, doctorName, departmentId,
+        patientName, patientPhone, patientId, doctorId, doctorName, departmentId,
         orderType: orderType || 'cash', contractName, treasuryId,
         services, discountPercent, discountAmount, notes,
         userId: req.session.userId!, clinicOrderIds,
         visitGroupId: safeVisitGroupId,
+        visitId: visitId || undefined,
       });
       res.json(result);
     } catch (e: any) { res.status(400).json({ message: e.message }); }

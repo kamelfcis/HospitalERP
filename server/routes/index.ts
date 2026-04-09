@@ -48,6 +48,7 @@ import { registerUnitIntegrityRoutes }   from "./unit-integrity";
 import { registerTaskRoutes }            from "./tasks";
 import { registerInvoiceTemplateRoutes } from "./invoice-templates";
 import { registerOversellRoutes }       from "./oversell";
+import { registerEncounterRoutes }     from "./encounters";
 
 export { broadcastToPharmacy, broadcastBedBoardUpdate } from "./_shared";
 
@@ -81,6 +82,7 @@ export async function registerRoutes(
   registerTaskRoutes(app);
   registerInvoiceTemplateRoutes(app);
   registerOversellRoutes(app);
+  registerEncounterRoutes(app);
 
   return httpServer;
 }

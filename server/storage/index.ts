@@ -142,6 +142,7 @@ import {
 export interface DeptServiceOrderInput {
   patientName: string;
   patientPhone?: string;
+  patientId?: string;
   doctorId?: string;
   doctorName?: string;
   departmentId: string;
@@ -161,6 +162,7 @@ export interface DeptServiceOrderInput {
   clinicOrderIds?: string[];
   /** UUID حر يربط هذه الفاتورة بمجموعة زيارة (nullable — لا FK الآن) */
   visitGroupId?: string;
+  visitId?: string;
 }
 
 export interface DeptServiceBatchInput {
@@ -717,6 +719,7 @@ export interface IStorage {
   getDoctorServicePrice(serviceId: string, doctorId: string): Promise<number | null>;
 
   saveDeptServiceOrder(data: DeptServiceOrderInput): Promise<{ invoiceId: string; invoiceNumber: number }>;
+  _saveDeptServiceOrderViaVisit(data: DeptServiceOrderInput): Promise<{ invoiceId: string; invoiceNumber: number }>;
   saveDeptServiceOrderBatch(data: DeptServiceBatchInput): Promise<{ results: Array<{ patientName: string; invoiceId?: string; invoiceNumber?: number; error?: string }> }>;
   checkDeptServiceDuplicate(patientName: string, serviceIds: string[], date: string): Promise<Array<{ serviceName: string; invoiceNumber: number }>>;
 

@@ -438,11 +438,14 @@ export const patientInvoiceLines = pgTable("patient_invoice_lines", {
   // price_source قيمه: service_base_price | contract_price_list | default_price_list | manual
   // price_list_id_used: قائمة الأسعار التي استُخدمت لاشتقاق السعر
   priceListIdUsed: varchar("price_list_id_used"),
+  encounterId: varchar("encounter_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   headerIdx:         index("idx_pat_line_header").on(table.headerId),
   typeIdx:           index("idx_pat_line_type").on(table.lineType),
   sourceIdx:         index("idx_pat_line_source").on(table.sourceType, table.sourceId),
+  encounterIdx:      index("idx_pat_line_encounter").on(table.encounterId),
+  encounterHeaderIdx: index("idx_pat_line_encounter_header").on(table.headerId, table.encounterId),
   companyIdx:        index("idx_pat_line_company").on(table.companyId),
   contractIdx:       index("idx_pat_line_contract").on(table.contractId),
   contractMemberIdx: index("idx_pat_line_contract_member").on(table.contractMemberId),

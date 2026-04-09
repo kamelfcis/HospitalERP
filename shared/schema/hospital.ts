@@ -1,9 +1,9 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, boolean, timestamp, date, index, uniqueIndex, pgSequence } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, boolean, timestamp, date, index, uniqueIndex, pgSequence, jsonb } from "drizzle-orm/pg-core";
 
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { admissionStatusEnum, cashierShiftStatusEnum } from "./enums";
+import { admissionStatusEnum, cashierShiftStatusEnum, encounterTypeEnum, encounterStatusEnum } from "./enums";
 import { users } from "./users";
 import { accounts } from "./finance";
 import { departments, pharmacies, warehouses, inventoryLots } from "./inventory";
@@ -267,6 +267,35 @@ export const patientVisits = pgTable("patient_visits", {
   dateIdx:      index("idx_pv_date").on(table.createdAt),
 }));
 
+// ─── جدول المقابلات الطبية (Encounters) ──────────────────────────────────
+// كل encounter = تفاعل طبي واحد ضمن الزيارة (عملية، أشعة، معمل، عيادة…)
+// parent_encounter_id يدعم التسلسل الهرمي (مثلاً: جراحة ← ICU ← ward)
+export const encounters = pgTable("encounters", {
+  id:                  varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  visitId:             varchar("visit_id").notNull().references(() => patientVisits.id),
+  admissionId:         varchar("admission_id").references(() => admissions.id),
+  parentEncounterId:   varchar("parent_encounter_id"),
+  departmentId:        varchar("department_id").references(() => departments.id),
+  encounterType:       encounterTypeEnum("encounter_type").notNull(),
+  status:              encounterStatusEnum("status").notNull().default("active"),
+  doctorId:            varchar("doctor_id"),
+  startedAt:           timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  endedAt:             timestamp("ended_at", { withTimezone: true }),
+  metadata:            jsonb("metadata"),
+  createdBy:           varchar("created_by").references(() => users.id),
+  createdAt:           timestamp("created_at").notNull().defaultNow(),
+  updatedAt:           timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  visitIdx:         index("idx_enc_visit").on(table.visitId),
+  admissionIdx:     index("idx_enc_admission").on(table.admissionId),
+  parentIdx:        index("idx_enc_parent").on(table.parentEncounterId),
+  deptIdx:          index("idx_enc_dept").on(table.departmentId),
+  typeIdx:          index("idx_enc_type").on(table.encounterType),
+  statusIdx:        index("idx_enc_status").on(table.status),
+  visitTypeIdx:     index("idx_enc_visit_type").on(table.visitId, table.encounterType),
+  visitStatusIdx:   index("idx_enc_visit_status").on(table.visitId, table.status),
+}));
+
 // ─── محرك الإقامة ─────────────────────────────────────────────────────────
 
 export const staySegments = pgTable("stay_segments", {
@@ -274,6 +303,7 @@ export const staySegments = pgTable("stay_segments", {
   admissionId: varchar("admission_id").notNull().references(() => admissions.id, { onDelete: "cascade" }),
   serviceId: varchar("service_id").references(() => services.id),
   invoiceId: varchar("invoice_id").notNull().references(() => patientInvoiceHeaders.id),
+  encounterId: varchar("encounter_id"),
   startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
   endedAt: timestamp("ended_at", { withTimezone: true }),
   status: varchar("status", { length: 10 }).notNull().default("ACTIVE"),
@@ -283,6 +313,7 @@ export const staySegments = pgTable("stay_segments", {
 }, (table) => ({
   admissionIdx: index("idx_stay_seg_admission").on(table.admissionId),
   statusIdx: index("idx_stay_seg_status").on(table.status),
+  encounterIdx: index("idx_stay_seg_encounter").on(table.encounterId),
 }));
 
 // ─── لوحة الأسرة ──────────────────────────────────────────────────────────
@@ -458,6 +489,10 @@ export type Admission = typeof admissions.$inferSelect;
 
 export type InsertPatientVisit = z.infer<typeof insertPatientVisitSchema>;
 export type PatientVisit = typeof patientVisits.$inferSelect;
+
+export const insertEncounterSchema = createInsertSchema(encounters).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEncounter = z.infer<typeof insertEncounterSchema>;
+export type Encounter = typeof encounters.$inferSelect;
 
 export type StaySegment = typeof staySegments.$inferSelect;
 export type Floor = typeof floors.$inferSelect;

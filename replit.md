@@ -53,6 +53,7 @@ The system utilizes a RESTful JSON API. Database interactions are managed via Dr
 - **Patient File Workspace**: A comprehensive patient master workspace with 6 tabbed sections for overview, history, invoices, payments, and financial statements.
 - **Reception Module**: Dedicated screen for logging patient visits, including search, new patient creation, visit type selection, and a list of today's visits.
 - **Final Close for Patient Invoices**: Functionality to formally close patient invoices with specific rules and audit trails.
+- **Encounter Model**: Unified `encounters` table (surgery/icu/ward/nursery/clinic/lab/radiology) with visit-centric lifecycle. EncounterRoutingService routes invoice lines to the visit's consolidated draft invoice with encounter_id tagging. Clinic appointments, clinic orders, and dept service orders all support optional `visitId` for visit-aware routing with standalone fallback. Startup backfill creates ward encounters for existing admissions. API routes at `/api/visits/:id/encounters`, `/api/encounters`, `/api/encounters/:id/complete|cancel|lines`.
 
 ## External Dependencies
 

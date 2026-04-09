@@ -13,6 +13,7 @@ import { db, pool } from "../db";
 import { sql } from "drizzle-orm";
 import type { DatabaseStorage, DeptServiceOrderInput, DeptServiceBatchInput } from "./index";
 import type { PoolClient } from "pg";
+import { addLinesToVisitInvoice } from "../services/encounter-routing";
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  OPD Accounting Engine v2 — IFRS + Partial Payment + Doctor Deduction
@@ -333,6 +334,7 @@ const methods = {
     notes?: string; createdBy?: string;
     paymentType?: string; insuranceCompany?: string; payerReference?: string;
     companyId?: string; contractId?: string; contractMemberId?: string;
+    visitId?: string;
   }): Promise<any> {
     const paymentType = (data.paymentType || 'CASH').toUpperCase();
 
@@ -416,8 +418,8 @@ const methods = {
           (clinic_id, doctor_id, patient_id, patient_name, patient_phone,
            appointment_date, appointment_time, turn_number, notes, created_by,
            payment_type, insurance_company, payer_reference,
-           company_id, contract_id, contract_member_id)
-        VALUES ($1,$2,$3,$4,$5,$6::date,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+           company_id, contract_id, contract_member_id, visit_id)
+        VALUES ($1,$2,$3,$4,$5,$6::date,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
         RETURNING *
       `, [
         data.clinicId, data.doctorId, data.patientId ?? null, data.patientName,
@@ -429,12 +431,12 @@ const methods = {
         data.companyId        ?? null,
         data.contractId       ?? null,
         data.contractMemberId ?? null,
+        data.visitId ?? null,
       ]);
       const appointment = ins.rows[0];
 
       // ── 5. إنشاء فاتورة رسم الكشف (إذا كانت العيادة تملك خدمة كشف) ──────
       if (clinic.consultation_service_id) {
-        // حساب سعر الكشف: سعر الطبيب أو السعر الأساسي
         const dpRes = await client.query(
           `SELECT price FROM clinic_service_doctor_prices WHERE service_id = $1 AND doctor_id = $2`,
           [clinic.consultation_service_id, data.doctorId]
@@ -443,13 +445,6 @@ const methods = {
           ? parseFloat(String(dpRes.rows[0].price))
           : parseFloat(String(clinic.svc_base_price || 0));
 
-        // رقم الفاتورة التالي
-        const numRes = await client.query(
-          `SELECT COALESCE(MAX(CASE WHEN invoice_number ~ '^[0-9]+$' THEN invoice_number::int ELSE 0 END), 0) + 1 AS next_num FROM patient_invoice_headers`
-        );
-        const invoiceNumber = String(numRes.rows[0].next_num);
-
-        // نوع المريض في الفاتورة
         const invoicePatientType = paymentType === 'CASH' ? 'cash' : 'contract';
         const contractName = paymentType === 'INSURANCE'
           ? (data.insuranceCompany?.trim() ?? null)
@@ -457,118 +452,174 @@ const methods = {
           ? (data.payerReference?.trim() ?? null)
           : null;
 
-        // أنشئ رأس الفاتورة
-        const headerRes = await client.query(`
-          INSERT INTO patient_invoice_headers
-            (invoice_number, invoice_date, patient_id, patient_name, patient_phone,
-             patient_type, contract_name, doctor_name,
-             total_amount, discount_amount, net_amount, paid_amount,
-             status, notes)
-          VALUES ($1, CURRENT_DATE, $2, $3, $4, $5, $6, $7, $8, 0, $8, 0, 'draft', $9)
-          RETURNING id, invoice_number
-        `, [
-          invoiceNumber,
-          data.patientId ?? null,
-          data.patientName,
-          data.patientPhone ?? null,
-          invoicePatientType,
-          contractName,
-          null, // doctor_name — filled by department when executing
-          consultationFee,
-          `رسم كشف عيادة — ${clinic.name_ar ?? ''}`,
-        ]);
-        const invoiceId = headerRes.rows[0].id;
+        let invoiceId: string;
+        let invoiceNumber: string;
 
-        // أضف سطر الخدمة
-        await client.query(`
-          INSERT INTO patient_invoice_lines
-            (header_id, line_type, service_id, description, quantity, unit_price, total_price, sort_order)
-          VALUES ($1, 'service', $2, $3, 1, $4, $4, 1)
-        `, [
-          invoiceId,
-          clinic.consultation_service_id,
-          clinic.svc_name ?? 'رسم كشف',
-          consultationFee,
-        ]);
+        if (data.visitId) {
+          await client.query('COMMIT');
 
-        // ── CASH: أنشئ دفع فوري + معاملة خزنة + غيّر الفاتورة لـ finalized ──
-        if (paymentType === 'CASH' && consultationFee > 0) {
-          const resolvedTreasuryId = clinic.resolved_treasury_id;
+          const routeResult = await addLinesToVisitInvoice({
+            visitId: data.visitId,
+            patientName: data.patientName,
+            patientPhone: data.patientPhone,
+            patientId: data.patientId,
+            departmentId: clinic.svc_dept_id ?? null,
+            doctorName: null,
+            patientType: invoicePatientType as 'cash' | 'contract',
+            contractName,
+            encounterType: 'clinic',
+            encounterDoctorId: data.doctorId,
+            createdBy: data.createdBy,
+            encounterMetadata: { source: 'consultation', clinicId: data.clinicId },
+            lines: [{
+              lineType: 'service' as const,
+              serviceId: clinic.consultation_service_id,
+              description: clinic.svc_name ?? 'رسم كشف',
+              quantity: 1,
+              unitPrice: consultationFee,
+              sourceType: 'clinic_appointment',
+              sourceId: appointment.id,
+            }],
+          });
 
-          await client.query(`
-            INSERT INTO patient_invoice_payments
-              (header_id, payment_date, amount, payment_method, treasury_id, notes)
-            VALUES ($1, CURRENT_DATE, $2, 'cash', $3, $4)
-          `, [
-            invoiceId,
-            consultationFee,
-            resolvedTreasuryId,
-            `سداد رسم كشف — موعد #${appointment.id}`,
-          ]);
+          invoiceId = routeResult.invoiceId;
+          invoiceNumber = routeResult.invoiceNumber;
 
-          await client.query(`
-            INSERT INTO treasury_transactions
-              (treasury_id, type, amount, description, source_type, source_id, transaction_date)
-            VALUES ($1, 'receipt', $2, $3, 'clinic_appointment', $4, CURRENT_DATE)
-            ON CONFLICT (source_type, source_id, treasury_id)
-              WHERE source_type IS NOT NULL AND source_id IS NOT NULL
-            DO UPDATE SET amount = EXCLUDED.amount, description = EXCLUDED.description
-          `, [
-            resolvedTreasuryId,
-            consultationFee,
-            `رسم كشف: ${data.patientName}`,
-            invoiceId,
-          ]);
+          await client.query('BEGIN');
 
-          await client.query(`
-            UPDATE patient_invoice_headers
-            SET status = 'finalized', paid_amount = $2, finalized_at = now(), updated_at = now()
-            WHERE id = $1
-          `, [invoiceId, consultationFee]);
-
-          // ── GL: قيد استلام مقدم (د. خزينة / ك. 21163) ──────────────────────
-          const treasuryGlAccountId = await getTreasuryGlAccountId(client, resolvedTreasuryId);
-          const deferredAccountId   = await getDeferredAccountId(client);
-          const bookingDate = new Date().toISOString().slice(0, 10);
-          try {
-            await postOpdJournalEntry(client, {
-              appointmentId: appointment.id,
-              sourceEntryType: 'OPD_ADVANCE_RECEIPT',
-              debitLines: [{ accountId: treasuryGlAccountId, amount: consultationFee }],
-              creditAccountId: deferredAccountId,
-              creditAmount: consultationFee,
-              description: `مقدم كشف عيادة: ${data.patientName} — ${clinic.name_ar ?? ''}`,
-              entryDate: bookingDate,
-              createdBy: data.createdBy,
-            });
-            await logAccountingEvent(client, {
-              eventType: 'OPD_ADVANCE_RECEIPT', sourceId: appointment.id,
-              appointmentId: appointment.id, postedByUser: data.createdBy,
-              status: 'success',
-            });
-          } catch (glErr) {
-            await logAccountingEvent(client, {
-              eventType: 'OPD_ADVANCE_RECEIPT', sourceId: appointment.id,
-              appointmentId: appointment.id, postedByUser: data.createdBy,
-              status: 'failure', errorMessage: String(glErr),
-            });
-            throw glErr;
-          }
           await client.query(
-            `UPDATE clinic_appointments
-             SET accounting_posted_advance = TRUE,
-                 gross_amount     = $2,
-                 paid_amount      = $2,
-                 remaining_amount = 0
-             WHERE id = $1`,
-            [appointment.id, consultationFee]
+            `UPDATE clinic_appointments SET encounter_id = $1 WHERE id = $2`,
+            [routeResult.encounterId, appointment.id]
           );
+
+          if (paymentType === 'CASH' && consultationFee > 0) {
+            const resolvedTreasuryId = clinic.resolved_treasury_id;
+
+            await client.query(`
+              INSERT INTO patient_invoice_payments
+                (header_id, payment_date, amount, payment_method, treasury_id, notes)
+              VALUES ($1, CURRENT_DATE, $2, 'cash', $3, $4)
+            `, [invoiceId, consultationFee, resolvedTreasuryId,
+                `سداد رسم كشف — موعد #${appointment.id}`]);
+
+            await client.query(`
+              INSERT INTO treasury_transactions
+                (treasury_id, type, amount, description, source_type, source_id, transaction_date)
+              VALUES ($1, 'receipt', $2, $3, 'clinic_appointment', $4, CURRENT_DATE)
+              ON CONFLICT (source_type, source_id, treasury_id)
+                WHERE source_type IS NOT NULL AND source_id IS NOT NULL
+              DO UPDATE SET amount = EXCLUDED.amount, description = EXCLUDED.description
+            `, [resolvedTreasuryId, consultationFee, `رسم كشف: ${data.patientName}`, invoiceId]);
+
+            await client.query(`
+              UPDATE patient_invoice_headers
+              SET paid_amount = paid_amount::numeric + $2::numeric, updated_at = now()
+              WHERE id = $1
+            `, [invoiceId, consultationFee]);
+
+            await client.query(
+              `UPDATE clinic_appointments
+               SET accounting_posted_advance = TRUE,
+                   gross_amount     = $2,
+                   paid_amount      = $2,
+                   remaining_amount = 0
+               WHERE id = $1`,
+              [appointment.id, consultationFee]
+            );
+          }
+
+        } else {
+          const numRes = await client.query(
+            `SELECT COALESCE(MAX(CASE WHEN invoice_number ~ '^[0-9]+$' THEN invoice_number::int ELSE 0 END), 0) + 1 AS next_num FROM patient_invoice_headers`
+          );
+          invoiceNumber = String(numRes.rows[0].next_num);
+
+          const headerRes = await client.query(`
+            INSERT INTO patient_invoice_headers
+              (invoice_number, invoice_date, patient_id, patient_name, patient_phone,
+               patient_type, contract_name, doctor_name,
+               total_amount, discount_amount, net_amount, paid_amount,
+               status, notes)
+            VALUES ($1, CURRENT_DATE, $2, $3, $4, $5, $6, $7, $8, 0, $8, 0, 'draft', $9)
+            RETURNING id, invoice_number
+          `, [
+            invoiceNumber, data.patientId ?? null, data.patientName,
+            data.patientPhone ?? null, invoicePatientType, contractName,
+            null, consultationFee,
+            `رسم كشف عيادة — ${clinic.name_ar ?? ''}`,
+          ]);
+          invoiceId = headerRes.rows[0].id;
+
+          await client.query(`
+            INSERT INTO patient_invoice_lines
+              (header_id, line_type, service_id, description, quantity, unit_price, total_price, sort_order)
+            VALUES ($1, 'service', $2, $3, 1, $4, $4, 1)
+          `, [invoiceId, clinic.consultation_service_id, clinic.svc_name ?? 'رسم كشف', consultationFee]);
+
+          if (paymentType === 'CASH' && consultationFee > 0) {
+            const resolvedTreasuryId = clinic.resolved_treasury_id;
+
+            await client.query(`
+              INSERT INTO patient_invoice_payments
+                (header_id, payment_date, amount, payment_method, treasury_id, notes)
+              VALUES ($1, CURRENT_DATE, $2, 'cash', $3, $4)
+            `, [invoiceId, consultationFee, resolvedTreasuryId,
+                `سداد رسم كشف — موعد #${appointment.id}`]);
+
+            await client.query(`
+              INSERT INTO treasury_transactions
+                (treasury_id, type, amount, description, source_type, source_id, transaction_date)
+              VALUES ($1, 'receipt', $2, $3, 'clinic_appointment', $4, CURRENT_DATE)
+              ON CONFLICT (source_type, source_id, treasury_id)
+                WHERE source_type IS NOT NULL AND source_id IS NOT NULL
+              DO UPDATE SET amount = EXCLUDED.amount, description = EXCLUDED.description
+            `, [resolvedTreasuryId, consultationFee, `رسم كشف: ${data.patientName}`, invoiceId]);
+
+            await client.query(`
+              UPDATE patient_invoice_headers
+              SET status = 'finalized', paid_amount = $2, finalized_at = now(), updated_at = now()
+              WHERE id = $1
+            `, [invoiceId, consultationFee]);
+
+            const treasuryGlAccountId = await getTreasuryGlAccountId(client, resolvedTreasuryId);
+            const deferredAccountId   = await getDeferredAccountId(client);
+            const bookingDate = new Date().toISOString().slice(0, 10);
+            try {
+              await postOpdJournalEntry(client, {
+                appointmentId: appointment.id,
+                sourceEntryType: 'OPD_ADVANCE_RECEIPT',
+                debitLines: [{ accountId: treasuryGlAccountId, amount: consultationFee }],
+                creditAccountId: deferredAccountId,
+                creditAmount: consultationFee,
+                description: `مقدم كشف عيادة: ${data.patientName} — ${clinic.name_ar ?? ''}`,
+                entryDate: bookingDate,
+                createdBy: data.createdBy,
+              });
+              await logAccountingEvent(client, {
+                eventType: 'OPD_ADVANCE_RECEIPT', sourceId: appointment.id,
+                appointmentId: appointment.id, postedByUser: data.createdBy,
+                status: 'success',
+              });
+            } catch (glErr) {
+              await logAccountingEvent(client, {
+                eventType: 'OPD_ADVANCE_RECEIPT', sourceId: appointment.id,
+                appointmentId: appointment.id, postedByUser: data.createdBy,
+                status: 'failure', errorMessage: String(glErr),
+              });
+              throw glErr;
+            }
+            await client.query(
+              `UPDATE clinic_appointments
+               SET accounting_posted_advance = TRUE,
+                   gross_amount     = $2,
+                   paid_amount      = $2,
+                   remaining_amount = 0
+               WHERE id = $1`,
+              [appointment.id, consultationFee]
+            );
+          }
         }
 
-        // ── INSURANCE / CONTRACT: الفاتورة تبقى draft (لا دفع) ──────────────
-        // لا شيء إضافي — الفاتورة في وضع draft جاهزة للتحصيل لاحقاً
-
-        // أنشئ أمر خدمة كشف بحالة executed (مُنفَّذ عند الحجز)
         await client.query(`
           INSERT INTO clinic_orders
             (appointment_id, doctor_id, patient_name,
@@ -584,7 +635,6 @@ const methods = {
           consultationFee,
         ]);
 
-        // اربط الفاتورة بالموعد
         await client.query(
           `UPDATE clinic_appointments SET invoice_id = $1 WHERE id = $2`,
           [invoiceId, appointment.id]
@@ -593,7 +643,7 @@ const methods = {
         appointment.invoice_id = invoiceId;
         appointment.invoice_number = invoiceNumber;
         appointment.consultation_fee = consultationFee;
-        appointment.invoice_status = paymentType === 'CASH' ? 'finalized' : 'draft';
+        appointment.invoice_status = (data.visitId || paymentType !== 'CASH') ? 'draft' : 'finalized';
       }
 
       await client.query('COMMIT');

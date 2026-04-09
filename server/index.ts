@@ -997,6 +997,34 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] patient_visits backfill error");
   }
 
+  // ── 5g3. Encounters backfill for existing admissions with visits ──────────
+  try {
+    const admissionsWithVisits = await db.execute(sql`
+      SELECT a.id AS admission_id, a.department_id,
+             pv.id AS visit_id, a.created_at
+      FROM admissions a
+      JOIN patient_visits pv ON pv.admission_id = a.id
+      WHERE NOT EXISTS (
+        SELECT 1 FROM encounters e WHERE e.admission_id = a.id
+      )
+    `);
+    const encRows = admissionsWithVisits.rows as Array<Record<string, unknown>>;
+    if (encRows.length > 0) {
+      let encCount = 0;
+      for (const row of encRows) {
+        await db.execute(sql`
+          INSERT INTO encounters (visit_id, admission_id, department_id, encounter_type, status, started_at, created_by)
+          VALUES (${row.visit_id}, ${row.admission_id}, ${row.department_id || null}, 'ward', 'active',
+                  ${row.created_at || new Date()}, NULL)
+        `);
+        encCount++;
+      }
+      log(`[STARTUP] encounters backfill: created ${encCount} encounter(s) for existing admissions`);
+    }
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] encounters backfill error");
+  }
+
   // ── 5h. Backfill expiry_month/expiry_year from expiry_date ────────────────
   // حالات تاريخية: دفعات دخلت بـ expiry_date لكن بدون expiry_month/expiry_year
   // (استيراد إكسيل، opening stock قديم). آمن ومتكرر الإجراء.
