@@ -1863,9 +1863,9 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
   }));
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="h-full flex flex-col gap-3">
       {/* Visit selector */}
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="shrink-0 flex items-center gap-2 flex-wrap">
         <History className="h-4 w-4 text-muted-foreground shrink-0" />
         {patientVisits.length > 0 ? (
           <Select
@@ -1912,28 +1912,32 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
       </div>
 
       {/* Header card with lock state */}
-      <InvoiceHeaderCard
-        patientName={patientName}
-        patientCode={patientCode}
-        visit={selectedVisit}
-        invoiceNumber={invoiceNumber}
-        isFinalClosed={isFinalClosed}
-        invoiceStatus={invoiceStatus}
-      />
+      <div className="shrink-0">
+        <InvoiceHeaderCard
+          patientName={patientName}
+          patientCode={patientCode}
+          visit={selectedVisit}
+          invoiceNumber={invoiceNumber}
+          isFinalClosed={isFinalClosed}
+          invoiceStatus={invoiceStatus}
+        />
+      </div>
 
       {hasEncounterView ? (
-        <EncounterBreakdownView
-          summary={visitSummary!}
-          visitId={selectedVisitId!}
-          patientId={patientId}
-          admissionId={admissionId}
-          onFinalize={() => finalizeMutation.mutate(selectedVisitId!)}
-          isFinalizePending={finalizeMutation.isPending}
-        />
+        <div className="flex-1 overflow-y-auto">
+          <EncounterBreakdownView
+            summary={visitSummary!}
+            visitId={selectedVisitId!}
+            patientId={patientId}
+            admissionId={admissionId}
+            onFinalize={() => finalizeMutation.mutate(selectedVisitId!)}
+            isFinalizePending={finalizeMutation.isPending}
+          />
+        </div>
       ) : (
-        <div className="flex flex-col xl:flex-row gap-4 items-start">
+        <div className="flex-1 overflow-hidden flex flex-col xl:flex-row gap-3 min-h-0">
           {/* ── Sidebar 1/3 ── */}
-          <div className="w-full xl:w-1/3 shrink-0 flex flex-col gap-3">
+          <div className="w-full xl:w-1/3 shrink-0 overflow-y-auto flex flex-col gap-3 pb-2">
 
             {/* Financial summary */}
             <FinancialSidebar
@@ -2002,9 +2006,9 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
           </div>
 
           {/* ── Main 2/3 ── */}
-          <div className="flex-1 min-w-0 xl:w-2/3">
-            <Tabs defaultValue="services">
-              <TabsList className="h-8 mb-3">
+          <div className="flex-1 min-w-0 overflow-hidden flex flex-col min-h-0">
+            <Tabs defaultValue="services" className="flex flex-col h-full">
+              <TabsList className="h-8 shrink-0">
                 <TabsTrigger value="services" className="text-xs px-3" data-testid="tab-services">
                   الخدمات
                 </TabsTrigger>
@@ -2014,7 +2018,7 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="services" className="mt-0">
+              <TabsContent value="services" className="flex-1 overflow-y-auto mt-2 min-h-0">
                 <ServicesTab
                   patientId={patientId}
                   admissionId={admissionId}
@@ -2023,7 +2027,7 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
                 />
               </TabsContent>
 
-              <TabsContent value="print" className="mt-0">
+              <TabsContent value="print" className="flex-1 overflow-y-auto mt-2 min-h-0">
                 <InvoicePrintTab
                   patientName={patientName}
                   patientCode={patientCode}

@@ -42,8 +42,8 @@ export const PatientFileWorkspace = memo(function PatientFileWorkspace({ patient
   const remaining = financial?.totalOutstanding ?? 0;
 
   return (
-    <div className="flex flex-col min-h-screen bg-background" dir="rtl">
-      <div className="border-b bg-background/95 backdrop-blur sticky top-0 z-10 print:hidden">
+    <div className="flex flex-col h-screen overflow-hidden bg-background" dir="rtl">
+      <div className="border-b bg-background/95 backdrop-blur shrink-0 z-10 print:hidden">
         <div className="flex items-center gap-3 px-4 py-3">
           <Button
             variant="ghost"
@@ -97,27 +97,9 @@ export const PatientFileWorkspace = memo(function PatientFileWorkspace({ patient
         </div>
       </div>
 
-      <div className="flex-1 p-4 max-w-6xl mx-auto w-full">
-        {activeTab === "overview" && (
-          <OverviewTab
-            patient={patient}
-            financial={financial}
-            isLoading={loadingPatient || loadingFinancial}
-          />
-        )}
-
-        {activeTab === "history" && (
-          <HistoryTab patientId={patientId} />
-        )}
-
-        {activeTab === "invoices" && (
-          <InvoicesTab
-            invoices={aggregated?.invoices ?? []}
-            isLoading={loadingAggregated}
-          />
-        )}
-
-        {activeTab === "consolidated" && (
+      {/* Consolidated tab: full-width, full-height, no outer scroll */}
+      {activeTab === "consolidated" && (
+        <div className="flex-1 overflow-hidden p-3">
           <ConsolidatedInvoiceTab
             data={aggregated}
             isLoading={loadingAggregated}
@@ -125,21 +107,47 @@ export const PatientFileWorkspace = memo(function PatientFileWorkspace({ patient
             patientName={patientName}
             patientCode={patientCode}
           />
-        )}
+        </div>
+      )}
 
-        {activeTab === "payments" && (
-          <PaymentsTab patientId={patientId} active={activeTab === "payments"} />
-        )}
+      {/* All other tabs: centered max-width, page-level scroll */}
+      {activeTab !== "consolidated" && (
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-4 max-w-6xl mx-auto w-full">
+            {activeTab === "overview" && (
+              <OverviewTab
+                patient={patient}
+                financial={financial}
+                isLoading={loadingPatient || loadingFinancial}
+              />
+            )}
 
-        {activeTab === "statement" && (
-          <StatementTab
-            aggregated={aggregated}
-            financial={financial}
-            isLoading={loadingAggregated || loadingFinancial}
-            patientName={patientName}
-          />
-        )}
-      </div>
+            {activeTab === "history" && (
+              <HistoryTab patientId={patientId} />
+            )}
+
+            {activeTab === "invoices" && (
+              <InvoicesTab
+                invoices={aggregated?.invoices ?? []}
+                isLoading={loadingAggregated}
+              />
+            )}
+
+            {activeTab === "payments" && (
+              <PaymentsTab patientId={patientId} active={activeTab === "payments"} />
+            )}
+
+            {activeTab === "statement" && (
+              <StatementTab
+                aggregated={aggregated}
+                financial={financial}
+                isLoading={loadingAggregated || loadingFinancial}
+                patientName={patientName}
+              />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 });
