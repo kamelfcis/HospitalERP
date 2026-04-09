@@ -72,14 +72,27 @@ export function registerBedBoardRoutes(app: Express) {
     }
   });
 
+  app.get("/api/beds/admission-companies", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_CREATE), async (req, res) => {
+    try {
+      const companies = await storage.getCompanies({ isActive: true });
+      res.json(companies);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "خطأ";
+      res.status(500).json({ message: msg });
+    }
+  });
+
   app.post("/api/beds/:id/admit", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_CREATE), async (req, res) => {
     try {
-      const { patientName, patientPhone, patientId, departmentId, serviceId, doctorName, notes, paymentType, insuranceCompany, surgeryTypeId } = req.body;
+      const { patientName, patientPhone, patientId, nationalId, departmentId, serviceId, doctorName, notes, paymentType, insuranceCompany, surgeryTypeId } = req.body;
       if (!patientName?.trim()) return res.status(400).json({ message: "اسم المريض مطلوب" });
       let resolvedPatientId: string | undefined = patientId || undefined;
       if (!resolvedPatientId) {
         const pt = await findOrCreatePatient(patientName.trim(), patientPhone || null);
         resolvedPatientId = pt.id;
+      }
+      if (nationalId && resolvedPatientId) {
+        await db.execute(sql`UPDATE patients SET national_id = ${nationalId} WHERE id = ${resolvedPatientId} AND (national_id IS NULL OR national_id = '')`);
       }
       const result = await storage.admitPatientToBed({
         bedId: req.params.id as string,

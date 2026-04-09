@@ -25,6 +25,7 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from "@/components/ui/sheet";
 import { DoctorLookup, DepartmentLookup } from "@/components/lookups";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PatientSearchCombobox, type PatientOption } from "@/components/shared/PatientSearchCombobox";
 import { Tag, Loader2, Printer, UserCheck } from "lucide-react";
 import { printReceptionTicket } from "@/components/printing/ReceptionTicketPrint";
@@ -111,6 +112,7 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
 
   const [patientName,      setPatientName]      = useState("");
   const [patientPhone,     setPatientPhone]     = useState("");
+  const [nationalId,       setNationalId]       = useState("");
   const [selectedPatient,  setSelectedPatient]  = useState<PatientOption | null>(null);
   const [departmentId,     setDepartmentId]     = useState("");
   const [selectedDoctor,   setSelectedDoctor]   = useState<LookupItem | null>(null);
@@ -139,6 +141,12 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
 
   // ===== Data Fetching =====
 
+  interface CompanyOption { id: string; nameAr: string; code: string; isActive: boolean; }
+  const { data: activeCompanies = [] } = useQuery<CompanyOption[]>({
+    queryKey: ["/api/beds/admission-companies"],
+    enabled: paymentType === "contract",
+  });
+
   // Active filtered surgeries (server returns all matches; we hide inactive ones here)
   const { data: surgeriesRaw = [] } = useQuery<SurgeryType[]>({
     queryKey: ["/api/surgery-types", surgerySearch],
@@ -153,9 +161,8 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
 
   const effectiveName = selectedPatient?.fullName ?? patientName;
 
-  // Effective phone for submission: explicit override wins, then patient's stored phone
-  // (This fixes the previous bug where selectedPatient.phone overrode the user's typed override)
   const effectivePhone = patientPhone.trim() || selectedPatient?.phone || undefined;
+  const effectiveNationalId = nationalId.trim() || selectedPatient?.nationalId || undefined;
 
   const hasRoomService = !!(bed?.roomServiceId);
 
@@ -171,6 +178,7 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
   const resetState = useCallback(() => {
     setPatientName("");
     setPatientPhone("");
+    setNationalId("");
     setSelectedPatient(null);
     setDepartmentId("");
     setSelectedDoctor(null);
@@ -191,12 +199,15 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
 
   const handlePatientSelect = useCallback((patient: PatientOption) => {
     setSelectedPatient(patient);
+    setPatientPhone("");
+    setNationalId("");
     setTimeout(() => patientPhoneRef.current?.focus(), 50);
   }, []);
 
   const handlePatientClear = useCallback(() => {
     setSelectedPatient(null);
     setPatientPhone("");
+    setNationalId("");
   }, []);
 
   // ── Surgery search keyboard navigation ───────────────────────────────────────
@@ -237,6 +248,8 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
       apiRequest("POST", `/api/beds/${bed!.id}/admit`, {
         patientName:      effectiveName,
         patientPhone:     effectivePhone,
+        patientId:        selectedPatient?.id || undefined,
+        nationalId:       effectiveNationalId || undefined,
         departmentId:     departmentId   || undefined,
         doctorName:       selectedDoctor?.name || undefined,
         notes:            notes          || undefined,
@@ -342,60 +355,98 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
               />
             </div>
 
-            {/* ── Manual name + phone (2-col grid, hidden when patient selected) ─ */}
+            {/* ── Manual name + phone + national ID (when no patient selected) ─ */}
             {!selectedPatient && (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label htmlFor="patient-name-manual">
-                    اسم المريض <span className="text-destructive" aria-hidden="true">*</span>
-                  </Label>
-                  <Input
-                    id="patient-name-manual"
-                    ref={patientNameRef}
-                    data-testid="input-patient-name"
-                    placeholder="الاسم الكامل"
-                    autoComplete="off"
-                    value={patientName}
-                    onChange={e => setPatientName(e.target.value)}
-                  />
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="patient-name-manual">
+                      اسم المريض <span className="text-destructive" aria-hidden="true">*</span>
+                    </Label>
+                    <Input
+                      id="patient-name-manual"
+                      ref={patientNameRef}
+                      data-testid="input-patient-name"
+                      placeholder="الاسم الكامل"
+                      autoComplete="off"
+                      value={patientName}
+                      onChange={e => setPatientName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="patient-phone-manual">رقم الهاتف</Label>
+                    <Input
+                      id="patient-phone-manual"
+                      ref={patientPhoneRef}
+                      data-testid="input-patient-phone"
+                      placeholder="01XXXXXXXXX"
+                      autoComplete="tel"
+                      value={patientPhone}
+                      onChange={e => setPatientPhone(e.target.value)}
+                      dir="ltr"
+                    />
+                  </div>
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="patient-phone-manual">رقم الهاتف</Label>
+                  <Label htmlFor="patient-nid-manual">الرقم القومي</Label>
                   <Input
-                    id="patient-phone-manual"
+                    id="patient-nid-manual"
+                    data-testid="input-patient-nid"
+                    placeholder="الرقم القومي (14 رقم)"
+                    autoComplete="off"
+                    value={nationalId}
+                    onChange={e => setNationalId(e.target.value)}
+                    dir="ltr"
+                    maxLength={14}
+                  />
+                </div>
+              </>
+            )}
+
+            {/* ── Phone + NID override (when patient selected) ── */}
+            {selectedPatient && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="patient-phone-override">
+                    رقم الهاتف
+                    <span className="text-xs text-muted-foreground mr-1.5">
+                      {selectedPatient.phone
+                        ? `(المحفوظ: ${selectedPatient.phone})`
+                        : "(غير محفوظ)"}
+                    </span>
+                  </Label>
+                  <Input
+                    id="patient-phone-override"
                     ref={patientPhoneRef}
-                    data-testid="input-patient-phone"
-                    placeholder="01XXXXXXXXX"
+                    data-testid="input-patient-phone-override"
+                    placeholder={selectedPatient.phone ?? "01XXXXXXXXX"}
                     autoComplete="tel"
                     value={patientPhone}
                     onChange={e => setPatientPhone(e.target.value)}
                     dir="ltr"
                   />
                 </div>
-              </div>
-            )}
-
-            {/* ── Phone override (when patient selected — user can update stored phone) ── */}
-            {selectedPatient && (
-              <div className="space-y-1">
-                <Label htmlFor="patient-phone-override">
-                  رقم الهاتف
-                  <span className="text-xs text-muted-foreground mr-1.5">
-                    {selectedPatient.phone
-                      ? `(المحفوظ: ${selectedPatient.phone})`
-                      : "(غير محفوظ — أدخل إن أردت)"}
-                  </span>
-                </Label>
-                <Input
-                  id="patient-phone-override"
-                  ref={patientPhoneRef}
-                  data-testid="input-patient-phone-override"
-                  placeholder={selectedPatient.phone ?? "01XXXXXXXXX"}
-                  autoComplete="tel"
-                  value={patientPhone}
-                  onChange={e => setPatientPhone(e.target.value)}
-                  dir="ltr"
-                />
+                <div className="space-y-1">
+                  <Label htmlFor="patient-nid-override">
+                    الرقم القومي
+                    <span className="text-xs text-muted-foreground mr-1.5">
+                      {selectedPatient.nationalId
+                        ? `(المحفوظ: ${selectedPatient.nationalId})`
+                        : "(غير محفوظ)"}
+                    </span>
+                  </Label>
+                  <Input
+                    id="patient-nid-override"
+                    data-testid="input-patient-nid-override"
+                    placeholder={selectedPatient.nationalId ?? "الرقم القومي"}
+                    autoComplete="off"
+                    value={selectedPatient.nationalId ? (selectedPatient.nationalId) : nationalId}
+                    onChange={e => setNationalId(e.target.value)}
+                    dir="ltr"
+                    maxLength={14}
+                    disabled={!!selectedPatient.nationalId}
+                  />
+                </div>
               </div>
             )}
           </section>
@@ -539,17 +590,26 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
 
             {paymentType === "contract" && (
               <div className="space-y-1">
-                <Label htmlFor="insurance-company">
+                <Label>
                   شركة التأمين / الجهة المتعاقدة
                   <span className="text-destructive mr-1" aria-hidden="true">*</span>
                 </Label>
-                <Input
-                  id="insurance-company"
-                  data-testid="input-insurance-company"
-                  placeholder="اسم الشركة أو الجهة المتعاقدة"
-                  value={insuranceCompany}
-                  onChange={e => setInsuranceCompany(e.target.value)}
-                />
+                <Select
+                  value={insuranceCompany || "__none__"}
+                  onValueChange={v => setInsuranceCompany(v === "__none__" ? "" : v)}
+                >
+                  <SelectTrigger data-testid="select-insurance-company">
+                    <SelectValue placeholder="اختر الشركة أو الجهة المتعاقدة" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— اختر —</SelectItem>
+                    {activeCompanies.map(c => (
+                      <SelectItem key={c.id} value={c.nameAr} data-testid={`company-option-${c.id}`}>
+                        {c.nameAr} ({c.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
           </section>
