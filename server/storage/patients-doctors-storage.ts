@@ -945,7 +945,7 @@ const methods = {
       conds.push(sql`(a.patient_name ILIKE ${s} OR a.admission_number ILIKE ${s} OR a.patient_phone ILIKE ${s} OR a.doctor_name ILIKE ${s})`);
     }
     if (filters?.deptId) {
-      conds.push(sql`(a.department_id = ${filters.deptId} OR rpt.department_id = ${filters.deptId})`);
+      conds.push(sql`COALESCE(a.department_id, rpt.department_id) = ${filters.deptId}`);
     }
 
     const whereExpr = conds.length > 0
