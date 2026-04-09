@@ -168,6 +168,11 @@ export const PERMISSIONS = {
 
   // ── الرصيد الافتتاحي للمخزن ──────────────────────────────────────────────
   OPENING_STOCK_MANAGE: "opening_stock.manage", // إنشاء ومراجعة وترحيل الرصيد الافتتاحي
+
+  // ── المهام الداخلية ───────────────────────────────────────────────────────
+  TASKS_VIEW:   "tasks.view",   // عرض المهام المسندة والمنشأة
+  TASKS_CREATE: "tasks.create", // إنشاء مهمة جديدة وإسنادها للمستخدمين
+  TASKS_MANAGE: "tasks.manage", // إدارة كل المهام (تعديل، حذف، متابعة)
 } as const;
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS];
@@ -217,6 +222,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.DEPARTMENTS_VIEW,
     PERMISSIONS.PHARMACIES_MANAGE,
     PERMISSIONS.RECEPTION_VIEW,
+    PERMISSIONS.TASKS_VIEW,
+    PERMISSIONS.TASKS_CREATE,
+    PERMISSIONS.TASKS_MANAGE,
     PERMISSIONS.PATIENTS_VIEW,
     PERMISSIONS.DOCTORS_VIEW,
     PERMISSIONS.ADMISSIONS_VIEW,
@@ -410,6 +418,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
   reception: [
     PERMISSIONS.DASHBOARD_VIEW,
     PERMISSIONS.RECEPTION_VIEW,
+    PERMISSIONS.TASKS_VIEW,
+    PERMISSIONS.TASKS_CREATE,
     PERMISSIONS.PATIENTS_VIEW,
     PERMISSIONS.PATIENTS_CREATE,
     PERMISSIONS.PATIENTS_EDIT,
@@ -612,6 +622,14 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: string; lab
     label: "الاستقبال الموحد",
     permissions: [
       { key: PERMISSIONS.RECEPTION_VIEW, label: "فتح شاشة الاستقبال" },
+    ],
+  },
+  {
+    label: "المهام الداخلية",
+    permissions: [
+      { key: PERMISSIONS.TASKS_VIEW,   label: "عرض المهام" },
+      { key: PERMISSIONS.TASKS_CREATE, label: "إنشاء مهمة" },
+      { key: PERMISSIONS.TASKS_MANAGE, label: "إدارة كل المهام" },
     ],
   },
   {

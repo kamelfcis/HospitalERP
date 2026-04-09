@@ -39,7 +39,7 @@ export const NAV_GROUPS: NavGroup[] = [
     icon: LayoutDashboard,
     items: [
       { title: "لوحة التحكم",    href: "/",      icon: LayoutDashboard, permission: "dashboard.view" },
-      { title: "المهام الداخلية", href: "/tasks", icon: ListTodo },
+      { title: "المهام الداخلية", href: "/tasks", icon: ListTodo, permission: "tasks.view" },
     ],
   },
 

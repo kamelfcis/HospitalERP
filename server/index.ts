@@ -878,6 +878,35 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] pharmacies.manage backfill error");
   }
 
+  // ── 5h-post3c-tasks. Backfill TASKS_VIEW + TASKS_CREATE → all system groups ──
+  try {
+    await db.execute(sql`
+      INSERT INTO group_permissions (group_id, permission)
+      SELECT pg.id, perms.p
+      FROM permission_groups pg
+      CROSS JOIN (VALUES ('tasks.view'), ('tasks.create')) AS perms(p)
+      WHERE pg.is_system = true
+        AND NOT EXISTS (
+          SELECT 1 FROM group_permissions gp
+          WHERE gp.group_id = pg.id AND gp.permission = perms.p
+        )
+    `);
+    await db.execute(sql`
+      INSERT INTO group_permissions (group_id, permission)
+      SELECT pg.id, 'tasks.manage'
+      FROM permission_groups pg
+      WHERE pg.is_system = true
+        AND pg.system_key IN ('owner', 'admin')
+        AND NOT EXISTS (
+          SELECT 1 FROM group_permissions gp
+          WHERE gp.group_id = pg.id AND gp.permission = 'tasks.manage'
+        )
+    `);
+    log("[STARTUP] tasks permissions backfilled to all system groups");
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] tasks backfill error");
+  }
+
   // ── 5h-post3c-reception. Backfill RECEPTION_VIEW → owner + admin + reception groups ──
   try {
     await db.execute(sql`

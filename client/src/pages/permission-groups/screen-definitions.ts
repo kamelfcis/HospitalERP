@@ -538,6 +538,24 @@ export const SCREEN_MATRIX: ScreenCategoryDef[] = [
     ],
   },
 
+  // ── المهام الداخلية ───────────────────────────────────────────────────────
+  {
+    id:            "tasks",
+    label:         "المهام الداخلية",
+    actionColumns: ["create", "manage"],
+    screens: [
+      {
+        id:          "internal-tasks",
+        label:       "المهام الداخلية",
+        menuPermKey: "tasks.view",
+        actions: [
+          { type: "create", permKey: "tasks.create" },
+          { type: "manage", permKey: "tasks.manage" },
+        ],
+      },
+    ],
+  },
+
   // ── إعدادات النظام ────────────────────────────────────────────────────────
   {
     id:            "system",
