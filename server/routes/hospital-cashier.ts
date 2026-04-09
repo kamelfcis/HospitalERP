@@ -22,7 +22,7 @@ import { db } from "../db";
 import { sql, eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { users, cashierAuditLog } from "@shared/schema";
-import { requireAuth, checkPermission, sseClients, broadcastToUnit } from "./_shared";
+import { requireAuth, checkPermission, checkAnyPermission, sseClients, broadcastToUnit } from "./_shared";
 import { PERMISSIONS } from "@shared/permissions";
 import { logger } from "../lib/logger";
 
@@ -479,7 +479,7 @@ export function registerCashierRoutes(app: Express) {
   });
 
   // ── Treasuries ──────────────────────────────────────────────
-  app.get("/api/treasuries", requireAuth, checkPermission(PERMISSIONS.CASHIER_HANDOVER_VIEW), async (req, res) => {
+  app.get("/api/treasuries", requireAuth, checkAnyPermission(PERMISSIONS.CASHIER_HANDOVER_VIEW, PERMISSIONS.PATIENT_PAYMENTS), async (req, res) => {
     try { res.json(await storage.getTreasuries()); }
     catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });

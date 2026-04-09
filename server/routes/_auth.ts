@@ -76,3 +76,16 @@ export function checkPermission(permission: string) {
     await requirePermission(req, res, next, permission);
   };
 }
+
+export function checkAnyPermission(...permissions: string[]) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: "يجب تسجيل الدخول" });
+    }
+    const userPerms = await storage.getUserEffectivePermissions(req.session.userId);
+    if (!permissions.some(p => userPerms.includes(p))) {
+      return res.status(403).json({ message: "لا تملك صلاحية لهذا الإجراء" });
+    }
+    next();
+  };
+}
