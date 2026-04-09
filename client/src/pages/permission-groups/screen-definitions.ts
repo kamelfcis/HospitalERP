@@ -217,6 +217,14 @@ export const SCREEN_MATRIX: ScreenCategoryDef[] = [
     actionColumns: ["create", "edit", "delete", "finalize", "discount", "payments", "transfer_doctor", "registry_view"],
     screens: [
       {
+        id:          "reception",
+        label:       "الاستقبال الموحد",
+        menuPermKey: "patients.view",
+        actions: [
+          { type: "create", permKey: "patients.create" },
+        ],
+      },
+      {
         id:          "sales-invoices",
         label:       "فواتير البيع",
         menuPermKey: "sales.view",
