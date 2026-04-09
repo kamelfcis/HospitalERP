@@ -25,7 +25,8 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from "@/components/ui/sheet";
 import { DoctorLookup, DepartmentLookup } from "@/components/lookups";
-import { Tag, UserCheck, Search, Loader2, Printer } from "lucide-react";
+import { PatientSearchCombobox, type PatientOption } from "@/components/shared/PatientSearchCombobox";
+import { Tag, Loader2, Printer, UserCheck } from "lucide-react";
 import { printReceptionTicket } from "@/components/printing/ReceptionTicketPrint";
 import type { SurgeryType }               from "@shared/schema";
 import { surgeryCategoryLabels }          from "@shared/schema";
@@ -34,26 +35,11 @@ import type { LookupItem }                from "@/lib/lookupTypes";
 
 // ===== Types =====
 
-/** Patient returned by /api/patients search — superset of the bed-board Patient interface */
-interface PatientResult {
-  id:           string;
-  fullName:     string;
-  phone?:       string | null;
-  patientCode?: string | null;
-  nationalId?:  string | null;
-}
-
 interface Props {
   open:    boolean;
   bed:     BedData | null;
   onClose: () => void;
 }
-
-// ===== Constants =====
-
-const DEBOUNCE_MS         = 300;
-const MIN_SEARCH_LENGTH   = 2;
-const PATIENT_RESULT_LIMIT = 10;
 
 // ===== Sub-components =====
 
@@ -123,11 +109,9 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
 
   // ===== State / Refs =====
 
-  const [patientSearch,    setPatientSearch]    = useState("");
-  const [debouncedSearch,  setDebouncedSearch]  = useState("");
   const [patientName,      setPatientName]      = useState("");
   const [patientPhone,     setPatientPhone]     = useState("");
-  const [selectedPatient,  setSelectedPatient]  = useState<PatientResult | null>(null);
+  const [selectedPatient,  setSelectedPatient]  = useState<PatientOption | null>(null);
   const [departmentId,     setDepartmentId]     = useState("");
   const [selectedDoctor,   setSelectedDoctor]   = useState<LookupItem | null>(null);
   const [surgerySearch,    setSurgerySearch]    = useState("");
@@ -137,47 +121,16 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
   const [notes,            setNotes]            = useState("");
   const [paymentType,      setPaymentType]      = useState<"cash" | "contract">("cash");
   const [insuranceCompany, setInsuranceCompany] = useState("");
-  const [highlightedIdx,   setHighlightedIdx]   = useState(-1);
 
   /* printing */
   const [printTicket, setPrintTicket] = useState(true);
 
-  const searchInputRef    = useRef<HTMLInputElement>(null);
   const patientNameRef    = useRef<HTMLInputElement>(null);
   const patientPhoneRef   = useRef<HTMLInputElement>(null);
   const surgeryInputRef   = useRef<HTMLInputElement>(null);
-  const debounceTimer     = useRef<ReturnType<typeof setTimeout>>();
-  const resultItemsRef    = useRef<(HTMLButtonElement | null)[]>([]);
   const surgeryItemsRef   = useRef<(HTMLButtonElement | null)[]>([]);
 
   // ===== Effects =====
-
-  // Auto-focus patient search when sheet opens; reset all state on close
-  useEffect(() => {
-    if (open) {
-      // Small delay to let the sheet animation settle before focusing
-      const t = setTimeout(() => searchInputRef.current?.focus(), 120);
-      return () => clearTimeout(t);
-    }
-  }, [open]);
-
-  // Debounce: update query term 300ms after the user stops typing
-  useEffect(() => {
-    clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(() => setDebouncedSearch(patientSearch), DEBOUNCE_MS);
-    return () => clearTimeout(debounceTimer.current);
-  }, [patientSearch]);
-
-  // Reset highlighted index when the result list changes (new search term)
-  useEffect(() => {
-    setHighlightedIdx(0);
-    resultItemsRef.current = [];
-  }, [debouncedSearch]);
-
-  // Scroll highlighted patient result into view
-  useEffect(() => {
-    resultItemsRef.current[highlightedIdx]?.scrollIntoView({ block: "nearest" });
-  }, [highlightedIdx]);
 
   // Scroll highlighted surgery result into view
   useEffect(() => {
@@ -185,15 +138,6 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
   }, [highlightedSurgery]);
 
   // ===== Data Fetching =====
-
-  const { data: patients = [], isFetching: patientsFetching } = useQuery<PatientResult[]>({
-    queryKey:  ["/api/patients", debouncedSearch],
-    queryFn:   () =>
-      apiRequest("GET", `/api/patients?search=${encodeURIComponent(debouncedSearch)}&limit=${PATIENT_RESULT_LIMIT}`)
-        .then(r => r.json()),
-    enabled:   debouncedSearch.length >= MIN_SEARCH_LENGTH && !selectedPatient,
-    staleTime: 30_000,
-  });
 
   // Active filtered surgeries (server returns all matches; we hide inactive ones here)
   const { data: surgeriesRaw = [] } = useQuery<SurgeryType[]>({
@@ -207,17 +151,6 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
 
   // ===== Derived Values =====
 
-  const showPatientResults = useMemo(
-    () => !selectedPatient && debouncedSearch.length >= MIN_SEARCH_LENGTH && patients.length > 0,
-    [selectedPatient, debouncedSearch, patients.length],
-  );
-
-  const showNoResults = useMemo(
-    () => !selectedPatient && debouncedSearch.length >= MIN_SEARCH_LENGTH && !patientsFetching && patients.length === 0,
-    [selectedPatient, debouncedSearch, patientsFetching, patients.length],
-  );
-
-  // Effective patient name: selected patient wins, then manual entry
   const effectiveName = selectedPatient?.fullName ?? patientName;
 
   // Effective phone for submission: explicit override wins, then patient's stored phone
@@ -236,8 +169,6 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
   // ===== Handlers =====
 
   const resetState = useCallback(() => {
-    setPatientSearch("");
-    setDebouncedSearch("");
     setPatientName("");
     setPatientPhone("");
     setSelectedPatient(null);
@@ -250,7 +181,6 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
     setNotes("");
     setPaymentType("cash");
     setInsuranceCompany("");
-    setHighlightedIdx(-1);
     setPrintTicket(true);
   }, []);
 
@@ -259,46 +189,15 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
     onClose();
   }, [resetState, onClose]);
 
-  // Select a patient from the results list
-  const selectPatient = useCallback((p: PatientResult) => {
-    setSelectedPatient(p);
-    setPatientSearch("");
-    setDebouncedSearch("");
-    setHighlightedIdx(-1);
-    // Move focus to phone override field so the user can continue tabbing forward
+  const handlePatientSelect = useCallback((patient: PatientOption) => {
+    setSelectedPatient(patient);
     setTimeout(() => patientPhoneRef.current?.focus(), 50);
   }, []);
 
-  // Clear the selected patient and return focus to the search box
-  const clearPatient = useCallback(() => {
+  const handlePatientClear = useCallback(() => {
     setSelectedPatient(null);
     setPatientPhone("");
-    setTimeout(() => searchInputRef.current?.focus(), 50);
   }, []);
-
-  // ── Patient search keyboard navigation ───────────────────────────────────────
-  const handleSearchKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    // Escape: clear search regardless of whether results are visible
-    if (e.key === "Escape") {
-      e.preventDefault();
-      setPatientSearch("");
-      return;
-    }
-    // Arrow/Enter only meaningful when results are visible
-    if (!showPatientResults) return;
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setHighlightedIdx(prev => Math.min(prev + 1, patients.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setHighlightedIdx(prev => Math.max(prev - 1, 0));
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      if (highlightedIdx >= 0 && highlightedIdx < patients.length) {
-        selectPatient(patients[highlightedIdx]);
-      }
-    }
-  }, [showPatientResults, patients, highlightedIdx, selectPatient]);
 
   // ── Surgery search keyboard navigation ───────────────────────────────────────
   const handleSurgeryKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -426,123 +325,22 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
           <section aria-label="بيانات المريض" className="space-y-3">
             <SectionLabel>بيانات المريض</SectionLabel>
 
-            {/* ── Patient search (hidden once a patient is selected) ──────────── */}
-            {!selectedPatient && (
-              <div className="space-y-1.5">
-                <Label htmlFor="patient-search">بحث عن مريض موجود</Label>
-                <div className="relative">
-                  <Search className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                  {patientsFetching && (
-                    <Loader2 className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" aria-hidden="true" />
-                  )}
-                  <Input
-                    id="patient-search"
-                    ref={searchInputRef}
-                    data-testid="input-patient-search"
-                    className="pr-9 pl-9"
-                    placeholder="اسم المريض، رقم الهوية، رقم الملف..."
-                    value={patientSearch}
-                    autoComplete="off"
-                    onChange={e => setPatientSearch(e.target.value)}
-                    onKeyDown={handleSearchKeyDown}
-                    aria-autocomplete="list"
-                    aria-expanded={showPatientResults}
-                    aria-controls={showPatientResults ? "patient-results-list" : undefined}
-                    aria-activedescendant={
-                      showPatientResults && highlightedIdx >= 0
-                        ? `patient-result-${patients[highlightedIdx]?.id}`
-                        : undefined
-                    }
-                  />
-                </div>
-
-                {/* Results list */}
-                {showPatientResults && (
-                  <div
-                    id="patient-results-list"
-                    role="listbox"
-                    aria-label="نتائج البحث"
-                    className="border rounded-lg overflow-hidden shadow-md bg-background max-h-56 overflow-y-auto"
-                  >
-                    {patients.map((p, idx) => {
-                      const isActive = highlightedIdx === idx;
-                      return (
-                        <button
-                          key={p.id}
-                          id={`patient-result-${p.id}`}
-                          ref={el => { resultItemsRef.current[idx] = el; }}
-                          role="option"
-                          aria-selected={isActive}
-                          data-testid={`patient-option-${p.id}`}
-                          type="button"
-                          className={[
-                            "w-full text-right px-3 py-2.5 text-sm transition-colors border-b last:border-b-0",
-                            "flex items-start justify-between gap-3 focus:outline-none",
-                            isActive
-                              ? "bg-primary/10 text-primary ring-inset ring-1 ring-primary/40"
-                              : "hover:bg-muted",
-                          ].join(" ")}
-                          onMouseEnter={() => setHighlightedIdx(idx)}
-                          onClick={() => selectPatient(p)}
-                        >
-                          <div className="flex-1 min-w-0 text-start">
-                            <p className="font-medium leading-tight truncate">{p.fullName}</p>
-                            {(p.phone || p.nationalId) && (
-                              <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                                {p.phone}
-                                {p.phone && p.nationalId && <span className="mx-1 opacity-50">·</span>}
-                                {p.nationalId && <span>هوية: {p.nationalId}</span>}
-                              </p>
-                            )}
-                          </div>
-                          {p.patientCode && (
-                            <span className="text-[11px] font-mono text-muted-foreground shrink-0 mt-0.5">
-                              {p.patientCode}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                    <p className="text-center text-[11px] text-muted-foreground py-1.5 bg-muted/40 select-none">
-                      ↑↓ تنقل · Enter اختيار · Esc مسح
-                    </p>
-                  </div>
-                )}
-
-                {/* No-results state */}
-                {showNoResults && (
-                  <p className="text-xs text-muted-foreground px-1 mt-1">
-                    لا توجد نتائج — أدخل الاسم يدوياً في الحقل أدناه
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* ── Selected patient chip ───────────────────────────────────────── */}
-            {selectedPatient && (
-              <div className="flex items-center gap-3 px-3 py-2.5 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
-                <UserCheck className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" aria-hidden="true" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium leading-tight truncate">{selectedPatient.fullName}</p>
-                  {(selectedPatient.phone || selectedPatient.patientCode) && (
-                    <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                      {selectedPatient.phone}
-                      {selectedPatient.phone && selectedPatient.patientCode && <span className="mx-1 opacity-50">·</span>}
-                      {selectedPatient.patientCode && <span>ملف: {selectedPatient.patientCode}</span>}
-                    </p>
-                  )}
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs shrink-0"
-                  onClick={clearPatient}
-                  data-testid="button-change-patient"
-                >
-                  تغيير
-                </Button>
-              </div>
-            )}
+            {/* ── Patient search / selected chip (unified component) ──────── */}
+            <div className="space-y-1.5">
+              <Label>بحث عن مريض موجود</Label>
+              <PatientSearchCombobox
+                variant="full"
+                value={selectedPatient?.id || undefined}
+                selectedName={selectedPatient?.fullName || undefined}
+                onChange={() => {}}
+                onSelectPatient={handlePatientSelect}
+                onClear={handlePatientClear}
+                autoFocus={open}
+                placeholder="اسم المريض، رقم الهوية، رقم الملف..."
+                noResultsHint="لا توجد نتائج — أدخل الاسم يدوياً في الحقل أدناه"
+                data-testid="input-patient-search"
+              />
+            </div>
 
             {/* ── Manual name + phone (2-col grid, hidden when patient selected) ─ */}
             {!selectedPatient && (
