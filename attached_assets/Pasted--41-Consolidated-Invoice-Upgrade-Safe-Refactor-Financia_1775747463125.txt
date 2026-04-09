@@ -1,0 +1,363 @@
+#41 — ترقية شاشة الفاتورة المجمعة للمريض
+Consolidated Invoice Upgrade — Safe Refactor + Financial Operations UI
+MUST preserve current accounting model (Snapshot-based posting at Finalize only)
+What & Why
+
+ترقية شاملة لشاشة ConsolidatedInvoiceTab داخل ملف المريض لتصبح مركز عمليات مالي وتشغيلي متكامل بدل كونها شاشة عرض فقط.
+
+المطلوب إضافة ودعم ما يلي داخل شاشة الفاتورة المجمعة:
+
+تسجيل التشخيص والملاحظات
+تسجيل دفعات جديدة
+خصم على إجمالي الفاتورة
+تحويل جزء من المديونية إلى طبيب
+فلترة الخدمات حسب القسم / نوع اللقاء
+تبويب طباعة
+تحسين وضوح حالة الفاتورة عبر أيقونة القفل
+
+مع الحفاظ الكامل على المعمارية الحالية للمحاسبة وعدم المساس بها.
+
+CRITICAL ACCOUNTING RULE — MUST NOT BREAK
+هذه هي القاعدة الأهم في هذا التاسك
+
+النظام الحالي يعمل كالتالي:
+
+توجد شاشة إدارة الحسابات / Account Mapping
+يتم فيها ربط الشاشة/المعاملة ببنود القيد والحسابات
+عند الحفظ النهائي (Finalize) للفاتورة المجمعة:
+يتم تكوين القيد المحاسبي مرة واحدة فقط
+ويتم ذلك عبر محرك Account Mapping الحالي
+اعتمادًا على شكل الفاتورة النهائي وقت الإغلاق
+معنى ذلك عمليًا
+
+كل العمليات التالية:
+
+Clinical info
+Header discount
+Payment entry
+Doctor transfer
+Any new patch/post route in this task
+
+لا تُنشئ أي قيد محاسبي نهائي أو مباشر.
+
+هي فقط:
+
+تعدّل بيانات الفاتورة
+تغيّر الرصيد / الصافي / التوزيع / المدفوع
+وتترك الترحيل المحاسبي بالكامل لمرحلة Finalize
+ممنوع تمامًا
+إنشاء Journal Entry من أي Component أو Route جديد
+bypass أو override لمنطق Account Mapping
+كتابة GL logic جديد داخل:
+PaymentEntryForm
+HeaderDiscountPanel
+DoctorTransferPanel
+clinical-info route
+أي direct posting خارج Finalize
+أي تغيير في طريقة عمل Finalize الحالية أو توقيت إنشاء القيد
+المطلوب
+
+أي feature مالية جديدة في هذا التاسك يجب أن تُفهم على أنها:
+data mutation only
+وليست accounting posting.
+
+Done looks like
+حقلا diagnosis و notes قابلان للتعديل على الفاتورة المسودة فقط
+يتم قفلهما تلقائيًا بعد الإغلاق النهائي
+نموذج إضافة دفعة جديدة داخل تبويب المدفوعات:
+مبلغ
+طريقة دفع
+خزنة / مصدر التحصيل
+تاريخ
+نموذج خصم على الإجمالي:
+نسبة أو مبلغ
+تحديث فوري للإجماليات
+نموذج تحويل مديونية لطبيب:
+اختيار طبيب
+مبلغ
+ملاحظة
+Dropdown فلتر الأقسام / نوع اللقاء داخل تبويب الخدمات
+أيقونة قفل واضحة في Header:
+LockOpen بلون amber للمسودة
+Lock بلون green بعد الإغلاق
+تبويب طباعة:
+طباعة الفاتورة كاملة
+إجماليات كل قسم
+إجماليات كل تصنيف
+الفاتورة بعد Finalize تصبح غير قابلة للتعديل
+لا يتم إنشاء أي قيد محاسبي أثناء أي من هذه العمليات
+القيد يظل يخرج مرة واحدة فقط عند Finalize عبر Account Mapping
+Out of scope
+تغيير محرك Account Mapping
+تغيير منطق Finalize
+إنشاء GL logic جديد
+أي direct posting قبل Finalize
+تعديل EncounterBreakdownView
+تعديل PaymentsTab الخارجي في PatientFileWorkspace
+تعديل صفحة patient-invoice العادية
+أي refactor واسع خارج حدود شاشة الفاتورة المجمعة وما يلزمها مباشرة
+Architectural constraints
+1) Preserve current accounting behavior
+
+لا تلمس منطق:
+
+account mapping resolution
+journal creation timing
+finalize mutation behavior
+posting pipeline الحالي
+2) Thin routes only
+
+أي route جديد أو معدل يجب أن يكون:
+
+validation + permission + service call فقط
+بدون business logic ثقيل داخل route
+3) Service-layer mandatory
+
+كل منطق الأعمال يوضع داخل services/storage المنظمة، وليس داخل React component أو route handler.
+
+4) No UI-authoritative math
+
+الحسابات النهائية authoritative تكون من السيرفر، والواجهة تعرض الناتج فقط.
+
+5) Finalize remains the single source of accounting posting
+
+أي تغيير في draft invoice يجب أن يُستهلك لاحقًا بواسطة Finalize كما هو.
+
+Tasks
+1) Add diagnosis field to DB
+
+إضافة حقل diagnosis إلى جدول patient_invoice_headers في:
+
+shared/schema/invoicing.ts
+
+ثم تشغيل:
+
+npm run db:push
+Rules
+field type: text
+nullable
+backward-compatible
+لا يتم كسر أي قراءات حالية للفواتير القديمة
+2) Clinical info API
+
+إضافة route جديد:
+
+PATCH /api/patient-invoices/:id/clinical-info
+المطلوب
+
+يقبل:
+
+diagnosis
+notes
+
+ويحدثهما فقط إذا كانت الفاتورة:
+
+draft
+غير مغلقة نهائيًا
+Mandatory checks
+permission check
+invoice state guard
+audit log
+ممنوع
+تعديل diagnosis/notes على finalized invoice
+logic مباشر داخل route
+Expected behavior
+عند الفاتورة المسودة: update allowed
+عند الفاتورة النهائية: reject with clear error
+3) Safe refactor of ConsolidatedInvoiceTab
+
+إعادة تقسيم الملف الحالي:
+
+client/src/pages/patient-file/tabs/ConsolidatedInvoiceTab.tsx
+
+إلى sub-components واضحة بدون كسر الـ public behavior الحالي.
+
+Required sub-components
+ClinicalInfoPanel
+DoctorTransferPanel
+HeaderDiscountPanel
+PaymentEntryForm
+InvoicePrintTab
+Important
+المكوّن الرئيسي يظل هو نفس entry point
+لا يتم كسر props contract الحالي
+لا يتم كسر EncounterBreakdownView
+لا يتم تغيير سلوك الشاشة القديمة أثناء مرحلة الاستخراج
+Preferred approach
+
+ابدأ بـ extraction آمن أولًا، ثم أضف features الجديدة.
+
+4) ClinicalInfoPanel
+
+لوحة جانبية للتشخيص والملاحظات.
+
+Requirements
+editable on draft only
+read-only on isFinalClosed
+تعتمد على route:
+PATCH /api/patient-invoices/:id/clinical-info
+UX مناسب للحفظ/التحميل/الأخطاء
+منع duplicate submit
+إظهار القيم الحالية دائمًا من invoice state
+5) HeaderDiscountPanel
+
+لوحة خصم على إجمالي الفاتورة.
+
+Use existing route
+PATCH /api/patient-invoices/:id/header-discount
+Requirements
+دعم:
+percentage OR amount
+لا يسمح باستخدام الاثنين معًا بشكل متعارض
+available on draft only
+permission:
+patient_invoices.discount
+refresh totals immediately after success
+Critical accounting note
+
+هذا التعديل:
+
+يغير بيانات الفاتورة فقط
+لا ينشئ أي قيد
+ويجب أن يظل أثره المحاسبي يظهر فقط عند Finalize من خلال Account Mapping
+6) PaymentEntryForm
+
+نموذج إضافة دفعة جديدة داخل تبويب المدفوعات.
+
+Requirements
+عرض قائمة المدفوعات الحالية
+إضافة دفعة جديدة بالحقول:
+amount
+payment method
+treasury / cashier source
+date
+permission:
+patient_invoices.payments
+Critical rule
+
+يجب استخدام existing payment service فقط
+بحيث يتم تسجيل الدفعة على الفاتورة المسودة بدون أي GL logic جديد.
+
+ممنوع
+direct journal creation
+bypass existing payment service
+حسابات مستقلة داخل الواجهة
+Expected behavior
+payment recorded on draft invoice
+payment reflected in invoice totals/balance
+Finalize لاحقًا هو من يقرأ هذه الدفعات ويولد أثرها داخل القيد النهائي طبقًا لـ Account Mapping
+7) DoctorTransferPanel
+
+لوحة تحويل مديونية لطبيب.
+
+Use existing route
+POST /api/patient-invoices/:id/transfer-to-doctor
+Requirements
+doctor dropdown
+amount
+note
+previous transfers list
+clear validation
+draft-only unless current business rule already allows otherwise
+منع تجاوز الرصيد المتاح
+Critical rule
+
+هذه العملية:
+
+لا تنشئ قيد
+لا تعيد بناء المحاسبة
+فقط تعيد تشكيل/توزيع الرصيد على مستوى البيانات
+ويظهر أثرها المحاسبي فقط عند Finalize
+8) Department / encounter filter + lock icon
+
+إضافة فلتر داخل Services tab.
+
+Requirements
+client-side filtering
+dropdown واضح للقسم / نوع اللقاء
+لا تضف API جديد لهذا الغرض إذا البيانات موجودة بالفعل
+Lock icon
+
+تحديث الـ Header ليعرض بوضوح:
+
+LockOpen بلون amber للمسودة
+Lock بلون green عند الإغلاق النهائي
+
+حالة القفل يجب أن تكون مرئية دائمًا وليست عنصرًا ثانويًا.
+
+9) InvoicePrintTab
+
+إضافة تبويب طباعة.
+
+Required print modes
+Full invoice
+Department totals
+Classification totals
+Constraints
+استخدام print styles الحالية الموجودة بالنظام إن أمكن
+عدم تكرار بنية طباعة جديدة بلا داع
+لا يتم تنفيذ أي حسابات محاسبية داخل الطباعة
+الطباعة تعتمد على البيانات الحالية فقط
+10) New consolidated layout assembly
+
+إعادة تجميع الشاشة بالشكل التالي:
+
+Header:
+visit selector
+invoice identifier
+lock state
+Two-panel layout:
+Sidebar:
+diagnosis
+notes
+doctor transfer
+header discount
+financial summary
+finalize action
+Main:
+services
+payments
+print
+Important
+الحفاظ على EncounterBreakdownView للزيارات ذات المواجهات كما هو
+عدم كسر التنقل أو تدفق العمل الحالي
+Mandatory guards
+
+يفضل إنشاء أو استخدام guards مركزية بدل تكرار نفس الشروط في أكثر من مكان:
+
+draft editable guard
+finalized closed guard
+permission guards
+payment allowed guard
+transfer allowed guard
+Auditability requirements
+
+أي عملية من التالية يجب أن يكون لها audit واضح:
+
+clinical info update
+header discount update
+payment add
+doctor transfer
+
+على الأقل:
+
+invoice id
+user id
+action type
+before/after when relevant
+timestamp
+Relevant files
+client/src/pages/patient-file/tabs/ConsolidatedInvoiceTab.tsx:1-1193
+client/src/pages/patient-file/tabs/PaymentsTab.tsx
+client/src/pages/patient-file/PatientFileWorkspace.tsx
+client/src/pages/patient-file/shared/formatters.ts
+shared/schema/invoicing.ts:319-378
+server/routes/patient-invoices.ts
+server/routes/patients.ts:221-258
+server/storage/patient-invoices-core-storage.ts
+client/src/pages/patient-invoice/hooks/usePayments.ts
+client/src/pages/patient-invoice/hooks/useDoctorTransfer.ts
+Final non-negotiable rule
+
+لا يتم إنشاء أي قيد محاسبي من أي UI أو route في هذا التاسك.
+الترحيل المحاسبي يظل محصورًا فقط في لحظة Finalize وبالاعتماد على Account Mapping الحالي الذي يربط شاشة الفاتورة المجمعة ببنود القيد والحسابات.

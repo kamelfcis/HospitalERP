@@ -1,0 +1,183 @@
+🔥 PROMPT — Consolidated Invoice (FINAL VERSION — WITH ACCOUNT MAPPING ENFORCEMENT)
+🎯 الهدف
+
+Refactor + تطوير شاشة فاتورة المريض المجمعة مع الحفاظ الكامل على:
+
+⚠️ CORE ACCOUNTING RULE (CRITICAL — MUST NOT BREAK)
+
+النظام يعمل كالتالي:
+
+يوجد شاشة إدارة الحسابات (Account Mapping)
+يتم ربط:
+الشاشة (Consolidated Patient Invoice)
+بأنواع القيود
+وبنود الحسابات (Dr/Cr)
+عند الحفظ النهائي للفاتورة (Finalize):
+✅ يتم إنشاء القيود المحاسبية أوتوماتيكياً
+✅ باستخدام نفس المابينج المحدد
+✅ بدون أي تدخل إضافي
+🚫 ممنوع تمامًا (HARD RULES)
+
+❌ ممنوع إنشاء أي قيود محاسبية داخل:
+
+Payment UI
+Discount logic
+Doctor transfer
+أي route جديد
+
+❌ ممنوع:
+
+bypass أو override لـ Account Mapping
+كتابة Journal Entries مباشرة
+إنشاء GL logic جديد خارج النظام الحالي
+✅ المطلوب (STRICT BEHAVIOR)
+
+أي عملية تتم على الفاتورة يجب أن:
+
+1. تعدل البيانات فقط (DATA LEVEL)
+totals
+balances
+shares
+status
+2. وتترك إنشاء القيود بالكامل إلى:
+
+➡️ محرك Account Mapping الحالي عند Finalize فقط
+
+🧠 توضيح مهم جدًا للمبرمج
+
+النظام ليس:
+❌ Event-based accounting per action
+
+بل هو:
+✅ Snapshot-based accounting عند Finalize
+
+يعني:
+
+كل العمليات (خصم / دفع / تحويل)
+لا تُنشئ قيود فورًا
+فقط تغيّر شكل الفاتورة
+وعند Finalize:
+👉 يتم توليد القيد بالكامل مرة واحدة
+🧱 PHASE 1 — REFACTOR (NO CHANGE)
+
+(كما هو — بدون تعديل)
+
+🧠 PHASE 2 — CLINICAL INFO
+
+(كما هو — draft only + audit)
+
+💰 PHASE 3 — HEADER DISCOUNT (UPDATED WITH ACCOUNTING RULE)
+⚠️ مهم:
+الخصم لا ينشئ قيد مباشرة
+فقط يعدل:
+invoice totals
+net amount
+عند Finalize:
+القيد الناتج يعتمد على:
+Account Mapping
+وليس منطق جديد
+💵 PHASE 4 — PAYMENT ENTRY (UPDATED — VERY IMPORTANT)
+⚠️ هنا أهم تعديل
+السيناريو الصحيح حسب نظامك:
+الدفع من الشاشة:
+
+✔ يسجل payment كـ transaction (cash / card / etc)
+
+❌ لكن:
+
+لا ينشئ قيد بنفسه
+لا يعمل posting مباشر
+عند Finalize:
+
+المحرك الحالي يجب أن:
+
+يأخذ:
+إجمالي الفاتورة
+المدفوع
+المتبقي
+ويُنشئ القيد:
+خزنة / بنك
+ذمم مريض / شركة
+إيراد
+خصم (إن وجد)
+
+📌 بناءً على Account Mapping فقط
+
+⚠️ المطلوب من المبرمج:
+PaymentEntryForm:
+يستخدم existing payment service (للتسجيل فقط)
+بدون GL logic
+التأكد أن:
+Finalize engine يقرأ payments correctly
+👨‍⚕️ PHASE 5 — DOCTOR TRANSFER (UPDATED)
+⚠️ نفس القاعدة:
+التحويل:
+لا ينشئ قيد
+فقط يعيد تصنيف الرصيد
+عند Finalize:
+يظهر أثره داخل:
+receivable distribution
+عبر Account Mapping
+🔍 PHASE 6 — FILTER
+
+(كما هو)
+
+🖨️ PHASE 7 — PRINT
+
+(كما هو)
+
+🔐 GLOBAL ACCOUNTING FLOW (FINAL DESIGN)
+🧾 قبل Finalize:
+Draft Invoice
+editable:
+diagnosis
+notes
+discount
+payments
+transfers
+🔒 عند Finalize:
+🔥 النظام يقوم بـ:
+recompute totals (server-side)
+قراءة كل:
+lines
+discount
+payments
+transfers
+تطبيق Account Mapping
+إنشاء Journal Entry كامل مرة واحدة
+🧩 GUARANTEES
+
+النظام بعد التنفيذ يجب أن يضمن:
+
+✅ لا يوجد duplicate journal entries
+✅ لا يوجد posting من UI
+✅ لا يوجد كسر لربط الحسابات
+✅ كل القيد يخرج من مكان واحد فقط
+✅ مراكز التكلفة الحالية تُستخدم كما هي
+
+⚙️ TECH RULES (UNCHANGED)
+Service layer mandatory
+No UI math
+Idempotency
+Audit logs
+Guards for invoice state
+🧠 IMPORTANT FINAL NOTE
+
+أي Feature مالية جديدة يجب أن تُفهم كالتالي:
+
+❌ ليست عملية محاسبية
+✅ هي تعديل على شكل الفاتورة فقط
+
+والمحاسبة تتم فقط عند:
+➡️ Finalize
+➡️ عبر Account Mapping
+
+✅ DONE LOOKS LIKE (UPDATED)
+الفاتورة تتعدل بالكامل (خصم + دفع + تحويل)
+لا يتم إنشاء أي قيد أثناء التعديل
+عند Finalize:
+👉 القيد يخرج مرة واحدة فقط
+👉 مطابق لإدارة الحسابات
+لا يوجد أي تعارض مع Cost Centers
+
+لو حابب الخطوة الجاية 👇

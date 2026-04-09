@@ -1,14 +1,19 @@
-import { memo, useState, useMemo } from "react";
+import { memo, useState, useMemo, useCallback, useEffect } from "react";
 import {
-  Loader2, Lock, CheckCircle2, AlertTriangle, History,
+  Loader2, Lock, LockOpen, CheckCircle2, AlertTriangle, History,
   User, Stethoscope, CalendarDays, FileText, RefreshCw,
   ChevronRight, ChevronLeft, Banknote, Building2,
   Activity, ShieldCheck, XCircle, Clock, CircleDot,
+  Printer, CreditCard, Percent, Save, Plus, Stethoscope as DoctorIcon,
+  Scissors, FileCheck, Filter,
 } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -17,6 +22,7 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { fmtDate, fmtMoney, fmtQty, PAYMENT_METHOD_LABELS, LINE_TYPE_LABELS } from "../shared/formatters";
@@ -207,14 +213,35 @@ const ServicesTab = memo(function ServicesTab({
   isFinalClosed: boolean;
 }) {
   const [page, setPage] = useState(1);
+  const [deptFilter, setDeptFilter] = useState<string>("__all__");
   const { data, isLoading, isError, dataUpdatedAt } = useInvoiceLines({
     patientId,
     page,
-    limit: 50,
+    limit: 100,
     admissionId,
     visitId,
     refetchInterval: isFinalClosed ? false : 15_000,
   });
+
+  const departments = useMemo(() => {
+    if (!data?.data) return [];
+    const seen = new Set<string>();
+    const result: Array<{ id: string | null; name: string }> = [];
+    for (const line of data.data) {
+      const key = line.department_name || "__none__";
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push({ id: line.department_id, name: line.department_name || "غير محدد" });
+      }
+    }
+    return result;
+  }, [data?.data]);
+
+  const filteredLines = useMemo(() => {
+    if (!data?.data) return [];
+    if (deptFilter === "__all__") return data.data;
+    return data.data.filter(l => (l.department_name || "غير محدد") === deptFilter);
+  }, [data?.data, deptFilter]);
 
   if (isLoading) return (
     <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
@@ -228,8 +255,28 @@ const ServicesTab = memo(function ServicesTab({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>{data.total} خدمة</span>
+      <div className="flex items-center justify-between text-xs text-muted-foreground flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          {departments.length > 1 && (
+            <div className="flex items-center gap-1.5">
+              <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+              <Select value={deptFilter} onValueChange={setDeptFilter}>
+                <SelectTrigger className="h-7 text-xs w-[180px]" data-testid="select-dept-filter">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">كل الأقسام ({data.data.length})</SelectItem>
+                  {departments.map(d => (
+                    <SelectItem key={d.name} value={d.name}>
+                      {d.name} ({data.data.filter(l => (l.department_name || "غير محدد") === d.name).length})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <span>{filteredLines.length} خدمة</span>
+        </div>
         {!isFinalClosed && (
           <span className="flex items-center gap-1">
             <RefreshCw className="h-3 w-3" />
@@ -255,9 +302,9 @@ const ServicesTab = memo(function ServicesTab({
             </tr>
           </thead>
           <tbody>
-            {data.data.map((line: InvoiceLine, idx: number) => (
+            {filteredLines.map((line: InvoiceLine, idx: number) => (
               <tr key={line.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors" data-testid={`row-line-${line.id}`}>
-                <td className="p-2 text-xs text-muted-foreground text-center">{(page - 1) * 50 + idx + 1}</td>
+                <td className="p-2 text-xs text-muted-foreground text-center">{(page - 1) * 100 + idx + 1}</td>
                 <td className="p-2 text-xs text-muted-foreground whitespace-nowrap">{fmtDate(line.invoice_date)}</td>
                 <td className="p-2 text-xs">{line.department_name}</td>
                 <td className="p-2">
@@ -280,10 +327,10 @@ const ServicesTab = memo(function ServicesTab({
               <td className="p-2" colSpan={5}>الإجمالي</td>
               <td className="p-2" colSpan={2}></td>
               <td className="p-2 text-center font-mono text-purple-600">
-                ({fmtMoney(data.data.reduce((s: number, l: InvoiceLine) => s + parseFloat(l.discount_amount || "0"), 0))})
+                ({fmtMoney(filteredLines.reduce((s: number, l: InvoiceLine) => s + parseFloat(l.discount_amount || "0"), 0))})
               </td>
               <td className="p-2 text-center font-mono">
-                {fmtMoney(data.data.reduce((s: number, l: InvoiceLine) => s + parseFloat(l.total_price || "0"), 0))}
+                {fmtMoney(filteredLines.reduce((s: number, l: InvoiceLine) => s + parseFloat(l.total_price || "0"), 0))}
               </td>
             </tr>
           </tfoot>
@@ -305,94 +352,255 @@ const ServicesTab = memo(function ServicesTab({
   );
 });
 
-const PaymentsTab = memo(function PaymentsTab({
+const InvoicePaymentsTab = memo(function InvoicePaymentsTab({
   patientId, admissionId, visitId, isFinalClosed,
+  primaryInvoiceId, primaryInvoiceStatus,
+  onPaymentAdded,
 }: {
   patientId: string;
   admissionId?: string;
   visitId?: string;
   isFinalClosed: boolean;
+  primaryInvoiceId?: string;
+  primaryInvoiceStatus?: string;
+  onPaymentAdded?: () => void;
 }) {
+  const { toast } = useToast();
+  const [showForm, setShowForm] = useState(false);
+  const [payAmount, setPayAmount] = useState("");
+  const [payMethod, setPayMethod] = useState("cash");
+  const [payTreasuryId, setPayTreasuryId] = useState<string>("__none__");
+  const [payDate, setPayDate] = useState(new Date().toISOString().split("T")[0]);
+  const [payNotes, setPayNotes] = useState("");
+
   const { data, isLoading } = usePaymentsList({
     patientId, admissionId, visitId,
     refetchInterval: isFinalClosed ? false : 15_000,
   });
 
-  if (isLoading) return <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
+  const { data: treasuries = [] } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ["/api/treasuries/mine"],
+    queryFn: async () => {
+      const r = await fetch("/api/treasuries/mine", { credentials: "include" });
+      if (!r.ok) return [];
+      const result = await r.json();
+      return Array.isArray(result) ? result : [];
+    },
+    enabled: !!primaryInvoiceId && primaryInvoiceStatus === "draft",
+  });
+
+  const addPaymentMutation = useMutation({
+    mutationFn: async () => {
+      if (!primaryInvoiceId) throw new Error("لا توجد فاتورة نشطة");
+      const amt = parseFloat(payAmount);
+      if (!payAmount || isNaN(amt) || amt <= 0) throw new Error("أدخل مبلغاً صحيحاً");
+      return apiRequest("POST", `/api/patient-invoices/${primaryInvoiceId}/add-payment`, {
+        amount: amt,
+        paymentMethod: payMethod,
+        treasuryId: payTreasuryId !== "__none__" ? payTreasuryId : undefined,
+        paymentDate: payDate,
+        notes: payNotes || undefined,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "تم تسجيل الدفعة", description: "تمت إضافة الدفعة بنجاح" });
+      setShowForm(false);
+      setPayAmount("");
+      setPayMethod("cash");
+      setPayTreasuryId("__none__");
+      setPayDate(new Date().toISOString().split("T")[0]);
+      setPayNotes("");
+      queryClient.invalidateQueries({ queryKey: ["/api/patients", patientId, "invoices-aggregated"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices", primaryInvoiceId] });
+      onPaymentAdded?.();
+    },
+    onError: (err: Error) => toast({ title: "خطأ", description: err.message, variant: "destructive" }),
+  });
 
   const payments: any[] = data ?? [];
-
-  if (payments.length === 0) return (
-    <div className="text-center py-10 text-muted-foreground text-sm">لا توجد مدفوعات لهذه الزيارة</div>
-  );
-
   const total = payments.reduce((s: number, p: any) => s + parseFloat(p.amount || "0"), 0);
+  const canAddPayment = !isFinalClosed && primaryInvoiceStatus === "draft" && !!primaryInvoiceId;
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 bg-green-50 text-green-800 border border-green-200 rounded-lg px-3 py-1.5">
           <Banknote className="h-3.5 w-3.5" />
           <span className="text-xs font-semibold">إجمالي المدفوعات: {fmtMoney(total)}</span>
           <span className="text-xs opacity-70">({payments.length} دفعة)</span>
         </div>
+        {canAddPayment && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 text-xs border-blue-300 text-blue-700 hover:bg-blue-50"
+            onClick={() => setShowForm(v => !v)}
+            data-testid="button-toggle-add-payment"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            إضافة دفعة
+          </Button>
+        )}
       </div>
 
-      <div className="overflow-x-auto rounded-md border">
-        <table className="w-full text-sm" dir="rtl">
-          <thead>
-            <tr className="bg-muted/60 text-xs text-muted-foreground border-b">
-              <th className="p-2.5 text-right whitespace-nowrap">التاريخ</th>
-              <th className="p-2.5 text-center">المبلغ</th>
-              <th className="p-2.5 text-right">طريقة الدفع</th>
-              <th className="p-2.5 text-right">الخزنة</th>
-              <th className="p-2.5 text-right">رقم الفاتورة</th>
-              <th className="p-2.5 text-right">المرجع</th>
-            </tr>
-          </thead>
-          <tbody>
-            {payments.map((p: any) => (
-              <tr key={p.id} className="border-b last:border-0 hover:bg-muted/20" data-testid={`row-pay-${p.id}`}>
-                <td className="p-2.5 text-xs text-muted-foreground whitespace-nowrap">{fmtDate(p.payment_date)}</td>
-                <td className="p-2.5 text-center font-mono font-semibold text-green-600">{fmtMoney(p.amount)}</td>
-                <td className="p-2.5">
-                  <Badge variant="outline" className={`text-xs ${PAY_METHOD_CLASS[p.payment_method] ?? ""}`}>
-                    {PAYMENT_METHOD_LABELS[p.payment_method] ?? p.payment_method}
-                  </Badge>
-                </td>
-                <td className="p-2.5 text-sm">{p.treasury_name}</td>
-                <td className="p-2.5 font-mono text-xs text-muted-foreground">{p.invoice_number}</td>
-                <td className="p-2.5 text-xs text-muted-foreground">{p.reference_number ?? "—"}</td>
+      {canAddPayment && showForm && (
+        <div className="border rounded-xl p-4 bg-blue-50/50 flex flex-col gap-3" data-testid="form-add-payment">
+          <p className="text-xs font-semibold text-blue-700 flex items-center gap-1.5">
+            <CreditCard className="h-3.5 w-3.5" />
+            تسجيل دفعة جديدة
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs">المبلغ *</Label>
+              <Input
+                type="number"
+                min="0.01"
+                step="0.01"
+                placeholder="0.00"
+                value={payAmount}
+                onChange={e => setPayAmount(e.target.value)}
+                className="h-8 text-sm"
+                dir="ltr"
+                data-testid="input-pay-amount"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs">طريقة الدفع</Label>
+              <Select value={payMethod} onValueChange={setPayMethod}>
+                <SelectTrigger className="h-8 text-xs" data-testid="select-pay-method">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">نقدي</SelectItem>
+                  <SelectItem value="card">بطاقة</SelectItem>
+                  <SelectItem value="bank_transfer">تحويل بنكي</SelectItem>
+                  <SelectItem value="insurance">تأمين</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs">التاريخ</Label>
+              <Input
+                type="date"
+                value={payDate}
+                onChange={e => setPayDate(e.target.value)}
+                className="h-8 text-sm"
+                data-testid="input-pay-date"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs">الخزنة</Label>
+              <Select value={payTreasuryId} onValueChange={setPayTreasuryId}>
+                <SelectTrigger className="h-8 text-xs" data-testid="select-pay-treasury">
+                  <SelectValue placeholder="اختر الخزنة" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— بدون خزنة —</SelectItem>
+                  {treasuries.map(t => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs">ملاحظات</Label>
+            <Input
+              type="text"
+              placeholder="ملاحظات اختيارية..."
+              value={payNotes}
+              onChange={e => setPayNotes(e.target.value)}
+              className="h-8 text-sm"
+              data-testid="input-pay-notes"
+            />
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs"
+              onClick={() => setShowForm(false)}
+              disabled={addPaymentMutation.isPending}
+            >
+              إلغاء
+            </Button>
+            <Button
+              size="sm"
+              className="gap-1.5 text-xs bg-blue-600 hover:bg-blue-700"
+              onClick={() => addPaymentMutation.mutate()}
+              disabled={addPaymentMutation.isPending || !payAmount}
+              data-testid="button-submit-payment"
+            >
+              {addPaymentMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              حفظ الدفعة
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+      ) : payments.length === 0 ? (
+        <div className="text-center py-10 text-muted-foreground text-sm">لا توجد مدفوعات لهذه الزيارة</div>
+      ) : (
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full text-sm" dir="rtl">
+            <thead>
+              <tr className="bg-muted/60 text-xs text-muted-foreground border-b">
+                <th className="p-2.5 text-right whitespace-nowrap">التاريخ</th>
+                <th className="p-2.5 text-center">المبلغ</th>
+                <th className="p-2.5 text-right">طريقة الدفع</th>
+                <th className="p-2.5 text-right">الخزنة</th>
+                <th className="p-2.5 text-right">رقم الفاتورة</th>
+                <th className="p-2.5 text-right">المرجع</th>
               </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr className="bg-muted/40 font-semibold text-sm border-t-2">
-              <td className="p-2.5">الإجمالي</td>
-              <td className="p-2.5 text-center font-mono text-green-600">{fmtMoney(total)}</td>
-              <td colSpan={4}></td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {payments.map((p: any) => (
+                <tr key={p.id} className="border-b last:border-0 hover:bg-muted/20" data-testid={`row-pay-${p.id}`}>
+                  <td className="p-2.5 text-xs text-muted-foreground whitespace-nowrap">{fmtDate(p.payment_date)}</td>
+                  <td className="p-2.5 text-center font-mono font-semibold text-green-600">{fmtMoney(p.amount)}</td>
+                  <td className="p-2.5">
+                    <Badge variant="outline" className={`text-xs ${PAY_METHOD_CLASS[p.payment_method] ?? ""}`}>
+                      {PAYMENT_METHOD_LABELS[p.payment_method] ?? p.payment_method}
+                    </Badge>
+                  </td>
+                  <td className="p-2.5 text-sm">{p.treasury_name}</td>
+                  <td className="p-2.5 font-mono text-xs text-muted-foreground">{p.invoice_number}</td>
+                  <td className="p-2.5 text-xs text-muted-foreground">{p.reference_number ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="bg-muted/40 font-semibold text-sm border-t-2">
+                <td className="p-2.5">الإجمالي</td>
+                <td className="p-2.5 text-center font-mono text-green-600">{fmtMoney(total)}</td>
+                <td colSpan={4}></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
     </div>
   );
 });
 
 const InvoiceHeaderCard = memo(function InvoiceHeaderCard({
-  patientName, patientCode, visit, invoiceNumber, isFinalClosed,
+  patientName, patientCode, visit, invoiceNumber, isFinalClosed, invoiceStatus,
 }: {
   patientName: string;
   patientCode: string;
   visit: PatientVisit | null;
   invoiceNumber?: string;
   isFinalClosed: boolean;
+  invoiceStatus?: string;
 }) {
+  const isDraft = !invoiceStatus || invoiceStatus === "draft";
   return (
     <div className="rounded-xl border bg-gradient-to-l from-slate-50 to-white p-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <User className="h-4 w-4 text-blue-500 shrink-0" />
             <div>
               <p className="font-bold text-base leading-tight">{patientName}</p>
@@ -400,11 +608,19 @@ const InvoiceHeaderCard = memo(function InvoiceHeaderCard({
                 <span className="font-mono text-xs text-muted-foreground">{patientCode}</span>
               )}
             </div>
-            {isFinalClosed && (
-              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 gap-1 text-xs mr-auto">
-                <Lock className="h-3 w-3" />مغلق نهائياً
-              </Badge>
-            )}
+            <div className="mr-auto flex items-center gap-1">
+              {isFinalClosed ? (
+                <div className="flex items-center gap-1 px-2 py-1 rounded-full border border-green-300 bg-green-50 text-green-700 text-xs font-semibold" data-testid="badge-lock-closed">
+                  <Lock className="h-3.5 w-3.5" />
+                  مغلق نهائياً
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 px-2 py-1 rounded-full border border-amber-300 bg-amber-50 text-amber-700 text-xs font-semibold" data-testid="badge-lock-open">
+                  <LockOpen className="h-3.5 w-3.5" />
+                  {isDraft ? "مسودة" : invoiceStatus === "finalized" ? "معتمد" : "جارٍ..."}
+                </div>
+              )}
+            </div>
           </div>
 
           {visit?.doctor_name && (
@@ -984,6 +1200,485 @@ function ReadinessCheck({ label, ok }: { label: string; ok: boolean }) {
   );
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// NEW PANELS
+// ──────────────────────────────────────────────────────────────────────────────
+
+const ClinicalInfoPanel = memo(function ClinicalInfoPanel({
+  invoiceId, isFinalClosed, invoiceStatus, initialDiagnosis, initialNotes, onSaved,
+}: {
+  invoiceId: string;
+  isFinalClosed: boolean;
+  invoiceStatus: string;
+  initialDiagnosis: string;
+  initialNotes: string;
+  onSaved: () => void;
+}) {
+  const { toast } = useToast();
+  const [diagnosis, setDiagnosis] = useState(initialDiagnosis);
+  const [notes, setNotes] = useState(initialNotes);
+  const isDirty = diagnosis !== initialDiagnosis || notes !== initialNotes;
+  const isEditable = !isFinalClosed && invoiceStatus === "draft";
+
+  useEffect(() => {
+    setDiagnosis(initialDiagnosis);
+    setNotes(initialNotes);
+  }, [initialDiagnosis, initialNotes]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => apiRequest("PATCH", `/api/patient-invoices/${invoiceId}/clinical-info`, { diagnosis, notes }),
+    onSuccess: () => {
+      toast({ title: "تم الحفظ", description: "تم حفظ التشخيص والملاحظات" });
+      onSaved();
+    },
+    onError: (err: Error) => toast({ title: "خطأ", description: err.message, variant: "destructive" }),
+  });
+
+  return (
+    <div className="border rounded-xl p-3 flex flex-col gap-2 bg-white">
+      <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+        <FileCheck className="h-3.5 w-3.5" />
+        التشخيص والملاحظات
+      </p>
+      <div className="flex flex-col gap-1.5">
+        <Label className="text-[10px] text-muted-foreground">التشخيص</Label>
+        <Textarea
+          value={diagnosis}
+          onChange={e => setDiagnosis(e.target.value)}
+          disabled={!isEditable}
+          placeholder={isEditable ? "أدخل التشخيص..." : "—"}
+          rows={2}
+          className="text-xs resize-none"
+          data-testid="textarea-diagnosis"
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label className="text-[10px] text-muted-foreground">ملاحظات</Label>
+        <Textarea
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          disabled={!isEditable}
+          placeholder={isEditable ? "ملاحظات إضافية..." : "—"}
+          rows={2}
+          className="text-xs resize-none"
+          data-testid="textarea-notes"
+        />
+      </div>
+      {isEditable && isDirty && (
+        <Button
+          size="sm"
+          className="w-full text-xs gap-1 h-7"
+          onClick={() => saveMutation.mutate()}
+          disabled={saveMutation.isPending}
+          data-testid="button-save-clinical"
+        >
+          {saveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+          حفظ
+        </Button>
+      )}
+      {isFinalClosed && (
+        <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+          <Lock className="h-3 w-3" /> مغلق — غير قابل للتعديل
+        </p>
+      )}
+    </div>
+  );
+});
+
+const HeaderDiscountPanel = memo(function HeaderDiscountPanel({
+  invoiceId, isFinalClosed, invoiceStatus,
+  currentDiscountPercent, currentDiscountAmount, netAmount,
+  onUpdated,
+}: {
+  invoiceId: string;
+  isFinalClosed: boolean;
+  invoiceStatus: string;
+  currentDiscountPercent: number;
+  currentDiscountAmount: number;
+  netAmount: number;
+  onUpdated: () => void;
+}) {
+  const { toast } = useToast();
+  const [discType, setDiscType] = useState<"percent" | "amount">("percent");
+  const [discValue, setDiscValue] = useState("");
+  const isEditable = !isFinalClosed && invoiceStatus === "draft";
+
+  const applyMutation = useMutation({
+    mutationFn: () => apiRequest("PATCH", `/api/patient-invoices/${invoiceId}/header-discount`, {
+      discountType: discType,
+      discountValue: parseFloat(discValue),
+    }),
+    onSuccess: () => {
+      toast({ title: "تم تطبيق الخصم", description: "تم تحديث خصم الإجمالي" });
+      setDiscValue("");
+      onUpdated();
+    },
+    onError: (err: Error) => toast({ title: "خطأ", description: err.message, variant: "destructive" }),
+  });
+
+  if (!isEditable) return null;
+
+  return (
+    <div className="border rounded-xl p-3 flex flex-col gap-2 bg-white">
+      <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+        <Scissors className="h-3.5 w-3.5" />
+        خصم الإجمالي
+      </p>
+      {(currentDiscountPercent > 0 || currentDiscountAmount > 0) && (
+        <div className="text-[10px] bg-purple-50 text-purple-700 border border-purple-200 rounded-lg px-2 py-1">
+          الخصم الحالي: {currentDiscountPercent > 0 ? `${currentDiscountPercent}%` : ""} {currentDiscountAmount > 0 ? `— ${fmtMoney(currentDiscountAmount)}` : ""}
+        </div>
+      )}
+      <div className="flex gap-1.5">
+        <button
+          type="button"
+          onClick={() => setDiscType("percent")}
+          className={`flex-1 text-xs py-1 px-2 rounded border transition-colors ${discType === "percent" ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted"}`}
+          data-testid="btn-disc-percent"
+        >
+          <Percent className="h-3 w-3 inline ml-1" />
+          نسبة
+        </button>
+        <button
+          type="button"
+          onClick={() => setDiscType("amount")}
+          className={`flex-1 text-xs py-1 px-2 rounded border transition-colors ${discType === "amount" ? "bg-primary text-primary-foreground border-primary" : "hover:bg-muted"}`}
+          data-testid="btn-disc-amount"
+        >
+          <Banknote className="h-3 w-3 inline ml-1" />
+          مبلغ
+        </button>
+      </div>
+      <Input
+        type="number"
+        min="0"
+        step={discType === "percent" ? "0.01" : "1"}
+        max={discType === "percent" ? "100" : undefined}
+        placeholder={discType === "percent" ? "0.00%" : "0.00 ج.م"}
+        value={discValue}
+        onChange={e => setDiscValue(e.target.value)}
+        className="h-8 text-sm"
+        dir="ltr"
+        data-testid="input-disc-value"
+      />
+      <Button
+        size="sm"
+        className="w-full text-xs gap-1 h-7"
+        onClick={() => applyMutation.mutate()}
+        disabled={applyMutation.isPending || !discValue}
+        data-testid="button-apply-discount"
+      >
+        {applyMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+        تطبيق
+      </Button>
+    </div>
+  );
+});
+
+const DoctorTransferPanel = memo(function DoctorTransferPanel({
+  invoiceId, isFinalClosed, invoiceStatus, netAmount, patientId,
+}: {
+  invoiceId: string;
+  isFinalClosed: boolean;
+  invoiceStatus: string;
+  netAmount: number;
+  patientId: string;
+}) {
+  const { toast } = useToast();
+  const [doctorName, setDoctorName] = useState("");
+  const [amount, setAmount] = useState("");
+  const [notes, setNotes] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const canTransfer = !isFinalClosed && invoiceStatus === "finalized";
+
+  const { data: transfers = [], refetch: refetchTransfers } = useQuery<any[]>({
+    queryKey: ["/api/patient-invoices", invoiceId, "transfers"],
+    queryFn: async () => {
+      const r = await fetch(`/api/patient-invoices/${invoiceId}/transfers`, { credentials: "include" });
+      if (!r.ok) return [];
+      return r.json();
+    },
+    enabled: !!invoiceId && invoiceStatus === "finalized",
+  });
+
+  const alreadyTransferred = transfers.reduce((s: number, t: any) => s + parseFloat(t.amount || "0"), 0);
+  const remaining = Math.max(0, netAmount - alreadyTransferred);
+
+  const transferMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/patient-invoices/${invoiceId}/transfer-to-doctor`, {
+      doctorName: doctorName.trim(),
+      amount: parseFloat(amount),
+      notes: notes.trim() || undefined,
+    }),
+    onSuccess: () => {
+      toast({ title: "تم التحويل", description: "تم تحويل المستحقات للطبيب بنجاح" });
+      setDoctorName("");
+      setAmount("");
+      setNotes("");
+      setConfirmOpen(false);
+      refetchTransfers();
+    },
+    onError: (err: Error) => {
+      setConfirmOpen(false);
+      toast({ title: "خطأ في التحويل", description: err.message, variant: "destructive" });
+    },
+  });
+
+  function handleConfirm() {
+    if (!doctorName.trim()) { toast({ variant: "destructive", title: "اسم الطبيب مطلوب" }); return; }
+    const amt = parseFloat(amount);
+    if (!amount || isNaN(amt) || amt <= 0) { toast({ variant: "destructive", title: "أدخل مبلغاً صحيحاً" }); return; }
+    if (amt > remaining + 0.001) { toast({ variant: "destructive", title: `المبلغ يتجاوز المتبقي (${fmtMoney(remaining)})` }); return; }
+    setConfirmOpen(true);
+  }
+
+  if (!canTransfer && invoiceStatus !== "finalized") return null;
+
+  return (
+    <div className="border rounded-xl p-3 flex flex-col gap-2 bg-white">
+      <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+        <DoctorIcon className="h-3.5 w-3.5" />
+        تحويل مستحقات طبيب
+      </p>
+
+      {transfers.length > 0 && (
+        <div className="flex flex-col gap-1">
+          {transfers.map((t: any) => (
+            <div key={t.id} className="flex items-center justify-between text-[10px] bg-slate-50 border rounded px-2 py-1">
+              <span className="font-medium truncate max-w-[80px]">{t.doctor_name}</span>
+              <span className="font-mono text-green-700">{fmtMoney(t.amount)}</span>
+            </div>
+          ))}
+          <div className="flex justify-between text-[10px] text-muted-foreground border-t pt-1">
+            <span>المحوّل: {fmtMoney(alreadyTransferred)}</span>
+            <span>المتبقي: {fmtMoney(remaining)}</span>
+          </div>
+        </div>
+      )}
+
+      {canTransfer && (
+        <>
+          <Input
+            placeholder="اسم الطبيب *"
+            value={doctorName}
+            onChange={e => setDoctorName(e.target.value)}
+            className="h-7 text-xs"
+            data-testid="input-transfer-doctor"
+          />
+          <Input
+            type="number"
+            placeholder="المبلغ"
+            min="0.01"
+            step="0.01"
+            value={amount}
+            onChange={e => setAmount(e.target.value)}
+            className="h-7 text-xs"
+            dir="ltr"
+            data-testid="input-transfer-amount"
+          />
+          <Input
+            placeholder="ملاحظات (اختياري)"
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            className="h-7 text-xs"
+            data-testid="input-transfer-notes"
+          />
+          <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full text-xs gap-1 h-7 border-teal-300 text-teal-700 hover:bg-teal-50"
+              onClick={handleConfirm}
+              disabled={transferMutation.isPending}
+              data-testid="button-transfer-doctor"
+            >
+              {transferMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <DoctorIcon className="h-3 w-3" />}
+              تحويل
+            </Button>
+            <AlertDialogContent dir="rtl">
+              <AlertDialogHeader>
+                <AlertDialogTitle>تأكيد التحويل</AlertDialogTitle>
+                <AlertDialogDescription>
+                  تحويل <strong>{fmtMoney(parseFloat(amount) || 0)}</strong> للطبيب <strong>{doctorName}</strong>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                <AlertDialogAction onClick={() => transferMutation.mutate()} className="bg-teal-600 hover:bg-teal-700">
+                  تأكيد
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      )}
+    </div>
+  );
+});
+
+const InvoicePrintTab = memo(function InvoicePrintTab({
+  patientName, patientCode, invoiceNumber, invoiceDate,
+  totals, payments, byDepartment, byClassification, isFinalClosed,
+}: {
+  patientName: string;
+  patientCode: string;
+  invoiceNumber?: string;
+  invoiceDate?: string;
+  totals: { totalAmount: number; discountAmount: number; netAmount: number; paidAmount: number; remaining: number };
+  payments: any[];
+  byDepartment: Array<{ departmentName: string; netAmount: number; totalAmount: number; discountAmount: number }>;
+  byClassification: Array<{ lineTypeLabel: string; netAmount: number; lineCount: number }>;
+  isFinalClosed: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold text-muted-foreground">معاينة الطباعة</p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5 text-xs"
+          onClick={() => window.print()}
+          data-testid="button-print-invoice"
+        >
+          <Printer className="h-3.5 w-3.5" />
+          طباعة
+        </Button>
+      </div>
+
+      <div className="print-area border rounded-xl p-6 bg-white flex flex-col gap-4" dir="rtl">
+        <div className="flex items-start justify-between border-b pb-4">
+          <div>
+            <h2 className="text-xl font-bold">فاتورة مريض</h2>
+            {invoiceNumber && <p className="font-mono text-sm text-muted-foreground">رقم: {invoiceNumber}</p>}
+            {invoiceDate && <p className="text-sm text-muted-foreground">التاريخ: {fmtDate(invoiceDate)}</p>}
+          </div>
+          <div className="text-left">
+            <p className="font-bold text-lg">{patientName}</p>
+            {patientCode && <p className="font-mono text-xs text-muted-foreground">{patientCode}</p>}
+            {isFinalClosed && (
+              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 gap-1 text-xs mt-1">
+                <Lock className="h-3 w-3" />مغلق نهائياً
+              </Badge>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5">
+            <Banknote className="h-4 w-4" />
+            الإجماليات المالية
+          </h3>
+          <div className="bg-slate-50 rounded-lg p-3 flex flex-col gap-1">
+            <FinRow label="إجمالي الخدمات" value={totals.totalAmount} />
+            <FinRow label="الخصم" value={totals.discountAmount} muted />
+            <FinRow label="الصافي" value={totals.netAmount} highlight border />
+            <FinRow label="المدفوع" value={totals.paidAmount} />
+            <FinRow label="المتبقي" value={totals.remaining} />
+          </div>
+        </div>
+
+        {byDepartment.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5">
+              <Building2 className="h-4 w-4" />
+              إجماليات الأقسام
+            </h3>
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-muted/50 text-xs text-muted-foreground border-b">
+                    <th className="p-2 text-right">القسم</th>
+                    <th className="p-2 text-center">الإجمالي</th>
+                    <th className="p-2 text-center">الخصم</th>
+                    <th className="p-2 text-center font-semibold">الصافي</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byDepartment.map((d, i) => (
+                    <tr key={i} className="border-b last:border-0 hover:bg-muted/20">
+                      <td className="p-2 text-sm">{d.departmentName || "—"}</td>
+                      <td className="p-2 text-center font-mono text-sm">{fmtMoney(d.totalAmount)}</td>
+                      <td className="p-2 text-center font-mono text-sm text-purple-600">
+                        {d.discountAmount > 0 ? `(${fmtMoney(d.discountAmount)})` : "—"}
+                      </td>
+                      <td className="p-2 text-center font-mono text-sm font-semibold">{fmtMoney(d.netAmount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {byClassification.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5">
+              <FileText className="h-4 w-4" />
+              إجماليات التصنيف
+            </h3>
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-muted/50 text-xs text-muted-foreground border-b">
+                    <th className="p-2 text-right">التصنيف</th>
+                    <th className="p-2 text-center">عدد البنود</th>
+                    <th className="p-2 text-center font-semibold">الصافي</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byClassification.map((c, i) => (
+                    <tr key={i} className="border-b last:border-0 hover:bg-muted/20">
+                      <td className="p-2 text-sm">{c.lineTypeLabel}</td>
+                      <td className="p-2 text-center text-sm">{c.lineCount}</td>
+                      <td className="p-2 text-center font-mono text-sm font-semibold">{fmtMoney(c.netAmount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {payments.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5">
+              <CreditCard className="h-4 w-4" />
+              المدفوعات
+            </h3>
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-muted/50 text-xs text-muted-foreground border-b">
+                    <th className="p-2 text-right">التاريخ</th>
+                    <th className="p-2 text-center">المبلغ</th>
+                    <th className="p-2 text-right">طريقة الدفع</th>
+                    <th className="p-2 text-right">المرجع</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payments.map((p: any, i: number) => (
+                    <tr key={p.id || i} className="border-b last:border-0">
+                      <td className="p-2 text-xs">{fmtDate(p.payment_date)}</td>
+                      <td className="p-2 text-center font-mono text-green-700">{fmtMoney(p.amount)}</td>
+                      <td className="p-2 text-xs">{PAYMENT_METHOD_LABELS[p.payment_method] ?? p.payment_method}</td>
+                      <td className="p-2 text-xs text-muted-foreground">{p.reference_number ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// MAIN COMPONENT
+// ──────────────────────────────────────────────────────────────────────────────
 export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
   data, isLoading, patientId, patientName, patientCode,
 }: Props) {
@@ -1039,6 +1734,17 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
     return inv ?? findPrimaryInvoice(data.invoices);
   }, [data, selectedVisitKey, selectedVisit]);
 
+  // ── Full invoice details (diagnosis, notes, header discount) ───────────────
+  const { data: fullInvoice, refetch: refetchFullInvoice } = useQuery<any>({
+    queryKey: ["/api/patient-invoices", primaryInvoice?.id],
+    queryFn: async () => {
+      const r = await fetch(`/api/patient-invoices/${primaryInvoice!.id}`, { credentials: "include" });
+      if (!r.ok) return null;
+      return r.json();
+    },
+    enabled: !!primaryInvoice?.id,
+  });
+
   const isFinalClosed = visitSummary?.invoice?.isFinalClosed ?? primaryInvoice?.isFinalClosed ?? false;
   const canFinalClose = !!primaryInvoice && !isFinalClosed && primaryInvoice.status === "finalized";
 
@@ -1048,6 +1754,7 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
       toast({ title: "تم الإغلاق النهائي", description: "تم إغلاق الفاتورة نهائياً بنجاح" });
       queryClient.invalidateQueries({ queryKey: ["/api/patients", patientId, "invoices-aggregated"] });
       if (selectedVisitId) queryClient.invalidateQueries({ queryKey: ["/api/visits", selectedVisitId, "invoice-summary"] });
+      if (primaryInvoice?.id) queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices", primaryInvoice.id] });
     },
     onError: (err: Error) => toast({ title: "خطأ", description: err.message, variant: "destructive" }),
   });
@@ -1062,6 +1769,21 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
     onError: (err: Error) => toast({ title: "خطأ", description: err.message, variant: "destructive" }),
   });
 
+  const handleClinicalSaved = useCallback(() => {
+    refetchFullInvoice();
+    queryClient.invalidateQueries({ queryKey: ["/api/patients", patientId, "invoices-aggregated"] });
+  }, [patientId, refetchFullInvoice]);
+
+  const handleDiscountUpdated = useCallback(() => {
+    refetchFullInvoice();
+    queryClient.invalidateQueries({ queryKey: ["/api/patients", patientId, "invoices-aggregated"] });
+  }, [patientId, refetchFullInvoice]);
+
+  const handlePaymentAdded = useCallback(() => {
+    refetchFullInvoice();
+    queryClient.invalidateQueries({ queryKey: ["/api/patients", patientId, "invoices-aggregated"] });
+  }, [patientId, refetchFullInvoice]);
+
   if (isLoading) return (
     <div className="flex justify-center items-center py-16">
       <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -1075,11 +1797,31 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
   const admissionId = selectedVisit?.admission_id ?? undefined;
   const visitId = (!admissionId && selectedVisit?.id) ? selectedVisit.id : undefined;
   const totalsForSidebar = visitTotals ?? data.totals;
-
   const hasEncounterView = !!selectedVisitId && !!visitSummary && visitSummary.encounters.length > 0;
+
+  const invoiceStatus = primaryInvoice?.status;
+  const invoiceNumber = visitSummary?.invoice?.invoiceNumber ?? primaryInvoice?.invoiceNumber;
+  const diagnosis = fullInvoice?.diagnosis ?? "";
+  const notes = fullInvoice?.notes ?? "";
+  const headerDiscountPercent = parseFloat(String(fullInvoice?.headerDiscountPercent ?? primaryInvoice?.["headerDiscountPercent"] ?? "0"));
+  const headerDiscountAmount = parseFloat(String(fullInvoice?.headerDiscountAmount ?? primaryInvoice?.["headerDiscountAmount"] ?? "0"));
+
+  const printPayments = data.invoices.flatMap((inv: any) => inv.payments ?? []);
+  const printByDept = (data.byDepartment ?? []).map(d => ({
+    departmentName: d.departmentName,
+    totalAmount: d.totalAmount,
+    discountAmount: d.discountAmount,
+    netAmount: d.netAmount,
+  }));
+  const printByClass = (data.byClassification ?? []).map(c => ({
+    lineTypeLabel: c.lineTypeLabel,
+    lineCount: c.lineCount,
+    netAmount: c.netAmount,
+  }));
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Visit selector */}
       <div className="flex items-center gap-2 flex-wrap">
         <History className="h-4 w-4 text-muted-foreground shrink-0" />
         {patientVisits.length > 0 ? (
@@ -1126,12 +1868,14 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
         )}
       </div>
 
+      {/* Header card with lock state */}
       <InvoiceHeaderCard
         patientName={patientName}
         patientCode={patientCode}
         visit={selectedVisit}
-        invoiceNumber={visitSummary?.invoice?.invoiceNumber ?? primaryInvoice?.invoiceNumber}
+        invoiceNumber={invoiceNumber}
         isFinalClosed={isFinalClosed}
+        invoiceStatus={invoiceStatus}
       />
 
       {hasEncounterView ? (
@@ -1143,7 +1887,8 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
         />
       ) : (
         <div className="flex flex-col lg:flex-row gap-4 items-start">
-          <div className="w-full lg:w-48 shrink-0">
+          {/* Sidebar */}
+          <div className="w-full lg:w-56 shrink-0 flex flex-col gap-3">
             <FinancialSidebar
               totals={totalsForSidebar}
               isFinalClosed={isFinalClosed}
@@ -1151,10 +1896,46 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
               onFinalClose={() => primaryInvoice && finalCloseMutation.mutate(primaryInvoice.id)}
               isPending={finalCloseMutation.isPending}
               finalClosedAt={primaryInvoice?.finalClosedAt}
-              invoiceNumber={primaryInvoice?.invoiceNumber}
+              invoiceNumber={invoiceNumber}
             />
+
+            {primaryInvoice && (
+              <>
+                <ClinicalInfoPanel
+                  invoiceId={primaryInvoice.id}
+                  isFinalClosed={isFinalClosed}
+                  invoiceStatus={invoiceStatus ?? "draft"}
+                  initialDiagnosis={diagnosis}
+                  initialNotes={notes}
+                  onSaved={handleClinicalSaved}
+                />
+
+                {!isFinalClosed && invoiceStatus === "draft" && (
+                  <HeaderDiscountPanel
+                    invoiceId={primaryInvoice.id}
+                    isFinalClosed={isFinalClosed}
+                    invoiceStatus={invoiceStatus ?? "draft"}
+                    currentDiscountPercent={headerDiscountPercent}
+                    currentDiscountAmount={headerDiscountAmount}
+                    netAmount={totalsForSidebar.netAmount}
+                    onUpdated={handleDiscountUpdated}
+                  />
+                )}
+
+                {invoiceStatus === "finalized" && (
+                  <DoctorTransferPanel
+                    invoiceId={primaryInvoice.id}
+                    isFinalClosed={isFinalClosed}
+                    invoiceStatus={invoiceStatus}
+                    netAmount={primaryInvoice.netAmount}
+                    patientId={patientId}
+                  />
+                )}
+              </>
+            )}
           </div>
 
+          {/* Main tabs */}
           <div className="flex-1 min-w-0">
             <Tabs defaultValue="services">
               <TabsList className="h-8 mb-3">
@@ -1163,6 +1944,10 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
                 </TabsTrigger>
                 <TabsTrigger value="payments" className="text-xs px-3" data-testid="tab-payments">
                   المدفوعات
+                </TabsTrigger>
+                <TabsTrigger value="print" className="text-xs px-3" data-testid="tab-print">
+                  <Printer className="h-3 w-3 ml-1" />
+                  طباعة
                 </TabsTrigger>
               </TabsList>
 
@@ -1176,10 +1961,27 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
               </TabsContent>
 
               <TabsContent value="payments" className="mt-0">
-                <PaymentsTab
+                <InvoicePaymentsTab
                   patientId={patientId}
                   admissionId={admissionId}
                   visitId={visitId}
+                  isFinalClosed={isFinalClosed}
+                  primaryInvoiceId={primaryInvoice?.id}
+                  primaryInvoiceStatus={invoiceStatus}
+                  onPaymentAdded={handlePaymentAdded}
+                />
+              </TabsContent>
+
+              <TabsContent value="print" className="mt-0">
+                <InvoicePrintTab
+                  patientName={patientName}
+                  patientCode={patientCode}
+                  invoiceNumber={invoiceNumber}
+                  invoiceDate={primaryInvoice?.invoiceDate}
+                  totals={totalsForSidebar}
+                  payments={printPayments}
+                  byDepartment={printByDept}
+                  byClassification={printByClass}
                   isFinalClosed={isFinalClosed}
                 />
               </TabsContent>

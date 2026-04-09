@@ -649,6 +649,141 @@ export function registerPatientInvoicesRoutes(app: Express) {
     }
   });
 
+  // ══════════════════════════════════════════════════════════════════════════
+  //  PATCH /api/patient-invoices/:id/clinical-info
+  //  تحديث التشخيص والملاحظات على الفاتورة المسودة فقط
+  // ══════════════════════════════════════════════════════════════════════════
+  app.patch("/api/patient-invoices/:id/clinical-info", requireAuth, checkPermission(PERMISSIONS.PATIENT_INVOICES_EDIT), async (req, res) => {
+    try {
+      const invoiceId = req.params.id as string;
+      const userId = (req.session as any)?.userId as string | undefined;
+      const { diagnosis, notes } = req.body as { diagnosis?: string; notes?: string };
+
+      const invRes = await db.execute(sql`
+        SELECT id, status, is_final_closed, diagnosis, notes
+        FROM patient_invoice_headers
+        WHERE id = ${invoiceId}
+        FOR UPDATE
+      `);
+      const inv = invRes.rows[0] as Record<string, unknown> | undefined;
+      if (!inv) return res.status(404).json({ message: "الفاتورة غير موجودة" });
+      if (inv.is_final_closed) {
+        return res.status(409).json({ message: "لا يمكن تعديل فاتورة تم إغلاقها نهائيًا" });
+      }
+      if (inv.status !== "draft") {
+        return res.status(409).json({ message: "لا يمكن تعديل التشخيص على فاتورة نهائية — يسمح فقط على المسودة" });
+      }
+
+      const oldDiagnosis = inv.diagnosis;
+      const oldNotes = inv.notes;
+
+      await db.execute(sql`
+        UPDATE patient_invoice_headers
+        SET diagnosis   = ${diagnosis !== undefined ? diagnosis : inv.diagnosis},
+            notes       = ${notes !== undefined ? notes : inv.notes},
+            updated_at  = NOW()
+        WHERE id = ${invoiceId}
+      `);
+
+      await auditLog({
+        tableName: "patient_invoice_headers",
+        recordId: invoiceId,
+        action: "clinical_info_update",
+        userId,
+        oldValues: JSON.stringify({ diagnosis: oldDiagnosis, notes: oldNotes }),
+        newValues: JSON.stringify({ diagnosis, notes }),
+      });
+
+      const updated = await storage.getPatientInvoice(invoiceId);
+      return res.json(updated);
+    } catch (err) {
+      return res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  POST /api/patient-invoices/:id/add-payment
+  //  إضافة دفعة واحدة على فاتورة مسودة (بدون أي GL logic)
+  // ══════════════════════════════════════════════════════════════════════════
+  app.post("/api/patient-invoices/:id/add-payment", requireAuth, checkPermission(PERMISSIONS.PATIENT_PAYMENTS), async (req, res) => {
+    try {
+      const invoiceId = req.params.id as string;
+      const userId = (req.session as any)?.userId as string | undefined;
+      const { amount, paymentMethod, treasuryId, paymentDate, notes } = req.body as {
+        amount: number;
+        paymentMethod: string;
+        treasuryId?: string;
+        paymentDate?: string;
+        notes?: string;
+      };
+
+      if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+        return res.status(400).json({ message: "المبلغ يجب أن يكون أكبر من صفر" });
+      }
+      const validMethods = ["cash", "card", "bank_transfer", "insurance"];
+      if (paymentMethod && !validMethods.includes(paymentMethod)) {
+        return res.status(400).json({ message: "طريقة الدفع غير صحيحة" });
+      }
+
+      const invRes = await db.execute(sql`
+        SELECT id, status, is_final_closed, net_amount, paid_amount
+        FROM patient_invoice_headers
+        WHERE id = ${invoiceId}
+        FOR UPDATE
+      `);
+      const inv = invRes.rows[0] as Record<string, unknown> | undefined;
+      if (!inv) return res.status(404).json({ message: "الفاتورة غير موجودة" });
+      if (inv.is_final_closed) {
+        return res.status(409).json({ message: "لا يمكن إضافة دفعة على فاتورة مغلقة نهائيًا" });
+      }
+      if (inv.status !== "draft") {
+        return res.status(409).json({ message: "إضافة الدفعات تتم على الفواتير في حالة مسودة فقط" });
+      }
+
+      const refRes = await db.execute(sql`
+        SELECT COALESCE(MAX(CAST(NULLIF(regexp_replace(reference_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) AS max_num
+        FROM patient_invoice_payments WHERE reference_number LIKE 'RCP-%'
+      `);
+      const maxRef = parseInt(((refRes.rows[0] as Record<string, unknown>).max_num as string | null) || "0") || 0;
+      const referenceNumber = `RCP-${String(maxRef + 1).padStart(6, "0")}`;
+
+      const actualDate = paymentDate || new Date().toISOString().split("T")[0];
+
+      await db.execute(sql`
+        INSERT INTO patient_invoice_payments (id, header_id, payment_date, amount, payment_method, treasury_id, reference_number, notes, created_at)
+        VALUES (gen_random_uuid(), ${invoiceId}, ${actualDate}, ${Number(amount)}, ${paymentMethod || "cash"}, ${treasuryId || null}, ${referenceNumber}, ${notes || null}, NOW())
+      `);
+
+      const sumRes = await db.execute(sql`
+        SELECT COALESCE(SUM(amount), 0) AS total_paid
+        FROM patient_invoice_payments
+        WHERE header_id = ${invoiceId}
+      `);
+      const totalPaid = parseFloat(((sumRes.rows[0] as Record<string, unknown>).total_paid as string) || "0");
+
+      await db.execute(sql`
+        UPDATE patient_invoice_headers
+        SET paid_amount = ${totalPaid},
+            version    = version + 1,
+            updated_at = NOW()
+        WHERE id = ${invoiceId}
+      `);
+
+      await auditLog({
+        tableName: "patient_invoice_headers",
+        recordId: invoiceId,
+        action: "add_payment",
+        userId,
+        newValues: JSON.stringify({ amount, paymentMethod, treasuryId, paymentDate: actualDate, referenceNumber }),
+      });
+
+      const updated = await storage.getPatientInvoice(invoiceId);
+      return res.json(updated);
+    } catch (err) {
+      return res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   app.delete("/api/patient-invoices/:id", requireAuth, checkPermission(PERMISSIONS.PATIENT_INVOICES_EDIT), async (req, res) => {
     try {
       await assertNotFinalClosed(req.params.id as string);

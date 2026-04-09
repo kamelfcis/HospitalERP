@@ -341,6 +341,7 @@ export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   companyId:        varchar("company_id").references(() => companies.id),
   contractId:       varchar("contract_id"),
   contractMemberId: varchar("contract_member_id"),
+  diagnosis: text("diagnosis"),
   notes: text("notes"),
   status: patientInvoiceStatusEnum("status").notNull().default("draft"),
   totalAmount: decimal("total_amount", { precision: 18, scale: 2 }).notNull().default("0"),
