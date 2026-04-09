@@ -127,7 +127,7 @@ export default function PatientInvoice() {
   });
 
   // ── Payments ─────────────────────────────────────────────────────────────────
-  const payments = usePayments();
+  const payments = usePayments((user as any)?.defaultTreasuryId ?? null);
 
   // ── Composite reset ──────────────────────────────────────────────────────────
   const resetAll = useCallback(() => {

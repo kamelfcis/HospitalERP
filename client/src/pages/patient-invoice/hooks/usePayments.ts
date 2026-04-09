@@ -4,7 +4,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { genId } from "../utils/id";
 import type { PaymentLocal } from "../types";
 
-export function usePayments() {
+export function usePayments(defaultTreasuryId?: string | null) {
   const { toast } = useToast();
   const [payments, setPayments]       = useState<PaymentLocal[]>([]);
   const paymentRefOffsetRef            = useRef(0);
@@ -27,10 +27,10 @@ export function usePayments() {
         paymentMethod: "cash",
         referenceNumber: ref,
         notes: "",
-        treasuryId: null,
+        treasuryId: defaultTreasuryId ?? null,
       },
     ]);
-  }, []);
+  }, [defaultTreasuryId]);
 
   const updatePayment = useCallback((tempId: string, field: string, value: any) => {
     setPayments(prev => prev.map(p => p.tempId === tempId ? { ...p, [field]: value } : p));

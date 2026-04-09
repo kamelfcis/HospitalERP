@@ -165,12 +165,15 @@ export async function registerAuthRoutes(app: Express) {
         }
       }
 
+      const userTreasury = await storage.getUserTreasury(user.id);
+
       res.json({
         user: {
           ...safeUser,
           maxDiscountPct:   effectiveMaxDiscountPct,
           maxDiscountValue: effectiveMaxDiscountValue,
           defaultRoute:     groupDefaultRoute,
+          defaultTreasuryId: userTreasury?.id ?? null,
         },
         permissions,
         allowedWarehouseIds,
