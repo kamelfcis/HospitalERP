@@ -15,6 +15,7 @@ interface AuthUser {
   maxDiscountPct:   string | null;
   maxDiscountValue: string | null;
   defaultRoute:     string | null;
+  defaultTreasuryId: string | null;
 }
 
 interface AuthData {
