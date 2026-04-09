@@ -19,8 +19,9 @@ export interface GroupMember {
 }
 
 export interface GroupDetail extends GroupSummary {
-  permissions: string[];
-  members:     GroupMember[];
+  permissions:     string[];
+  rolePermissions: string[];
+  members:         GroupMember[];
 }
 
 export interface UserRow {

@@ -82,6 +82,7 @@ export function GroupDetail({ groupId, canManage, onDeleted }: Props) {
             key={groupId}
             groupId={groupId}
             permissions={group.permissions}
+            rolePermissions={group.rolePermissions ?? []}
             canEdit={canManage}
           />
         </TabsContent>

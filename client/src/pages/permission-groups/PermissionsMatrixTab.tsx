@@ -3,6 +3,7 @@
  *
  * - كل نطاق عمل قسم قابل للطي مع تحديد شامل (indeterminate state)
  * - كل شاشة: صف يحوي اسمها + checkbox الوصول + checkboxes الإجراءات
+ * - صلاحيات الدور الأساسي تظهر بقفل (مُورَثة) — لا يمكن إزالتها من هنا
  * - auto-discovery: أي صلاحية في screen-definitions.ts تظهر تلقائياً
  */
 
@@ -19,12 +20,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge }    from "@/components/ui/badge";
 import {
   Loader2, Save, ChevronDown, ChevronRight,
-  ChevronsDownUp, ChevronsUpDown, AlertTriangle, ChevronUp,
+  ChevronsDownUp, ChevronsUpDown, AlertTriangle, ChevronUp, Lock, Info,
 } from "lucide-react";
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  UncoveredPermissionsAlert — تنبيه صلاحيات غير مسجّلة في المصفوفة
-// ─────────────────────────────────────────────────────────────────────────────
 const ALL_PERM_KEYS = Object.values(PERMISSIONS) as string[];
 
 function UncoveredPermissionsAlert() {
@@ -77,9 +75,6 @@ function UncoveredPermissionsAlert() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Helper — all perm keys for a category
-// ─────────────────────────────────────────────────────────────────────────────
 function categoryPermKeys(cat: ScreenCategoryDef): string[] {
   const s = new Set<string>();
   for (const screen of cat.screens) {
@@ -89,15 +84,65 @@ function categoryPermKeys(cat: ScreenCategoryDef): string[] {
   return Array.from(s);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  DomainSection — نطاق عمل واحد قابل للطي
-// ─────────────────────────────────────────────────────────────────────────────
+function PermCheckbox({
+  permKey,
+  label,
+  selected,
+  rolePerms,
+  canEdit,
+  onToggle,
+  testId,
+}: {
+  permKey:   string;
+  label:     string;
+  selected:  Set<string>;
+  rolePerms: Set<string>;
+  canEdit:   boolean;
+  onToggle:  (k: string) => void;
+  testId:    string;
+}) {
+  const isInherited = rolePerms.has(permKey);
+  const isGroupSelected = selected.has(permKey);
+  const isEffective = isInherited || isGroupSelected;
+
+  if (isInherited) {
+    return (
+      <label
+        className="flex items-center gap-1.5 cursor-default"
+        data-testid={testId}
+        title="صلاحية موروثة من الدور الأساسي — لا يمكن إزالتها من المجموعة"
+      >
+        <div className="relative flex items-center justify-center h-4 w-4">
+          <Checkbox checked={true} disabled className="opacity-60" />
+          <Lock className="absolute -top-0.5 -left-0.5 h-2.5 w-2.5 text-blue-500" />
+        </div>
+        <span className="text-xs text-blue-600 dark:text-blue-400">{label}</span>
+      </label>
+    );
+  }
+
+  return (
+    <label
+      className="flex items-center gap-1.5 cursor-pointer"
+      data-testid={testId}
+    >
+      <Checkbox
+        checked={isEffective}
+        onCheckedChange={() => canEdit && onToggle(permKey)}
+        disabled={!canEdit}
+      />
+      <span className="text-xs text-muted-foreground">{label}</span>
+    </label>
+  );
+}
+
 const DomainSection = memo(function DomainSection({
-  category, selected, canEdit, isOpen,
+  category, selected, rolePerms, canEdit, isOpen,
   onToggleOpen, onTogglePerm, onToggleAll,
 }: {
   category:     ScreenCategoryDef;
   selected:     Set<string>;
+  rolePerms:    Set<string>;
   canEdit:      boolean;
   isOpen:       boolean;
   onToggleOpen: () => void;
@@ -105,13 +150,14 @@ const DomainSection = memo(function DomainSection({
   onToggleAll:  (keys: string[], on: boolean) => void;
 }) {
   const allKeys       = useMemo(() => categoryPermKeys(category), [category]);
-  const selectedCount = allKeys.filter(k => selected.has(k)).length;
-  const allSelected   = selectedCount === allKeys.length;
-  const someSelected  = selectedCount > 0 && !allSelected;
+  const editableKeys  = useMemo(() => allKeys.filter(k => !rolePerms.has(k)), [allKeys, rolePerms]);
+  const effectiveCount = allKeys.filter(k => selected.has(k) || rolePerms.has(k)).length;
+  const allEffective   = effectiveCount === allKeys.length;
+  const someEffective  = effectiveCount > 0 && !allEffective;
+  const inheritedCount = allKeys.filter(k => rolePerms.has(k)).length;
 
   return (
     <div className="border rounded-lg overflow-hidden">
-      {/* رأس القسم */}
       <div
         className="flex items-center gap-2 px-3 py-2.5 bg-muted/50 cursor-pointer select-none hover:bg-muted/70 transition-colors"
         onClick={onToggleOpen}
@@ -122,11 +168,11 @@ const DomainSection = memo(function DomainSection({
           : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
         }
 
-        {canEdit && (
-          <div onClick={e => { e.stopPropagation(); onToggleAll(allKeys, !allSelected); }}>
+        {canEdit && editableKeys.length > 0 && (
+          <div onClick={e => { e.stopPropagation(); onToggleAll(editableKeys, !allEffective); }}>
             <Checkbox
-              checked={allSelected ? true : someSelected ? "indeterminate" : false}
-              onCheckedChange={() => onToggleAll(allKeys, !allSelected)}
+              checked={allEffective ? true : someEffective ? "indeterminate" : false}
+              onCheckedChange={() => onToggleAll(editableKeys, !allEffective)}
               data-testid={`checkbox-domain-all-${category.id}`}
             />
           </div>
@@ -134,15 +180,20 @@ const DomainSection = memo(function DomainSection({
 
         <span className="font-semibold text-sm flex-1">{category.label}</span>
 
+        {inheritedCount > 0 && (
+          <Badge variant="outline" className="text-[10px] shrink-0 border-blue-300 text-blue-600 dark:text-blue-400 dark:border-blue-700 gap-0.5">
+            <Lock className="h-2.5 w-2.5" />
+            {inheritedCount}
+          </Badge>
+        )}
         <Badge
-          variant={selectedCount > 0 ? "default" : "outline"}
+          variant={effectiveCount > 0 ? "default" : "outline"}
           className="text-[10px] shrink-0"
         >
-          {selectedCount} / {allKeys.length}
+          {effectiveCount} / {allKeys.length}
         </Badge>
       </div>
 
-      {/* محتوى القسم */}
       {isOpen && (
         <div className="divide-y">
           {category.screens.map(screen => (
@@ -150,42 +201,32 @@ const DomainSection = memo(function DomainSection({
               key={screen.id}
               className="px-3 py-2 flex items-start gap-4 hover:bg-muted/20 transition-colors"
             >
-              {/* اسم الشاشة */}
               <div className="w-40 shrink-0 pt-0.5 text-sm leading-tight">
                 {screen.label}
               </div>
 
-              {/* الصلاحيات */}
               <div className="flex flex-wrap gap-x-5 gap-y-1.5 flex-1">
-                {/* الوصول */}
-                <label
-                  className="flex items-center gap-1.5 cursor-pointer"
-                  data-testid={`perm-${screen.menuPermKey}`}
-                >
-                  <Checkbox
-                    checked={selected.has(screen.menuPermKey)}
-                    onCheckedChange={() => canEdit && onTogglePerm(screen.menuPermKey)}
-                    disabled={!canEdit}
-                  />
-                  <span className="text-xs text-muted-foreground">وصول</span>
-                </label>
+                <PermCheckbox
+                  permKey={screen.menuPermKey}
+                  label="وصول"
+                  selected={selected}
+                  rolePerms={rolePerms}
+                  canEdit={canEdit}
+                  onToggle={onTogglePerm}
+                  testId={`perm-${screen.menuPermKey}`}
+                />
 
-                {/* الإجراءات */}
                 {screen.actions.map(action => (
-                  <label
+                  <PermCheckbox
                     key={action.permKey}
-                    className="flex items-center gap-1.5 cursor-pointer"
-                    data-testid={`perm-${action.permKey}`}
-                  >
-                    <Checkbox
-                      checked={selected.has(action.permKey)}
-                      onCheckedChange={() => canEdit && onTogglePerm(action.permKey)}
-                      disabled={!canEdit}
-                    />
-                    <span className="text-xs text-muted-foreground">
-                      {ACTION_LABELS[action.type] ?? action.type}
-                    </span>
-                  </label>
+                    permKey={action.permKey}
+                    label={ACTION_LABELS[action.type] ?? action.type}
+                    selected={selected}
+                    rolePerms={rolePerms}
+                    canEdit={canEdit}
+                    onToggle={onTogglePerm}
+                    testId={`perm-${action.permKey}`}
+                  />
                 ))}
               </div>
             </div>
@@ -196,25 +237,26 @@ const DomainSection = memo(function DomainSection({
   );
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Main Export
-// ─────────────────────────────────────────────────────────────────────────────
 interface Props {
-  groupId:     string;
-  permissions: string[];
-  canEdit:     boolean;
+  groupId:         string;
+  permissions:     string[];
+  rolePermissions: string[];
+  canEdit:         boolean;
 }
 
-export function PermissionsMatrixTab({ groupId, permissions, canEdit }: Props) {
+export function PermissionsMatrixTab({ groupId, permissions, rolePermissions, canEdit }: Props) {
   const { toast }    = useToast();
   const queryClient  = useQueryClient();
 
   const [selected, setSelected]     = useState<Set<string>>(() => new Set(permissions));
+  const rolePerms = useMemo(() => new Set(rolePermissions), [rolePermissions]);
   const [openSections, setOpenSections] = useState<Set<string>>(
     () => new Set(SCREEN_MATRIX.map(c => c.id))
   );
 
-  const totalSelected  = selected.size;
+  const groupOnlyCount = Array.from(selected).filter(k => !rolePerms.has(k)).length;
+  const inheritedCount = rolePerms.size;
+  const effectiveCount = new Set([...selected, ...rolePerms]).size;
   const allSectionsOpen = openSections.size === SCREEN_MATRIX.length;
 
   const saveMutation = useMutation({
@@ -256,15 +298,39 @@ export function PermissionsMatrixTab({ groupId, permissions, canEdit }: Props) {
 
   return (
     <div className="space-y-3">
-      {/* تنبيه صلاحيات غير مسجّلة */}
       <UncoveredPermissionsAlert />
 
-      {/* شريط الأدوات */}
+      {inheritedCount > 0 && (
+        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-700 text-xs text-blue-700 dark:text-blue-300" data-testid="role-permissions-info">
+          <Info className="h-4 w-4 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium">
+              <Lock className="inline h-3 w-3 -mt-0.5 ml-0.5" />
+              {inheritedCount} صلاحية موروثة من الدور الأساسي — لا يمكن إزالتها من المجموعة
+            </p>
+            <p className="mt-0.5 opacity-80">
+              الصلاحيات المُقفلة تأتي من دور المستخدم الأساسي. يمكنك إضافة صلاحيات إضافية فوقها.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-3">
           <Badge variant="secondary" className="text-xs">
-            {totalSelected} صلاحية مفعّلة
+            {effectiveCount} صلاحية فعّالة
           </Badge>
+          {inheritedCount > 0 && (
+            <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600 dark:text-blue-400 dark:border-blue-700 gap-0.5">
+              <Lock className="h-2.5 w-2.5" />
+              {inheritedCount} موروثة
+            </Badge>
+          )}
+          {groupOnlyCount > 0 && (
+            <Badge variant="outline" className="text-[10px] border-green-300 text-green-600 dark:text-green-400 dark:border-green-700">
+              +{groupOnlyCount} إضافية
+            </Badge>
+          )}
           <button
             type="button"
             onClick={() =>
@@ -298,13 +364,13 @@ export function PermissionsMatrixTab({ groupId, permissions, canEdit }: Props) {
         )}
       </div>
 
-      {/* النطاقات */}
       <div className="space-y-2">
         {SCREEN_MATRIX.map(category => (
           <DomainSection
             key={category.id}
             category={category}
             selected={selected}
+            rolePerms={rolePerms}
             canEdit={canEdit}
             isOpen={openSections.has(category.id)}
             onToggleOpen={() => handleToggleSection(category.id)}

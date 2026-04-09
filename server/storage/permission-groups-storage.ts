@@ -37,6 +37,7 @@ export interface PermissionGroupWithStats extends PermissionGroup {
 
 export interface PermissionGroupDetail extends PermissionGroup {
   permissions:      string[];
+  rolePermissions:  string[];
   members:          { id: string; fullName: string; username: string }[];
   systemKey:        string | null;
   maxDiscountPct:   string | null;
@@ -118,6 +119,15 @@ const permissionGroupsMethods = {
     `);
     const permissions = ((permRows as any).rows as any[]).map((r: any) => r.permission as string);
 
+    let rolePermissionsList: string[] = [];
+    const systemKey = g.system_key as string | null;
+    if (systemKey) {
+      const rolePermRows = await db.execute(sql`
+        SELECT permission FROM role_permissions WHERE role = ${systemKey} ORDER BY permission
+      `);
+      rolePermissionsList = ((rolePermRows as any).rows as any[]).map((r: any) => r.permission as string);
+    }
+
     const memberRows = await db.execute(sql`
       SELECT id, full_name AS "fullName", username
       FROM users
@@ -135,10 +145,11 @@ const permissionGroupsMethods = {
       name:             g.name,
       description:      g.description ?? null,
       isSystem:         Boolean(g.is_system),
-      systemKey:        g.system_key ?? null,
+      systemKey:        systemKey ?? null,
       sortOrder:        Number(g.sort_order ?? 0),
       createdAt:        g.created_at,
       permissions,
+      rolePermissions:  rolePermissionsList,
       members,
       memberCount:      members.length,
       permissionCount:  permissions.length,
