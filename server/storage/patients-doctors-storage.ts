@@ -232,6 +232,7 @@ const methods = {
         ilike(patients.normalizedFullName, normPattern),
         ilike(patients.phone, pattern),
         ilike(patients.nationalId, pattern),
+        ilike(patients.patientCode, pattern),
       );
     });
 
