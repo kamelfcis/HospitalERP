@@ -251,15 +251,18 @@ const methods = {
       .orderBy(asc(patients.fullName))
       .limit(40);
 
-    const registeredLower = new Set(registered.map(p => p.fullName.trim().toLowerCase()));
+    const registeredNorm = new Set(registered.map(p => normalizeArabicName(p.fullName).toLowerCase()));
 
     // 2. البحث في أسماء الإقامات غير المرتبطة بملف مريض (walk-in)
     const walkInWhere: string[] = ["a.patient_id IS NULL"];
     const walkInParams: string[] = [];
     for (const token of tokens) {
-      const idx = walkInParams.length + 1;
+      const normToken = normalizeArabicName(token);
+      const idx1 = walkInParams.length + 1;
       walkInParams.push(`%${token}%`);
-      walkInWhere.push(`a.patient_name ILIKE $${idx}`);
+      const idx2 = walkInParams.length + 1;
+      walkInParams.push(`%${normToken}%`);
+      walkInWhere.push(`(a.patient_name ILIKE $${idx1} OR TRANSLATE(REPLACE(REPLACE(REPLACE(REPLACE(a.patient_name, 'أ','ا'), 'إ','ا'), 'آ','ا'), 'ة','ه'), 'ى','ي') ILIKE $${idx2})`);
     }
     const walkInSql = `
       SELECT DISTINCT ON (LOWER(TRIM(a.patient_name)))
@@ -273,7 +276,7 @@ const methods = {
     const { rows: walkInRows } = await pool.query(walkInSql, walkInParams);
 
     const walkIns: PatientSearchResult[] = (walkInRows as { full_name: string; phone: string | null }[])
-      .filter(r => !registeredLower.has(r.full_name.trim().toLowerCase()))
+      .filter(r => !registeredNorm.has(normalizeArabicName(r.full_name).toLowerCase()))
       .map(r => ({
         id:          "",
         patientCode: null,

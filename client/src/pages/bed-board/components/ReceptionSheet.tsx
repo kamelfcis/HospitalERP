@@ -127,7 +127,6 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
   /* printing */
   const [printTicket, setPrintTicket] = useState(true);
 
-  const patientNameRef    = useRef<HTMLInputElement>(null);
   const patientPhoneRef   = useRef<HTMLInputElement>(null);
   const surgeryInputRef   = useRef<HTMLInputElement>(null);
   const surgeryItemsRef   = useRef<(HTMLButtonElement | null)[]>([]);
@@ -159,7 +158,9 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
 
   // ===== Derived Values =====
 
-  const effectiveName = selectedPatient?.fullName ?? patientName;
+  const [typedName, setTypedName] = useState("");
+
+  const effectiveName = selectedPatient?.fullName ?? (typedName || patientName);
 
   const effectivePhone = patientPhone.trim() || selectedPatient?.phone || undefined;
   const effectiveNationalId = nationalId.trim() || selectedPatient?.nationalId || undefined;
@@ -177,6 +178,7 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
 
   const resetState = useCallback(() => {
     setPatientName("");
+    setTypedName("");
     setPatientPhone("");
     setNationalId("");
     setSelectedPatient(null);
@@ -206,6 +208,7 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
 
   const handlePatientClear = useCallback(() => {
     setSelectedPatient(null);
+    setTypedName("");
     setPatientPhone("");
     setNationalId("");
   }, []);
@@ -338,9 +341,11 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
           <section aria-label="بيانات المريض" className="space-y-3">
             <SectionLabel>بيانات المريض</SectionLabel>
 
-            {/* ── Patient search / selected chip (unified component) ──────── */}
+            {/* ── Unified patient search + manual entry ──────── */}
             <div className="space-y-1.5">
-              <Label>بحث عن مريض موجود</Label>
+              <Label>
+                اسم المريض <span className="text-destructive" aria-hidden="true">*</span>
+              </Label>
               <PatientSearchCombobox
                 variant="full"
                 value={selectedPatient?.id || undefined}
@@ -348,44 +353,29 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
                 onChange={() => {}}
                 onSelectPatient={handlePatientSelect}
                 onClear={handlePatientClear}
+                onTypedNameChange={setTypedName}
+                allowManualEntry
                 autoFocus={open}
-                placeholder="اسم المريض، رقم الهوية، رقم الملف..."
-                noResultsHint="لا توجد نتائج — أدخل الاسم يدوياً في الحقل أدناه"
+                placeholder="اكتب اسم المريض — لو موجود هيظهر، لو جديد هيتسجّل تلقائياً..."
                 data-testid="input-patient-search"
               />
             </div>
 
-            {/* ── Manual name + phone + national ID (when no patient selected) ─ */}
+            {/* ── Phone + NID (when no patient selected — manual entry mode) ── */}
             {!selectedPatient && (
-              <>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label htmlFor="patient-name-manual">
-                      اسم المريض <span className="text-destructive" aria-hidden="true">*</span>
-                    </Label>
-                    <Input
-                      id="patient-name-manual"
-                      ref={patientNameRef}
-                      data-testid="input-patient-name"
-                      placeholder="الاسم الكامل"
-                      autoComplete="off"
-                      value={patientName}
-                      onChange={e => setPatientName(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="patient-phone-manual">رقم الهاتف</Label>
-                    <Input
-                      id="patient-phone-manual"
-                      ref={patientPhoneRef}
-                      data-testid="input-patient-phone"
-                      placeholder="01XXXXXXXXX"
-                      autoComplete="tel"
-                      value={patientPhone}
-                      onChange={e => setPatientPhone(e.target.value)}
-                      dir="ltr"
-                    />
-                  </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="patient-phone-manual">رقم الهاتف</Label>
+                  <Input
+                    id="patient-phone-manual"
+                    ref={patientPhoneRef}
+                    data-testid="input-patient-phone"
+                    placeholder="01XXXXXXXXX"
+                    autoComplete="tel"
+                    value={patientPhone}
+                    onChange={e => setPatientPhone(e.target.value)}
+                    dir="ltr"
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="patient-nid-manual">الرقم القومي</Label>
@@ -400,7 +390,7 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
                     maxLength={14}
                   />
                 </div>
-              </>
+              </div>
             )}
 
             {/* ── Phone + NID override (when patient selected) ── */}

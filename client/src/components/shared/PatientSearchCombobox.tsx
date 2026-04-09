@@ -5,15 +5,19 @@
  * يعرض: اسم المريض + كود المريض + رقم الهاتف + رقم الهوية
  * يعرض أيضاً: المرضى غير المسجلين (walk-in) من سجلات الإقامة
  *
+ * allowManualEntry — when true, the typed text doubles as a new patient
+ *   name if no result is selected. The parent is notified via onTypedNameChange.
+ *
  * Variants:
  *   "compact" — inline strip (header bars, filters)
  *   "full"    — full-width with keyboard nav, selected chip, manual fallback
  */
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { Search, X, User, Building2, UserX, Loader2, UserCheck } from "lucide-react";
+import { Search, X, User, Building2, UserX, Loader2, UserCheck, UserPlus } from "lucide-react";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { normalizeArabic } from "@/lib/arabicNormalize";
 
 export interface PatientOption {
   id:          string;
@@ -32,6 +36,8 @@ interface BaseProps {
   onChange:      (id: string, name: string, patientCode?: string | null) => void;
   onSelectPatient?: (patient: PatientOption) => void;
   onClear?:      () => void;
+  onTypedNameChange?: (name: string) => void;
+  allowManualEntry?: boolean;
   disabled?:     boolean;
   placeholder?:  string;
   autoFocus?:    boolean;
@@ -50,9 +56,15 @@ interface FullProps extends BaseProps {
 
 type Props = CompactProps | FullProps;
 
+function clientNormalize(text: string): string {
+  return normalizeArabic(text).toLowerCase();
+}
+
 export function PatientSearchCombobox(props: Props) {
   const {
     value, selectedName, onChange, onSelectPatient, onClear, disabled,
+    onTypedNameChange,
+    allowManualEntry = false,
     placeholder = "ابحث باسم المريض أو الكود أو الهاتف...",
     autoFocus = false,
     "data-testid": testId = "patient-search-combobox",
@@ -69,13 +81,29 @@ export function PatientSearchCombobox(props: Props) {
 
   const debouncedSearch = useDebounce(inputValue, 300);
 
-  const { data: results = [], isLoading } = useQuery<PatientOption[]>({
+  const { data: rawResults = [], isLoading } = useQuery<PatientOption[]>({
     queryKey: ["/api/patients/autocomplete", debouncedSearch],
     queryFn:  () =>
       apiRequest("GET", `/api/patients/autocomplete?search=${encodeURIComponent(debouncedSearch)}`)
         .then(r => r.json()),
     enabled: debouncedSearch.length >= 1 && !(value && selectedName),
   });
+
+  const results = useMemo(() => {
+    if (!debouncedSearch.trim()) return rawResults;
+    const rawTokens = debouncedSearch.trim().split(/\s+/).filter(Boolean);
+    const normTokens = rawTokens.map(t => clientNormalize(t));
+    if (normTokens.length === 0) return rawResults;
+    return rawResults.filter(p => {
+      const normName = clientNormalize(p.fullName);
+      return normTokens.every((nt, i) =>
+        normName.includes(nt) ||
+        (p.phone && p.phone.includes(rawTokens[i])) ||
+        (p.nationalId && p.nationalId.includes(rawTokens[i])) ||
+        (p.patientCode && clientNormalize(p.patientCode).includes(nt))
+      );
+    });
+  }, [rawResults, debouncedSearch]);
 
   useEffect(() => {
     setHighlightedIdx(0);
@@ -100,6 +128,12 @@ export function PatientSearchCombobox(props: Props) {
     }
     prevValueRef.current = value;
   }, [value]);
+
+  useEffect(() => {
+    if (allowManualEntry && !(value && selectedName)) {
+      onTypedNameChange?.(inputValue);
+    }
+  }, [inputValue, allowManualEntry, value, selectedName, onTypedNameChange]);
 
   const showResults = useMemo(
     () => open && !(value && selectedName) && debouncedSearch.length >= 1 && results.length > 0,
@@ -171,6 +205,8 @@ export function PatientSearchCombobox(props: Props) {
   }, [showResults, results, highlightedIdx, handleSelect]);
 
   const busy = isLoading || resolving;
+
+  const manualEntryActive = allowManualEntry && !(value && selectedName) && inputValue.trim().length > 0;
 
   if (variant === "compact" && value && selectedName) {
     return (
@@ -249,7 +285,7 @@ export function PatientSearchCombobox(props: Props) {
             disabled={disabled}
             className={
               isFullVariant
-                ? "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 pr-9 pl-9"
+                ? `flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 pr-9 pl-9 ${manualEntryActive ? "border-emerald-400 ring-1 ring-emerald-200" : "border-input"}`
                 : `peachtree-input pr-7 pl-2 ${compactInputClassName}`
             }
             data-testid={`${testId}-input`}
@@ -266,6 +302,13 @@ export function PatientSearchCombobox(props: Props) {
         </div>
         {!isFullVariant && busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
       </div>
+
+      {manualEntryActive && !showResults && !showNoResults && !isLoading && isFullVariant && (
+        <div className="flex items-center gap-2 mt-1.5 px-2 py-1.5 rounded-md bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 text-xs text-emerald-700 dark:text-emerald-300" data-testid={`${testId}-manual-hint`}>
+          <UserPlus className="h-3.5 w-3.5 shrink-0" />
+          <span>سيُسجَّل كمريض جديد: <strong>{inputValue.trim()}</strong></span>
+        </div>
+      )}
 
       {showResults && (
         <div
@@ -382,7 +425,13 @@ export function PatientSearchCombobox(props: Props) {
               </button>
             );
           })}
-          {isFullVariant && (
+          {isFullVariant && allowManualEntry && inputValue.trim() && (
+            <div className="flex items-center gap-2 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-50/50 dark:bg-emerald-950/20 border-t select-none" data-testid={`${testId}-manual-option`}>
+              <UserPlus className="h-3.5 w-3.5 shrink-0" />
+              <span>أو سيُسجَّل كمريض جديد: <strong>{inputValue.trim()}</strong></span>
+            </div>
+          )}
+          {isFullVariant && !allowManualEntry && (
             <p className="text-center text-[11px] text-muted-foreground py-1.5 bg-muted/40 select-none">
               ↑↓ تنقل · Enter اختيار · Esc مسح
             </p>
@@ -392,9 +441,16 @@ export function PatientSearchCombobox(props: Props) {
 
       {showNoResults && (
         <div className={isFullVariant ? "mt-1.5" : "absolute top-full right-0 z-50 mt-1 w-[320px]"}>
-          <p className={isFullVariant ? "text-xs text-muted-foreground px-1" : "py-3 text-center text-sm text-muted-foreground rounded-md border bg-popover shadow-lg"}>
-            {noResultsHint || "لا توجد نتائج"}
-          </p>
+          {allowManualEntry && isFullVariant ? (
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 text-xs text-emerald-700 dark:text-emerald-300" data-testid={`${testId}-manual-hint`}>
+              <UserPlus className="h-3.5 w-3.5 shrink-0" />
+              <span>لم يُعثر على مريض — سيُسجَّل كمريض جديد: <strong>{inputValue.trim()}</strong></span>
+            </div>
+          ) : (
+            <p className={isFullVariant ? "text-xs text-muted-foreground px-1" : "py-3 text-center text-sm text-muted-foreground rounded-md border bg-popover shadow-lg"}>
+              {noResultsHint || "لا توجد نتائج"}
+            </p>
+          )}
         </div>
       )}
     </div>
