@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
-  Save, CheckCircle, Plus, Loader2, CreditCard,
+  Save, Plus, Loader2, CreditCard,
   Search, XCircle, CheckCircle2, ChevronDown, ChevronUp, BookmarkPlus, Cloud, CloudOff,
 } from "lucide-react";
 import type { AutoSaveStatus } from "../hooks/useAutoSave";
@@ -79,7 +79,6 @@ interface InvoiceHeaderBarProps {
   lines: LineLocal[];
   resetForm: () => void;
   saveMutation: { mutate: () => void; isPending: boolean };
-  finalizeMutation: { mutate: () => void; isPending: boolean };
 
   autoSaveStatus: AutoSaveStatus;
   getStatusBadgeClass: (status: string) => string;
@@ -101,7 +100,7 @@ export function InvoiceHeaderBar({
   contractMemberId, onMemberResolved, onMemberCleared,
   notes, setNotes,
   lines,
-  resetForm, saveMutation, finalizeMutation,
+  resetForm, saveMutation,
   autoSaveStatus,
   getStatusBadgeClass,
 }: InvoiceHeaderBarProps) {
@@ -221,18 +220,8 @@ export function InvoiceHeaderBar({
             data-testid="button-save"
           >
             {saveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-            حفظ
+            حفظ كمسودة
           </Button>
-          {invoiceId && (
-            <Button size="sm" className="h-6 text-xs px-2 gap-0.5 bg-green-600 hover:bg-green-700 text-white"
-              onClick={() => finalizeMutation.mutate()}
-              disabled={finalizeMutation.isPending}
-              data-testid="button-finalize"
-            >
-              {finalizeMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
-              اعتماد
-            </Button>
-          )}
           {lines.length > 0 && (
             <Button size="sm" variant="outline"
               className="h-6 text-xs px-2 gap-0.5 border-amber-400 text-amber-700 hover:bg-amber-50 dark:border-amber-500 dark:text-amber-400"
