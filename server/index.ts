@@ -925,6 +925,36 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] reception.view backfill error");
   }
 
+  // ── Backfill bed_board.view / rooms.manage / surgery_types.manage → owner + admin + reception ──
+  try {
+    await db.execute(sql`
+      INSERT INTO group_permissions (group_id, permission)
+      SELECT pg.id, perms.p
+      FROM permission_groups pg
+      CROSS JOIN (VALUES ('bed_board.view'), ('rooms.manage'), ('surgery_types.manage')) AS perms(p)
+      WHERE pg.is_system = true
+        AND pg.system_key IN ('owner', 'admin')
+        AND NOT EXISTS (
+          SELECT 1 FROM group_permissions gp
+          WHERE gp.group_id = pg.id AND gp.permission = perms.p
+        )
+    `);
+    await db.execute(sql`
+      INSERT INTO group_permissions (group_id, permission)
+      SELECT pg.id, 'bed_board.view'
+      FROM permission_groups pg
+      WHERE pg.is_system = true
+        AND pg.system_key = 'reception'
+        AND NOT EXISTS (
+          SELECT 1 FROM group_permissions gp
+          WHERE gp.group_id = pg.id AND gp.permission = 'bed_board.view'
+        )
+    `);
+    log("[STARTUP] bed_board/rooms/surgery_types permissions backfilled to system groups");
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] bed_board/rooms/surgery backfill error");
+  }
+
   // ── 5h-post3c. Migrate cashier.all_units → users.all_cashier_units (scope flag) ──
   // يحوّل صلاحية cashier.all_units الفردية (user_permissions) إلى حقل scope على المستخدم
   try {

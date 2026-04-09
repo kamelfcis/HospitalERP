@@ -33,7 +33,7 @@ import { findOrCreatePatient } from "../lib/find-or-create-patient";
 
 export function registerBedBoardRoutes(app: Express) {
   // ── SSE stream ──────────────────────────────────────────────
-  app.get("/api/bed-board/events", requireAuth, checkHospitalAccess, (req, res) => {
+  app.get("/api/bed-board/events", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.BED_BOARD_VIEW), (req, res) => {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
@@ -53,7 +53,7 @@ export function registerBedBoardRoutes(app: Express) {
     });
   });
 
-  app.get("/api/bed-board", requireAuth, checkHospitalAccess, async (req, res) => {
+  app.get("/api/bed-board", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.BED_BOARD_VIEW), async (req, res) => {
     try {
       const userId = (req.session as { userId?: string }).userId!;
       const scope = await storage.getUserOperationalScope(userId);

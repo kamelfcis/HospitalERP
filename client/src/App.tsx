@@ -197,9 +197,9 @@ function Router() {
           <Route path="/duplicate-patients">{() => <G p="patients.merge"><DuplicatePatients /></G>}</Route>
           <Route path="/doctors">{() => <G p="doctors.view"><Doctors /></G>}</Route>
           <Route path="/patient-invoices">{() => <G p="patient_invoices.view"><ErrorBoundary fallbackLabel="خطأ في صفحة فاتورة المريض"><PatientInvoice /></ErrorBoundary></G>}</Route>
-          <Route path="/bed-board">{() => <G p="patient_invoices.view"><BedBoard /></G>}</Route>
-          <Route path="/room-management">{() => <G p="patient_invoices.view"><RoomManagement /></G>}</Route>
-          <Route path="/surgery-types">{() => <G p="patient_invoices.view"><SurgeryTypes /></G>}</Route>
+          <Route path="/bed-board">{() => <G p="bed_board.view"><BedBoard /></G>}</Route>
+          <Route path="/room-management">{() => <G p="rooms.manage"><RoomManagement /></G>}</Route>
+          <Route path="/surgery-types">{() => <G p="surgery_types.manage"><SurgeryTypes /></G>}</Route>
           <Route path="/doctor-settlements">{() => <G p="patient_invoices.view"><DoctorSettlements /></G>}</Route>
           <Route path="/doctor-statement/:name">{() => <G p="doctors.view"><DoctorStatement /></G>}</Route>
           <Route path="/audit-log">{() => <G p="audit_log.view"><AuditLog /></G>}</Route>
@@ -243,7 +243,7 @@ const ROUTE_REQUIRED_PERMISSION: Record<string, string | null> = {
   "/cashier-handover":       "cashier.handover_view",
   "/patient-invoices":       "patient_invoices.view",
   "/clinic-booking":         "clinic.book",
-  "/bed-board":              "admissions.view",
+  "/bed-board":              "bed_board.view",
   "/doctor-orders":          "doctor_orders.view",
   "/store-transfers":        "transfers.view",
   "/transfer-preparation":   "transfers.view",
@@ -283,7 +283,7 @@ const ROUTE_REQUIRED_PERMISSION: Record<string, string | null> = {
   "/warehouses":             "warehouses.view",
   "/departments":            "departments.view",
   "/doctors":                "doctors.view",
-  "/room-management":        "patient_invoices.view",
+  "/room-management":        "rooms.manage",
   "/audit-log":              "audit_log.view",
   "/account-mappings":       "settings.account_mappings",
   "/users":                  "users.view",

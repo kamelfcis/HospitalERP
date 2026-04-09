@@ -19,7 +19,7 @@ export function registerAdmissionsRoutes(app: Express) {
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.post("/api/surgery-types", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
+  app.post("/api/surgery-types", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.SURGERY_TYPES_MANAGE), async (req, res) => {
     try {
       const { nameAr, category, isActive } = req.body;
       if (!nameAr?.trim()) return res.status(400).json({ message: "اسم العملية مطلوب" });
@@ -30,7 +30,7 @@ export function registerAdmissionsRoutes(app: Express) {
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.put("/api/surgery-types/:id", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
+  app.put("/api/surgery-types/:id", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.SURGERY_TYPES_MANAGE), async (req, res) => {
     try {
       const { nameAr, category, isActive } = req.body;
       if (category && !["major","medium","minor","skilled","simple"].includes(category))
@@ -46,7 +46,7 @@ export function registerAdmissionsRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/surgery-types/:id", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
+  app.delete("/api/surgery-types/:id", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.SURGERY_TYPES_MANAGE), async (req, res) => {
     try {
       await storage.deleteSurgeryType(req.params.id as string);
       res.json({ success: true });
@@ -60,7 +60,7 @@ export function registerAdmissionsRoutes(app: Express) {
     catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
-  app.put("/api/surgery-category-prices/:category", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
+  app.put("/api/surgery-category-prices/:category", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.SURGERY_TYPES_MANAGE), async (req, res) => {
     try {
       const { price } = req.body;
       if (price === undefined || isNaN(parseFloat(price)))

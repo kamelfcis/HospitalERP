@@ -428,30 +428,57 @@ export const SCREEN_MATRIX: ScreenCategoryDef[] = [
     ],
   },
 
-  // ── إدارة الإقامة والأسرّة ─────────────────────────────────────────────────
+  // ── لوحة الأسرّة ──────────────────────────────────────────────────────────
   {
-    id:            "admissions",
-    label:         "إدارة الإقامة والأسرّة",
-    actionColumns: ["create", "manage"],
+    id:            "bed-board-section",
+    label:         "لوحة الأسرّة",
+    actionColumns: [],
     screens: [
       {
         id:          "bed-board",
-        label:       "لوحة الأسرّة",
-        menuPermKey: "patient_invoices.view",
+        label:       "عرض لوحة الأسرّة",
+        menuPermKey: "bed_board.view",
         actions:     [],
       },
+    ],
+  },
+
+  // ── إدارة الأدوار والغرف ──────────────────────────────────────────────────
+  {
+    id:            "room-management-section",
+    label:         "إدارة الأدوار والغرف",
+    actionColumns: [],
+    screens: [
       {
         id:          "room-management",
-        label:       "إدارة الأدوار والغرف",
-        menuPermKey: "patient_invoices.view",
+        label:       "إدارة الأدوار والغرف والأسرّة",
+        menuPermKey: "rooms.manage",
         actions:     [],
       },
+    ],
+  },
+
+  // ── أنواع العمليات الجراحية ─────────────────────────────────────────────────
+  {
+    id:            "surgery-types-section",
+    label:         "أنواع العمليات الجراحية",
+    actionColumns: [],
+    screens: [
       {
         id:          "surgery-types",
-        label:       "أنواع العمليات الجراحية",
-        menuPermKey: "patient_invoices.view",
+        label:       "إدارة أنواع العمليات",
+        menuPermKey: "surgery_types.manage",
         actions:     [],
       },
+    ],
+  },
+
+  // ── حالات الدخول ──────────────────────────────────────────────────────────
+  {
+    id:            "admissions",
+    label:         "حالات الدخول",
+    actionColumns: ["create", "manage"],
+    screens: [
       {
         id:          "admissions",
         label:       "حالات الدخول",

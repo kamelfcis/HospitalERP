@@ -95,6 +95,10 @@ export const PERMISSIONS = {
   DOCTORS_CREATE: "doctors.create",
   DOCTORS_EDIT: "doctors.edit",
 
+  BED_BOARD_VIEW: "bed_board.view",
+  ROOMS_MANAGE: "rooms.manage",
+  SURGERY_TYPES_MANAGE: "surgery_types.manage",
+
   ADMISSIONS_VIEW: "admissions.view",
   ADMISSIONS_CREATE: "admissions.create",
   ADMISSIONS_MANAGE: "admissions.manage",
@@ -227,6 +231,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.TASKS_MANAGE,
     PERMISSIONS.PATIENTS_VIEW,
     PERMISSIONS.DOCTORS_VIEW,
+    PERMISSIONS.BED_BOARD_VIEW,
+    PERMISSIONS.ROOMS_MANAGE,
+    PERMISSIONS.SURGERY_TYPES_MANAGE,
     PERMISSIONS.ADMISSIONS_VIEW,
     PERMISSIONS.REPORTS_TRIAL_BALANCE,
     PERMISSIONS.REPORTS_INCOME_STATEMENT,
@@ -426,6 +433,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.DOCTORS_VIEW,
     PERMISSIONS.DOCTORS_CREATE,
     PERMISSIONS.DOCTORS_EDIT,
+    PERMISSIONS.BED_BOARD_VIEW,
     PERMISSIONS.ADMISSIONS_VIEW,
     PERMISSIONS.ADMISSIONS_CREATE,
     PERMISSIONS.ADMISSIONS_MANAGE,
@@ -647,6 +655,24 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: string; lab
       { key: PERMISSIONS.DOCTORS_VIEW, label: "عرض" },
       { key: PERMISSIONS.DOCTORS_CREATE, label: "إنشاء" },
       { key: PERMISSIONS.DOCTORS_EDIT, label: "تعديل" },
+    ],
+  },
+  {
+    label: "لوحة الأسرّة",
+    permissions: [
+      { key: PERMISSIONS.BED_BOARD_VIEW, label: "عرض لوحة الأسرّة" },
+    ],
+  },
+  {
+    label: "إدارة الأدوار والغرف",
+    permissions: [
+      { key: PERMISSIONS.ROOMS_MANAGE, label: "إدارة الأدوار والغرف والأسرّة" },
+    ],
+  },
+  {
+    label: "أنواع العمليات الجراحية",
+    permissions: [
+      { key: PERMISSIONS.SURGERY_TYPES_MANAGE, label: "إدارة أنواع العمليات" },
     ],
   },
   {
