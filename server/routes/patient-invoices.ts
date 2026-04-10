@@ -590,7 +590,8 @@ export function registerPatientInvoicesRoutes(app: Express) {
       const userId = (req.session as any)?.userId as string | undefined;
 
       const invRes = await db.execute(sql`
-        SELECT id, status, is_consolidated, admission_id, net_amount, paid_amount, is_final_closed
+        SELECT id, status, is_consolidated, admission_id, net_amount, paid_amount, is_final_closed,
+               patient_type, contract_id, company_id
         FROM patient_invoice_headers WHERE id = ${id}
       `);
       const inv = invRes.rows[0] as Record<string,unknown> | undefined;
@@ -599,9 +600,29 @@ export function registerPatientInvoicesRoutes(app: Express) {
       if (inv.status === "cancelled") return res.status(409).json({ message: "لا يمكن إغلاق فاتورة ملغاة" });
       if (inv.status !== "finalized") return res.status(409).json({ message: "يجب اعتماد الفاتورة أولاً قبل الإغلاق النهائي" });
 
-      const outstanding = parseFloat(String(inv.net_amount || 0)) - parseFloat(String(inv.paid_amount || 0));
-      if (outstanding > 0.01) {
-        return res.status(409).json({ message: `لا يمكن الإغلاق النهائي — يوجد رصيد متبقي: ${outstanding.toFixed(2)}` });
+      const netAmount = parseFloat(String(inv.net_amount || 0));
+      const paidAmount = parseFloat(String(inv.paid_amount || 0));
+      const isContractPatient = !!(inv.contract_id || inv.company_id);
+
+      if (isContractPatient) {
+        const claimRes = await db.execute(sql`
+          SELECT COALESCE(SUM(company_share_amount::numeric), 0)::text AS total_company_share
+          FROM contract_claim_lines
+          WHERE invoice_header_id = ${id}
+        `);
+        const totalCompanyShare = parseFloat(String((claimRes.rows[0] as Record<string,unknown>)?.total_company_share || "0"));
+        const coveredAmount = paidAmount + totalCompanyShare;
+        if (coveredAmount < netAmount - 0.01) {
+          const remaining = netAmount - coveredAmount;
+          return res.status(409).json({
+            message: `لا يمكن الإغلاق النهائي — يوجد رصيد متبقي ${remaining.toFixed(2)} ج.م غير مغطى (المدفوع: ${paidAmount.toFixed(2)} + مطالبات الشركة: ${totalCompanyShare.toFixed(2)} من أصل ${netAmount.toFixed(2)})`,
+          });
+        }
+      } else {
+        const outstanding = netAmount - paidAmount;
+        if (outstanding > 0.01) {
+          return res.status(409).json({ message: `لا يمكن الإغلاق النهائي — يوجد رصيد متبقي: ${outstanding.toFixed(2)} ج.م` });
+        }
       }
 
       if (inv.admission_id) {
