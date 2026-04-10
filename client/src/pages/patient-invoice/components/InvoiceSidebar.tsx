@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { formatCurrency, formatNumber, formatDateShort } from "@/lib/formatters";
 import { paymentMethodLabels, patientInvoiceStatusLabels } from "@shared/schema";
-import { useTreasuriesLookup } from "@/hooks/lookups/useTreasuriesLookup";
+import { usePaymentTreasuries } from "@/hooks/lookups/usePaymentTreasuries";
 import { DoctorLookup } from "@/components/lookups";
 import type { PaymentLocal } from "../types";
 import type { DoctorTransfer } from "@shared/schema";
@@ -72,9 +72,8 @@ export function InvoiceSidebar({
 }: InvoiceSidebarProps) {
   const [localDtDoctorId, setLocalDtDoctorId] = useState("");
 
-  const { items: allTreasuries } = useTreasuriesLookup();
-  const activeTreasuries = allTreasuries.filter(t => t.isActive !== false);
-  const singleTreasury = activeTreasuries.length === 1 ? activeTreasuries[0] : null;
+  const { treasuries: activeTreasuries, isLocked } = usePaymentTreasuries();
+  const singleTreasury = isLocked && activeTreasuries.length === 1 ? activeTreasuries[0] : null;
 
   useEffect(() => {
     if (!singleTreasury) return;

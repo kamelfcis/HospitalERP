@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useTreasuriesLookup } from "@/hooks/lookups/useTreasuriesLookup";
+import { usePaymentTreasuries } from "@/hooks/lookups/usePaymentTreasuries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -17,9 +17,8 @@ interface PaymentsTabProps {
 }
 
 export function PaymentsTab({ isDraft, payments, addPayment, updatePayment, removePayment }: PaymentsTabProps) {
-  const { items: allTreasuries } = useTreasuriesLookup();
-  const activeTreasuries = allTreasuries.filter(t => t.isActive !== false);
-  const singleTreasury = activeTreasuries.length === 1 ? activeTreasuries[0] : null;
+  const { treasuries: activeTreasuries, isLocked } = usePaymentTreasuries();
+  const singleTreasury = isLocked && activeTreasuries.length === 1 ? activeTreasuries[0] : null;
 
   useEffect(() => {
     if (!singleTreasury) return;
@@ -125,7 +124,7 @@ export function PaymentsTab({ isDraft, payments, addPayment, updatePayment, remo
                       </Select>
                     )
                   ) : (
-                    activeTreasuries.find(t => t.id === p.treasuryId)?.name ?? allTreasuries.find(t => t.id === p.treasuryId)?.name ?? "—"
+                    activeTreasuries.find(t => t.id === p.treasuryId)?.name ?? "—"
                   )}
                 </td>
                 <td>

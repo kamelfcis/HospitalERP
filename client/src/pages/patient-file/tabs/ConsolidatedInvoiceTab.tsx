@@ -9,6 +9,7 @@ import {
   Scissors, FileCheck, Filter,
 } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { usePaymentTreasuries } from "@/hooks/lookups/usePaymentTreasuries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -432,16 +433,13 @@ const InvoicePaymentsTab = memo(function InvoicePaymentsTab({
     refetchInterval: isFinalClosed ? false : 15_000,
   });
 
-  const { data: treasuries = [] } = useQuery<Array<{ id: string; name: string }>>({
-    queryKey: ["/api/treasuries/mine"],
-    queryFn: async () => {
-      const r = await fetch("/api/treasuries/mine", { credentials: "include" });
-      if (!r.ok) return [];
-      const result = await r.json();
-      return Array.isArray(result) ? result : [];
-    },
-    enabled: !!primaryInvoiceId && primaryInvoiceStatus === "draft",
-  });
+  const { treasuries, isLocked: treasuryLocked } = usePaymentTreasuries();
+
+  useEffect(() => {
+    if (treasuryLocked && treasuries.length === 1 && payTreasuryId === "__none__") {
+      setPayTreasuryId(treasuries[0].id);
+    }
+  }, [treasuryLocked, treasuries, payTreasuryId]);
 
   const addPaymentMutation = useMutation({
     mutationFn: async () => {
@@ -544,17 +542,23 @@ const InvoicePaymentsTab = memo(function InvoicePaymentsTab({
             </div>
             <div className="flex flex-col gap-1">
               <Label className="text-xs">الخزنة</Label>
-              <Select value={payTreasuryId} onValueChange={setPayTreasuryId}>
-                <SelectTrigger className="h-8 text-xs" data-testid="select-pay-treasury">
-                  <SelectValue placeholder="اختر الخزنة" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">— بدون خزنة —</SelectItem>
-                  {treasuries.map(t => (
-                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {treasuryLocked && treasuries.length === 1 ? (
+                <div className="h-8 flex items-center px-2 text-xs bg-muted rounded-md border" data-testid="text-pay-treasury-locked">
+                  {treasuries[0].name}
+                </div>
+              ) : (
+                <Select value={payTreasuryId} onValueChange={setPayTreasuryId}>
+                  <SelectTrigger className="h-8 text-xs" data-testid="select-pay-treasury">
+                    <SelectValue placeholder="اختر الخزنة" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— بدون خزنة —</SelectItem>
+                    {treasuries.map(t => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           </div>
           <div className="flex flex-col gap-1">

@@ -21,3 +21,6 @@ export type { UseDepartmentsLookupOptions } from "./useDepartmentsLookup";
 
 export { useCostCentersLookup } from "./useCostCentersLookup";
 export type { UseCostCentersLookupOptions } from "./useCostCentersLookup";
+
+export { usePaymentTreasuries } from "./usePaymentTreasuries";
+export type { PaymentTreasury, UsePaymentTreasuriesResult } from "./usePaymentTreasuries";
