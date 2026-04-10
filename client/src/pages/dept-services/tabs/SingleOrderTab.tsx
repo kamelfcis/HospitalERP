@@ -206,6 +206,7 @@ export function SingleOrderTab({ departmentId, departmentName }: Props) {
           <Label className="text-xs">الطبيب</Label>
           <DoctorLookup
             value={doctorId}
+            displayValue={doctorName}
             onChange={(item) => { setDoctorId(item?.id || ""); setDoctorName(item?.name || ""); }}
             placeholder="ابحث عن طبيب..."
             clearable

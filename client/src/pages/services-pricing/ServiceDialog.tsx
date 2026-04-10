@@ -344,6 +344,7 @@ interface DoctorPrice { id: string; serviceId: string; doctorId: string; price: 
 function DoctorPricingSection({ serviceId }: { serviceId: string }) {
   const { toast } = useToast();
   const [selectedDoctorId, setSelectedDoctorId] = useState("");
+  const [selectedDoctorName, setSelectedDoctorName] = useState("");
   const [price, setPrice] = useState("");
 
   const { data: doctorPrices = [] } = useQuery<DoctorPrice[]>({
@@ -357,6 +358,7 @@ function DoctorPricingSection({ serviceId }: { serviceId: string }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/clinic-service-doctor-prices", serviceId] });
       setSelectedDoctorId("");
+      setSelectedDoctorName("");
       setPrice("");
       toast({ title: "تم تخصيص السعر" });
     },
@@ -388,7 +390,8 @@ function DoctorPricingSection({ serviceId }: { serviceId: string }) {
           <Label className="text-xs">الطبيب</Label>
           <DoctorLookup
             value={selectedDoctorId}
-            onChange={(item) => setSelectedDoctorId(item?.id || "")}
+            displayValue={selectedDoctorName}
+            onChange={(item) => { setSelectedDoctorId(item?.id || ""); setSelectedDoctorName(item?.name || ""); }}
             placeholder="ابحث عن طبيب..."
             clearable
             data-testid="select-doctor-price"
