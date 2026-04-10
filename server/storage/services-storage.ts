@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { eq, and, sql, or, asc, isNotNull, ilike } from "drizzle-orm";
+import { eq, and, sql, or, asc, isNotNull, ilike, inArray } from "drizzle-orm";
 import {
   services,
   serviceConsumables,
@@ -113,6 +113,11 @@ const methods = {
       .where(eq(services.id, id));
     if (!row) return null;
     return { ...row.service, department: row.department || undefined, revenueAccount: row.revenueAccount || undefined, costCenter: row.costCenter || undefined };
+  },
+
+  async getServicesByIds(this: DatabaseStorage, ids: string[]): Promise<Service[]> {
+    if (ids.length === 0) return [];
+    return db.select().from(services).where(inArray(services.id, ids));
   },
 
   async createService(this: DatabaseStorage, data: InsertService): Promise<Service> {

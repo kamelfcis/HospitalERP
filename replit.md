@@ -49,6 +49,7 @@ The system utilizes a RESTful JSON API. Database interactions are managed via Dr
 - **Patient Audit Trail**: Tracks patient linkage for audit purposes.
 - **Patient Financial Summary API**: Provides aggregated financial data for patients.
 - **Business Classification for Patient Invoice Lines**: Introduces a separate `business_classification` field for items, services, and invoice lines.
+- **Doctor Cost System (أجر الطبيب)**: Auto-generates doctor cost lines on patient invoices based on per-service `doctorShareType` (none/percentage/fixed) and `doctorShareValue` configured in service master data. Cost lines are read-only, excluded from patient totals, and displayed with rose styling. `injectDoctorCostLines()` engine in `server/lib/doctor-cost-engine.ts` runs after contract coverage. GL integration handles doctor_cost line type separately.
 - **Visit Group Multi-Department Billing**: Lightweight grouping layer for multiple department invoices for the same patient in an OPD visit.
 - **Traceability Hardening**: All lines from department services carry `source_type`/`source_id` for improved traceability.
 - **Patient File Workspace**: A comprehensive patient master workspace with 6 tabbed sections for overview, history, invoices, payments, and financial statements.

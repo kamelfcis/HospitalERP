@@ -127,7 +127,10 @@ export default function ServicesTab() {
       defaultWarehouseId: s.defaultWarehouseId || "",
       revenueAccountId: s.revenueAccountId, costCenterId: s.costCenterId,
       basePrice: String(s.basePrice), requiresDoctor: s.requiresDoctor ?? false,
-      requiresNurse: s.requiresNurse ?? false, isActive: s.isActive,
+      requiresNurse: s.requiresNurse ?? false,
+      doctorShareType: (s as any).doctorShareType || "none",
+      doctorShareValue: String((s as any).doctorShareValue ?? "0"),
+      isActive: s.isActive,
     });
     setModalOpen(true);
   }

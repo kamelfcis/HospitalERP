@@ -25,6 +25,7 @@ import {
 } from "@shared/schema";
 import { resolveBusinessClassificationWithMeta } from "@shared/resolve-business-classification";
 import { applyContractCoverage } from "../lib/patient-invoice-coverage";
+import { injectDoctorCostLines } from "../lib/doctor-cost-engine";
 import { assertInvoiceScopeGuard, assertServiceDeptMatch, ScopeViolationError } from "../lib/scope-guard";
 import { findOrCreatePatient } from "../lib/find-or-create-patient";
 import { eq } from "drizzle-orm";
@@ -134,6 +135,8 @@ export function registerPatientInvoicesRoutes(app: Express) {
       );
       auditContractPriceOverrides(linesParsed, (headerParsed as any).contractId, req.session.userId);
 
+      linesParsed = await injectDoctorCostLines(linesParsed);
+
       // ── Scope guard: قسم + مخزن + تطابق قسم الخدمات ──────────────────────
       await assertInvoiceScopeGuard(
         req.session.userId as string,
@@ -141,7 +144,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
         (headerParsed as any).warehouseId,
         "patient_invoice_create",
       );
-      await assertServiceDeptMatch(linesParsed, (headerParsed as any).departmentId);
+      await assertServiceDeptMatch(linesParsed.filter((l: any) => l.lineType !== "doctor_cost"), (headerParsed as any).departmentId);
       // ─────────────────────────────────────────────────────────────────────
 
       // ── Item price audit (non-blocking, logging only) ──────────────────
@@ -154,7 +157,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
       );
       // ──────────────────────────────────────────────────────────────────
 
-      if (!(await enforceNonZeroPrice(req, res, linesParsed))) return;
+      if (!(await enforceNonZeroPrice(req, res, linesParsed.filter((l: any) => l.lineType !== "doctor_cost")))) return;
 
       const result = await storage.createPatientInvoice(headerParsed, linesParsed, paymentsParsed);
 
@@ -207,6 +210,8 @@ export function registerPatientInvoicesRoutes(app: Express) {
       );
       auditContractPriceOverrides(linesParsed, (headerParsed as any).contractId, req.session.userId);
 
+      linesParsed = await injectDoctorCostLines(linesParsed);
+
       // ── Scope guard: قسم + مخزن + تطابق قسم الخدمات ──────────────────────
       await assertInvoiceScopeGuard(
         req.session.userId as string,
@@ -214,7 +219,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
         (headerParsed as any).warehouseId,
         "patient_invoice_update",
       );
-      await assertServiceDeptMatch(linesParsed, (headerParsed as any).departmentId);
+      await assertServiceDeptMatch(linesParsed.filter((l: any) => l.lineType !== "doctor_cost"), (headerParsed as any).departmentId);
       // ─────────────────────────────────────────────────────────────────────
 
       // ── Item price audit (non-blocking, logging only) ──────────────────
@@ -227,7 +232,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
       );
       // ──────────────────────────────────────────────────────────────────
 
-      if (!(await enforceNonZeroPrice(req, res, linesParsed))) return;
+      if (!(await enforceNonZeroPrice(req, res, linesParsed.filter((l: any) => l.lineType !== "doctor_cost")))) return;
 
       const result = await storage.updatePatientInvoice(req.params.id as string, headerParsed, linesParsed, paymentsParsed, expectedVersion != null ? Number(expectedVersion) : undefined);
 

@@ -2,7 +2,7 @@ import type { ItemLike } from "@/lib/invoice-lines";
 
 export interface LineLocal {
   tempId: string;
-  lineType: "service" | "drug" | "consumable" | "equipment";
+  lineType: "service" | "drug" | "consumable" | "equipment" | "doctor_cost";
   serviceId: string | null;
   itemId: string | null;
   description: string;

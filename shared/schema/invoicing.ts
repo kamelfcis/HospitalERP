@@ -28,6 +28,8 @@ export const services = pgTable("services", {
   basePrice: decimal("base_price", { precision: 18, scale: 2 }).notNull().default("0"),
   requiresDoctor: boolean("requires_doctor").notNull().default(false),
   requiresNurse: boolean("requires_nurse").notNull().default(false),
+  doctorShareType: text("doctor_share_type").notNull().default("none"),
+  doctorShareValue: decimal("doctor_share_value", { precision: 18, scale: 2 }).notNull().default("0"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -440,6 +442,8 @@ export const patientInvoiceLines = pgTable("patient_invoice_lines", {
   // price_list_id_used: قائمة الأسعار التي استُخدمت لاشتقاق السعر
   priceListIdUsed: varchar("price_list_id_used"),
   encounterId: varchar("encounter_id"),
+  linkedLineId: varchar("linked_line_id"),
+  doctorCostAmount: decimal("doctor_cost_amount", { precision: 18, scale: 2 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   headerIdx:         index("idx_pat_line_header").on(table.headerId),

@@ -34,7 +34,7 @@ export const cashierShiftStatusEnum = pgEnum("cashier_shift_status", ["open", "c
 export const customerTypeEnum = pgEnum("customer_type", ["cash", "credit", "contract", "delivery"]);
 export const patientInvoiceStatusEnum = pgEnum("patient_invoice_status", ["draft", "finalizing", "finalized", "cancelled"]);
 export const patientTypeEnum = pgEnum("patient_type", ["cash", "contract"]);
-export const patientInvoiceLineTypeEnum = pgEnum("patient_invoice_line_type", ["service", "drug", "consumable", "equipment"]);
+export const patientInvoiceLineTypeEnum = pgEnum("patient_invoice_line_type", ["service", "drug", "consumable", "equipment", "doctor_cost"]);
 export const paymentMethodEnum = pgEnum("payment_method", ["cash", "card", "bank_transfer", "insurance"]);
 export const admissionStatusEnum = pgEnum("admission_status", ["active", "discharged", "cancelled"]);
 

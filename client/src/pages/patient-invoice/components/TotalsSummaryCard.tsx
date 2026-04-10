@@ -10,6 +10,7 @@ interface Totals {
   remaining: number;
   companyShareTotal?: number;
   patientShareTotal?: number;
+  doctorCostTotal?: number;
 }
 
 interface TotalsSummaryCardProps {
@@ -23,6 +24,7 @@ export function TotalsSummaryCard({ totals, patientType }: TotalsSummaryCardProp
   const isContract = patientType === "contract" || patientType === "insurance";
   const companyShare = totals.companyShareTotal ?? 0;
   const patientShare = totals.patientShareTotal ?? 0;
+  const doctorCost = totals.doctorCostTotal ?? 0;
 
   return (
     <div className="flex flex-row-reverse flex-wrap items-center gap-3 text-sm flex-1">
@@ -66,6 +68,14 @@ export function TotalsSummaryCard({ totals, patientType }: TotalsSummaryCardProp
             </span>
           </div>
         </>
+      )}
+      {doctorCost > 0 && (
+        <div className="flex flex-row-reverse items-center gap-1">
+          <span className="text-muted-foreground text-xs">أجر أطباء:</span>
+          <span className="font-bold text-xs text-rose-600 dark:text-rose-400" data-testid="text-footer-doctor-cost">
+            {formatCurrency(doctorCost)}
+          </span>
+        </div>
       )}
       <div className="flex flex-row-reverse items-center gap-1">
         <span className="text-muted-foreground text-xs">المدفوع:</span>

@@ -255,8 +255,13 @@ const methods = {
       equipment: "revenue_equipment",
     };
     const totals: Record<string, number> = {};
+    let doctorCostTotal = 0;
     for (const line of lines) {
       if (line.isVoid) continue;
+      if (line.lineType === "doctor_cost") {
+        doctorCostTotal += parseMoney(line.totalPrice);
+        continue;
+      }
       const mappingType = lineTypeMap[line.lineType] || "revenue_general";
       totals[mappingType] = (totals[mappingType] || 0) + parseMoney(line.totalPrice);
     }
@@ -269,6 +274,9 @@ const methods = {
     }
     for (const [lt, amt] of Object.entries(totals)) {
       if (amt > 0) journalLines.push({ lineType: lt, amount: roundMoney(amt) });
+    }
+    if (doctorCostTotal > 0) {
+      journalLines.push({ lineType: "doctor_cost", amount: roundMoney(doctorCostTotal) });
     }
     return journalLines;
   },

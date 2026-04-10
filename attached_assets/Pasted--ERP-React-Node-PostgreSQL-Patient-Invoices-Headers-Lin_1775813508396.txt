@@ -1,0 +1,202 @@
+أنا عندي نظام ERP لمستشفى (React + Node + PostgreSQL) وفيه:
+
+* Patient Invoices (Headers + Lines)
+* Account Mapping بيربط كل Transaction Type بالقيود
+* القيود بتتولد أوتوماتيك عند Finalize
+* Cost Centers موجودة
+* Invoice Lines حالياً أنواعها:
+  service / item / consumable / gas / equipment
+
+========================
+المطلوب: إضافة دعم "أجر الطبيب" كنظام متكامل
+============================================
+
+🔴 أولاً: المفهوم العام
+
+* أجر الطبيب = تكلفة مباشرة (Cost of Service)
+* لا يظهر كإيراد
+* لا يؤثر على إجمالي الفاتورة للمريض
+* يتم تخزينه كسطر داخل الفاتورة (Line-based system)
+
+========================
+🔴 ثانياً: Backend (Database + Logic)
+=====================================
+
+1. تعديل invoice_lines:
+
+إضافة:
+
+* line_type = 'cost'
+* cost_subtype = 'doctor'
+
+إضافة حقول:
+
+* is_cost_line (boolean)
+* affects_patient_total (boolean = false)
+* doctor_id (nullable)
+* cost_amount
+* cost_percentage (optional)
+
+2. Doctor Share Source:
+
+* في Normal Mode:
+
+  * يتم تحديد:
+
+    * percentage أو fixed
+    * على مستوى service أو invoice
+
+* في Package Mode:
+
+  * يتم سحب rule من package definition
+
+3. Calculation Logic:
+
+عند:
+
+* إضافة Service أو Package
+* أو تغيير السعر
+
+السيستم يقوم بـ:
+
+* حساب doctor_cost
+* إدراج أو تحديث cost line تلقائياً
+
+Pseudo:
+
+if (doctor_share_type === 'percentage'):
+cost_amount = base_amount * percentage
+else:
+cost_amount = fixed_amount
+
+4. Behavior Rules:
+
+* لا يسمح بتعديل cost line يدوياً
+* يتم حذف cost line لو تم حذف الخدمة/الباكدج
+* يتم إعادة الحساب عند أي تعديل
+
+5. Finalize:
+
+* يتم التأكد من وجود cost line
+* يتم تثبيت القيمة (lock)
+
+========================
+🔴 ثالثاً: Frontend (UI/UX)
+===========================
+
+1. داخل الفاتورة:
+
+إظهار cost line داخل نفس الجدول:
+
+* Label: "أجر الطبيب"
+* Badge: "Cost Only"
+* لون مختلف (رمادي أو أحمر خفيف)
+
+2. لا يدخل في:
+
+* Subtotal
+* Total
+
+3. عرض معلومات إضافية:
+
+Tooltip أو Panel:
+
+* Doctor Name
+* Percentage أو Fixed
+* Calculated Amount
+
+4. Controls:
+
+* منع التعديل اليدوي
+* منع الحذف
+* تحديث تلقائي عند تغيير السعر
+
+5. اختيار الطبيب:
+
+* Dropdown في الفاتورة أو الخدمة
+* Required لو الخدمة محتاجة طبيب
+
+========================
+🔴 رابعاً: Account Mapping (الأهم)
+==================================
+
+إضافة Line Type جديد في mapping system:
+
+line_type = doctor_cost
+
+ويتم ربطه بـ:
+
+1. Debit Account:
+   👉 تكلفة أطباء العمليات
+
+2. Credit Account:
+   👉 مستحقات الأطباء
+
+========================
+🔴 مثال القيد:
+==============
+
+Dr / Cost of Doctors
+Cr / Doctors Payable
+
+========================
+🔴 Rules:
+=========
+
+* لا يتم hardcoding أي حساب
+* يتم السحب من Account Mapping
+* لو mapping غير موجود:
+
+  * يظهر error
+  * لا يتم finalize
+
+========================
+🔴 Cost Center Integration:
+===========================
+
+* cost line يرث:
+
+  * cost_center_id من الفاتورة أو القسم
+
+* optional:
+
+  * cost_center = doctor (تحليل متقدم)
+
+========================
+🔴 Audit & Control:
+===================
+
+* تسجيل:
+
+  * doctor_id
+  * percentage
+  * calculated_amount
+
+* منع التعديل بعد finalize
+
+========================
+🔴 Performance:
+===============
+
+* حساب cost يتم server-side فقط
+* عدم الاعتماد على frontend
+* استخدام batch updates
+
+========================
+🔴 Constraints:
+===============
+
+* عدم كسر النظام الحالي
+* الحفاظ على invoice structure
+* الحفاظ على account mapping الحالي
+* عدم إدخال أي حسابات ثابتة
+
+========================
+
+اعمل لي:
+
+1. DB migration
+2. API endpoints / services
+3. Frontend components
+4. Integration مع Account Mapping
+5. Step-by-step implementation plan

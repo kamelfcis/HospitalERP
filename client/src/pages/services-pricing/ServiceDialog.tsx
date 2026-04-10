@@ -54,6 +54,8 @@ export interface ServiceFormState {
   basePrice: string;
   requiresDoctor: boolean;
   requiresNurse: boolean;
+  doctorShareType: string;
+  doctorShareValue: string;
   isActive: boolean;
 }
 
@@ -64,7 +66,8 @@ export const defaultServiceForm: ServiceFormState = {
   code: "", nameAr: "", nameEn: "", departmentId: "", category: "",
   serviceType: "SERVICE", businessClassification: "__none__",
   defaultWarehouseId: "", revenueAccountId: "",
-  costCenterId: "", basePrice: "0", requiresDoctor: false, requiresNurse: false, isActive: true,
+  costCenterId: "", basePrice: "0", requiresDoctor: false, requiresNurse: false,
+  doctorShareType: "none", doctorShareValue: "0", isActive: true,
 };
 
 interface Props {
@@ -303,6 +306,36 @@ export default function ServiceDialog({
                   data-testid="checkbox-service-active" />
                 <Label htmlFor="svc-active">نشط</Label>
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 pt-2">
+              <div>
+                <Label className="text-xs">نوع حصة الطبيب</Label>
+                <Select value={form.doctorShareType} onValueChange={v => set("doctorShareType", v)}>
+                  <SelectTrigger className="h-8 text-xs" data-testid="select-doctor-share-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">بدون</SelectItem>
+                    <SelectItem value="percentage">نسبة مئوية %</SelectItem>
+                    <SelectItem value="fixed">مبلغ ثابت</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {form.doctorShareType !== "none" && (
+                <div>
+                  <Label className="text-xs">
+                    {form.doctorShareType === "percentage" ? "النسبة %" : "المبلغ (ج.م)"}
+                  </Label>
+                  <Input
+                    type="number" min="0" step="0.01"
+                    value={form.doctorShareValue}
+                    onChange={e => set("doctorShareValue", e.target.value)}
+                    className="h-8 text-xs"
+                    data-testid="input-doctor-share-value"
+                  />
+                </div>
+              )}
             </div>
           </div>
 

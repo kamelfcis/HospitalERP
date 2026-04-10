@@ -726,6 +726,7 @@ export interface IStorage {
 
   // Services
   getService(id: string): Promise<ServiceWithDepartment | null>;
+  getServicesByIds(ids: string[]): Promise<Service[]>;
   getServices(params: { search?: string; departmentId?: string; category?: string; active?: string; page?: number; pageSize?: number }): Promise<{ data: ServiceWithDepartment[]; total: number }>;
   createService(service: InsertService): Promise<Service>;
   updateService(id: string, service: Partial<InsertService>): Promise<Service | undefined>;
