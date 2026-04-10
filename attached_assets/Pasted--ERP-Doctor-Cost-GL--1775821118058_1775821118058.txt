@@ -1,0 +1,235 @@
+النظام الحالي هو ERP مستشفى متكامل، وتم تنفيذ نظام الأطباء المالي بالكامل تقريباً (Doctor Cost + GL Integration + Billing Mode + Profitability + Account Mapping).
+
+⚠️ مهم جداً:
+
+* لا يتم إنشاء قيود محاسبية في مرحلة المسودة
+* القيود يتم إنشاؤها فقط عند الحفظ النهائي (Finalize) من خلال Account Mapping الحالي
+* ممنوع إنشاء أي نظام قيود مستقل أو خارج هذا التصميم
+
+========================
+🎯 الهدف
+========
+
+تنفيذ **Final Hardening + Financial Controls + Accuracy Improvements**
+بدون إعادة بناء النظام أو تكرار أي مكونات
+
+========================
+🧠 القاعدة الأساسية
+===================
+
+* اكتشف الموجود أولاً (تم بالفعل)
+* ابنِ على الموجود فقط
+* لا تنشئ Tables / APIs / Screens جديدة
+* لا تعمل duplication
+* لا تكسر الـ Account Mapping الحالي
+* كل التعديلات minimal و backward compatible
+
+========================
+🔴 1) FINALIZE-ONLY ACCOUNTING (أساسي جداً)
+===========================================
+
+* لا يتم إنشاء أي GL Entries في مرحلة Draft
+* كل القيود يتم إنشاؤها عند Finalize فقط
+
+Draft:
+
+* تعديل حر (doctor / services / billing mode)
+* حساب doctor cost تشغيلي فقط
+* بدون قيود
+
+Finalize:
+
+* تنفيذ كل validations
+* إنشاء القيود
+* تثبيت البيانات
+
+Post Finalize:
+
+* منع تعديل الحقول المحاسبية
+  أو
+* تطبيق Reverse + Repost إذا النظام يسمح
+
+========================
+🔴 2) HARD VALIDATION (إجباري عند Finalize)
+===========================================
+
+يجب منع الحفظ النهائي في الحالات التالية:
+
+* billing_mode = hospital_collect
+  AND doctor.payableAccountId IS NULL
+
+* billing_mode = doctor_collect
+  AND doctor.receivableAccountId IS NULL
+
+* وجود doctor_cost line بدون doctor_id
+
+* غياب Account Mapping المطلوب
+
+❌ لا تستخدم Warning — يجب Block
+
+========================
+🔴 3) DOCTOR COST ENGINE (تأكيد)
+================================
+
+* يعمل فقط في حالة hospital_collect
+* لا يتم إنشاء doctor_cost في حالة doctor_collect
+
+Doctor Cost Line:
+
+* line_type = cost
+
+* cost_subtype = doctor
+
+* مرتبط بـ linkedLineId (service line)
+
+* read-only
+
+* لا يؤثر على إجمالي الفاتورة
+
+* يستخدم فقط للتكلفة
+
+========================
+🔴 4) DOCTOR COLLECT ACCOUNTING
+===============================
+
+في حالة:
+
+billing_mode = doctor_collect
+
+القيد يجب أن يكون:
+
+Dr: Doctor Receivable Account
+Cr: Revenue Account
+
+* لا يتم إنشاء doctor_cost line
+* يتم استخدام dynamic override على debit side
+
+========================
+🔴 5) COST CENTER HANDLING
+==========================
+
+عند إنشاء GL:
+
+الأولوية:
+
+1. doctor.costCenterId
+2. service.costCenterId
+3. NULL (آخر حل)
+
+⚠️ ملاحظة:
+حالياً يتم استخدام أول service كـ fallback (حل مؤقت مقبول)
+
+========================
+🔴 6) LINKED LINE (Audit مهم)
+=============================
+
+* كل doctor_cost line يجب أن يحتوي على:
+  linkedLineId → service line
+
+الهدف:
+
+* traceability
+* profitability analysis
+* audit
+
+========================
+🔴 7) FINALIZE PROTECTION
+=========================
+
+بعد Finalize:
+
+* منع تعديل:
+
+  * doctorId
+  * billingMode
+  * الأسعار المؤثرة
+
+أو:
+
+* تنفيذ reverse + repost
+
+========================
+🔴 8) BACKFILL HARDENING
+========================
+
+* أي doctorName لم يتم ربطه بـ doctor_id:
+  → يتم تسجيله في logs
+
+⚠️ يجب مراجعة هذه الحالات يدوياً
+
+========================
+🔴 9) PROFITABILITY ACCURACY
+============================
+
+* Revenue = net (بدون VAT)
+
+* استخدام total_price لأن:
+
+  * لا يوجد tax column في lines
+
+* استبعاد:
+
+  * is_void = true
+
+========================
+🔴 10) REPORT VALIDATION
+========================
+
+تأكد أن:
+
+* لا يوجد double counting
+* doctor_cost محسوب مرة واحدة فقط
+* كل cost مربوط بـ service
+* التقارير تعتمد على بيانات فعلية (ليس snapshot خاطئ)
+
+========================
+🔴 11) PARTIAL UPDATE SAFETY
+============================
+
+في PUT / PATCH:
+
+* إذا لم يتم إرسال billingMode:
+  → يتم استخدام القيمة الحالية من DB
+
+⚠️ لمنع regression
+
+========================
+🔴 12) PERFORMANCE
+==================
+
+* استخدام indexes الحالية فقط
+* لا تضف index بدون سبب
+* مراقبة:
+  doctor_id
+  billing_mode
+  linked_line_id
+
+========================
+🔴 13) UX IMPROVEMENTS (اختياري)
+================================
+
+* عرض warning عند:
+  billingMode ≠ doctor.financialMode
+
+* إضافة tooltip للتوضيح
+
+========================
+🚀 Done Looks Like
+==================
+
+* لا يوجد قيد قبل Finalize
+* لا يمكن ترحيل بيانات خاطئة
+* doctor_cost مرتبط بالدكتور والخدمة
+* GL صحيح لكل السيناريوهات
+* cost center يتم تمريره بشكل صحيح
+* لا يوجد duplication
+* النظام جاهز للمراجعة المالية (Audit Ready)
+
+========================
+⚠️ أهم قاعدة
+============
+
+لا تبني أي شيء من الصفر
+لا تكرر أي مكون موجود
+ابنِ على الموجود فقط
+وأي إضافة تكون تحسين أو ضبط فقط

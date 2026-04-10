@@ -465,6 +465,7 @@ export const patientInvoiceLines = pgTable("patient_invoice_lines", {
   bizClassHeaderIdx: index("idx_invoice_lines_invoice_class").on(table.headerId, table.businessClassification),
   doctorIdIdx:       index("idx_pat_line_doctor_id").on(table.doctorId),
   costSubtypeIdx:    index("idx_pat_line_cost_subtype").on(table.costSubtype),
+  linkedLineIdx:     index("idx_pat_line_linked_line").on(table.linkedLineId),
 }));
 
 export const patientInvoicePayments = pgTable("patient_invoice_payments", {

@@ -754,6 +754,11 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
       ON encounters (visit_id, encounter_type, COALESCE(department_id, '00000000-0000-0000-0000-000000000000'))
       WHERE status = 'active'
     `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_pat_line_linked_line
+      ON patient_invoice_lines (linked_line_id)
+      WHERE linked_line_id IS NOT NULL
+    `);
     log("[STARTUP] Performance indexes ensured");
   } catch (err: unknown) {
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] performance index error");
