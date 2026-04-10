@@ -18,3 +18,6 @@ export type { ClinicLookupProps } from "./ClinicLookup";
 
 export { DepartmentLookup } from "./DepartmentLookup";
 export type { DepartmentLookupProps } from "./DepartmentLookup";
+
+export { CostCenterLookup } from "./CostCenterLookup";
+export type { CostCenterLookupProps } from "./CostCenterLookup";

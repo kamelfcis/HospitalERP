@@ -1,0 +1,183 @@
+أنت تعمل على نظام ERP مستشفى قائم بالفعل، وقد تم تنفيذ نظام الأطباء المالي بالكامل تقريباً.
+
+⚠️ ممنوع تماماً بناء أي شيء من الصفر أو إنشاء جداول أو APIs أو شاشات جديدة إلا إذا ثبت 100% أن هذا الجزء غير موجود.
+
+========================
+🎯 الهدف
+========
+
+* مراجعة النظام الحالي (Discovery)
+* إعادة استخدام الموجود بالكامل
+* تحسينه فقط عند الحاجة
+* عمل refactor محافظ
+* إضافة controls و validations الناقصة فقط
+
+========================
+🧠 المرحلة 1 — Discovery (إجباري قبل أي تنفيذ)
+==============================================
+
+حلل النظام الحالي وحدد بدقة:
+
+1. ما هو موجود ويعمل فعلاً
+2. ما هو موجود لكنه ناقص
+3. ما هو موجود لكنه يحتاج refactor
+4. ما هو غير موجود فعلاً
+
+⚠️ لا تبدأ تنفيذ قبل إنهاء هذا التحليل.
+
+========================
+📊 المرحلة 2 — Reuse Plan
+=========================
+
+* استخدم doctor_cost_engine الحالي
+* استخدم account mapping الحالي
+* استخدم invoice routes الحالية
+* استخدم doctors table الحالي
+* استخدم frontend hooks الحالية
+
+❌ ممنوع إنشاء بدائل
+
+========================
+🔴 المرحلة 3 — Critical Fixes (إلزامي)
+======================================
+
+1. HARD VALIDATION
+
+يجب منع finalize في الحالات التالية:
+
+* hospital_collect بدون payableAccountId
+* doctor_collect بدون receivableAccountId
+* وجود doctor_cost بدون doctor_id
+
+❌ لا تستخدم warning فقط — يجب block
+
+---
+
+2. LINKING
+
+* ربط كل doctor_cost line بـ service line عبر linkedLineId
+* هذا الربط إجباري لتحليل الربحية والتتبع
+
+---
+
+3. COST CENTER
+
+* إذا كان doctor لديه costCenterId:
+  → يتم تمريره إلى journal lines
+
+* إذا غير موجود:
+  → fallback إلى cost center الخاص بالقسم
+
+---
+
+4. BILLING MODE CONSISTENCY
+
+* تحقق من:
+  billingMode vs doctor.financialMode
+
+* إذا mismatch:
+  → warning واضح في UI
+  → لا تمنع الحفظ إلا لو خطر
+
+========================
+🔄 المرحلة 4 — Refactor (محافظ)
+===============================
+
+استخرج منطق تكرار POST و PUT إلى:
+
+processInvoiceLines()
+
+يشمل:
+
+* classification
+* contract coverage
+* doctor cost injection
+* validations
+
+⚠️ بدون تغيير behavior
+
+========================
+📊 المرحلة 5 — Reporting (إضافة مهمة)
+=====================================
+
+أنشئ (أو استخدم إن وجد):
+
+1. Doctor Payables Report
+
+* من GL
+
+2. Doctor Receivables Report
+
+* doctor_collect
+
+3. Profitability Report
+
+Revenue
+
+* Doctor Cost
+  = Margin
+
+⚠️ لا تنشئ جداول جديدة — اعتمد على البيانات الحالية
+
+========================
+⚡ المرحلة 6 — Performance
+=========================
+
+* استخدم indexes الحالية
+* لا تضف index إلا لو query بطيء
+* راقب:
+  doctor_id
+  billing_mode
+  linked_line_id
+
+========================
+🎨 المرحلة 7 — Frontend
+=======================
+
+* لا تنشئ شاشة جديدة
+* استخدم:
+  Doctors.tsx
+  InvoiceHeaderBar
+  InvoiceLineRow
+
+أضف فقط:
+
+* Cost Center في doctor form
+* warning عند mismatch
+* تحسين عرض doctor_cost
+
+========================
+🚀 المرحلة 8 — Safe Execution
+=============================
+
+* لا تكسر النظام الحالي
+* لا تغير schema
+* لا تحذف fields
+* لا تغير API contracts
+* كل التغييرات backward compatible
+
+========================
+✅ Done Looks Like
+=================
+
+* doctor_cost مربوط بـ doctor_id و linkedLineId
+* GL يستخدم payable/receivable accounts صح
+* finalize يمنع الأخطاء المالية
+* cost center يتم تمريره صح
+* لا يوجد duplication في الكود
+* لا يوجد rebuild
+* كل شيء مبني على الموجود
+
+========================
+⚠️ أهم قاعدة
+============
+
+لو وجدت كود أو جدول أو شاشة:
+→ يمكن تطويرها = استخدمها
+→ لا يمكن تطويرها = اشرح السبب قبل استبدالها
+
+ممنوع:
+
+* إعادة بناء النظام
+* duplication
+* إنشاء tables جديدة بدون سبب قاطع

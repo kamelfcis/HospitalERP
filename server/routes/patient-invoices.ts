@@ -50,6 +50,34 @@ async function assertNotFinalClosed(invoiceId: string): Promise<void> {
   }
 }
 
+async function processInvoiceLines(
+  lines: any[],
+  headerParsed: any,
+  userId: string,
+): Promise<any[]> {
+  let processed = await autoFillClassification(lines);
+
+  processed = processed.map((l: any) => ({
+    ...l,
+    appliedBy: l.templateId ? (userId || null) : null,
+    appliedAt: l.templateId ? (l.appliedAt ? new Date(l.appliedAt) : new Date()) : null,
+  }));
+
+  processed = await applyContractCoverage(
+    headerParsed.contractId ?? null,
+    processed,
+    headerParsed.invoiceDate ?? undefined,
+  );
+  auditContractPriceOverrides(processed, headerParsed.contractId, userId);
+
+  processed = await injectDoctorCostLines(processed, {
+    headerDoctorId: headerParsed.doctorId ?? null,
+    headerDoctorName: headerParsed.doctorName ?? null,
+  });
+
+  return processed;
+}
+
 export function registerPatientInvoicesRoutes(app: Express) {
   // ============= Patient Invoices =============
 
@@ -113,54 +141,16 @@ export function registerPatientInvoicesRoutes(app: Express) {
       let linesParsed = (lines || []).map((l: Record<string, unknown>) => insertPatientInvoiceLineSchema.omit({ headerId: true }).parse(l));
       const paymentsParsed = (payments || []).map((p: Record<string, unknown>) => insertPatientInvoicePaymentSchema.omit({ headerId: true }).parse(p));
 
-      // إنشاء ملف مريض تلقائياً إذا لم يكن مرتبطاً
       if (!headerParsed.patientId && headerParsed.patientName?.trim()) {
         const ptRecord = await findOrCreatePatient(headerParsed.patientName, headerParsed.patientPhone || null);
         headerParsed = { ...headerParsed, patientId: ptRecord.id };
       }
 
-      linesParsed = await autoFillClassification(linesParsed);
+      linesParsed = await processInvoiceLines(linesParsed, headerParsed, req.session.userId as string);
 
-      // Server fills appliedBy from session for all template-traced lines
-      const _createUserId = (req.session as any)?.userId as string | undefined;
-      linesParsed = linesParsed.map((l: any) => ({
-        ...l,
-        appliedBy: l.templateId ? (_createUserId || null) : null,
-        appliedAt: l.templateId ? (l.appliedAt ? new Date(l.appliedAt) : new Date()) : null,
-      }));
-
-      linesParsed = await applyContractCoverage(
-        (headerParsed as any).contractId ?? null,
-        linesParsed,
-        (headerParsed as any).invoiceDate ?? undefined,
-      );
-      auditContractPriceOverrides(linesParsed, (headerParsed as any).contractId, req.session.userId);
-
-      linesParsed = await injectDoctorCostLines(linesParsed, {
-        headerDoctorId: (headerParsed as any).doctorId ?? null,
-        headerDoctorName: (headerParsed as any).doctorName ?? null,
-      });
-
-      // ── Scope guard: قسم + مخزن + تطابق قسم الخدمات ──────────────────────
-      await assertInvoiceScopeGuard(
-        req.session.userId as string,
-        (headerParsed as any).departmentId,
-        (headerParsed as any).warehouseId,
-        "patient_invoice_create",
-      );
-      await assertServiceDeptMatch(linesParsed.filter((l: any) => l.lineType !== "doctor_cost"), (headerParsed as any).departmentId);
-      // ─────────────────────────────────────────────────────────────────────
-
-      // ── Item price audit (non-blocking, logging only) ──────────────────
-      void auditItemPriceDeviations(
-        linesParsed,
-        (headerParsed as any).departmentId,
-        (headerParsed as any).warehouseId,
-        null,
-        req.session.userId,
-      );
-      // ──────────────────────────────────────────────────────────────────
-
+      await assertInvoiceScopeGuard(req.session.userId as string, headerParsed.departmentId, headerParsed.warehouseId, "patient_invoice_create");
+      await assertServiceDeptMatch(linesParsed.filter((l: any) => l.lineType !== "doctor_cost"), headerParsed.departmentId);
+      void auditItemPriceDeviations(linesParsed, headerParsed.departmentId, headerParsed.warehouseId, null, req.session.userId);
       if (!(await enforceNonZeroPrice(req, res, linesParsed.filter((l: any) => l.lineType !== "doctor_cost")))) return;
 
       const result = await storage.createPatientInvoice(headerParsed, linesParsed, paymentsParsed);
@@ -197,48 +187,11 @@ export function registerPatientInvoicesRoutes(app: Express) {
       let linesParsed = (lines || []).map((l: Record<string, unknown>) => insertPatientInvoiceLineSchema.omit({ headerId: true }).parse(l));
       const paymentsParsed = (payments || []).map((p: Record<string, unknown>) => insertPatientInvoicePaymentSchema.omit({ headerId: true }).parse(p));
 
-      linesParsed = await autoFillClassification(linesParsed);
+      linesParsed = await processInvoiceLines(linesParsed, headerParsed, req.session.userId as string);
 
-      // Server fills appliedBy from session for all template-traced lines
-      const _updateUserId = (req.session as any)?.userId as string | undefined;
-      linesParsed = linesParsed.map((l: any) => ({
-        ...l,
-        appliedBy: l.templateId ? (_updateUserId || null) : null,
-        appliedAt: l.templateId ? (l.appliedAt ? new Date(l.appliedAt) : new Date()) : null,
-      }));
-
-      linesParsed = await applyContractCoverage(
-        (headerParsed as any).contractId ?? null,
-        linesParsed,
-        (headerParsed as any).invoiceDate ?? undefined,
-      );
-      auditContractPriceOverrides(linesParsed, (headerParsed as any).contractId, req.session.userId);
-
-      linesParsed = await injectDoctorCostLines(linesParsed, {
-        headerDoctorId: (headerParsed as any).doctorId ?? null,
-        headerDoctorName: (headerParsed as any).doctorName ?? null,
-      });
-
-      // ── Scope guard: قسم + مخزن + تطابق قسم الخدمات ──────────────────────
-      await assertInvoiceScopeGuard(
-        req.session.userId as string,
-        (headerParsed as any).departmentId,
-        (headerParsed as any).warehouseId,
-        "patient_invoice_update",
-      );
+      await assertInvoiceScopeGuard(req.session.userId as string, (headerParsed as any).departmentId, (headerParsed as any).warehouseId, "patient_invoice_update");
       await assertServiceDeptMatch(linesParsed.filter((l: any) => l.lineType !== "doctor_cost"), (headerParsed as any).departmentId);
-      // ─────────────────────────────────────────────────────────────────────
-
-      // ── Item price audit (non-blocking, logging only) ──────────────────
-      void auditItemPriceDeviations(
-        linesParsed,
-        (headerParsed as any).departmentId,
-        (headerParsed as any).warehouseId,
-        req.params.id as string,
-        req.session.userId,
-      );
-      // ──────────────────────────────────────────────────────────────────
-
+      void auditItemPriceDeviations(linesParsed, (headerParsed as any).departmentId, (headerParsed as any).warehouseId, req.params.id as string, req.session.userId);
       if (!(await enforceNonZeroPrice(req, res, linesParsed.filter((l: any) => l.lineType !== "doctor_cost")))) return;
 
       const result = await storage.updatePatientInvoice(req.params.id as string, headerParsed, linesParsed, paymentsParsed, expectedVersion != null ? Number(expectedVersion) : undefined);
@@ -378,6 +331,41 @@ export function registerPatientInvoicesRoutes(app: Express) {
         });
       }
 
+      // ── Hard validation: doctor financial accounts ──────────────────────
+      const existingLines = (existing as any).lines ?? [];
+      const hasDoctorCostLines = existingLines.some((l: any) => l.lineType === "doctor_cost" && !l.isVoid);
+      if (hasDoctorCostLines) {
+        const orphanCostLines = existingLines.filter((l: any) => l.lineType === "doctor_cost" && !l.isVoid && !l.doctorId);
+        if (orphanCostLines.length > 0) {
+          return res.status(400).json({
+            message: "يوجد سطور أجر طبيب بدون ربط بطبيب (doctor_id). يجب تحديد الطبيب أولاً.",
+            code: "DOCTOR_COST_NO_DOCTOR",
+          });
+        }
+        if (existing.doctorId) {
+          const [doc] = await db.select({
+            payableAccountId: doctors.payableAccountId,
+            receivableAccountId: doctors.receivableAccountId,
+            financialMode: doctors.financialMode,
+          }).from(doctors).where(eq(doctors.id, existing.doctorId)).limit(1);
+
+          const billingMode = (existing as any).billingMode || "hospital_collect";
+          if (billingMode === "hospital_collect" && !doc?.payableAccountId) {
+            return res.status(400).json({
+              message: "لا يمكن اعتماد فاتورة تحصيل مستشفى بدون تحديد حساب الدائنين (مستحقات الطبيب). عدّل بيانات الطبيب أولاً.",
+              code: "DOCTOR_NO_PAYABLE",
+            });
+          }
+          if (billingMode === "doctor_collect" && !doc?.receivableAccountId) {
+            return res.status(400).json({
+              message: "لا يمكن اعتماد فاتورة تحصيل طبيب بدون تحديد حساب المدينين للطبيب. عدّل بيانات الطبيب أولاً.",
+              code: "DOCTOR_NO_RECEIVABLE",
+            });
+          }
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       await storage.assertPeriodOpen(existing.invoiceDate);
 
       // ── Scope guard: تحقق أن القسم والمخزن مسموح للمستخدم ────────────────
@@ -476,9 +464,19 @@ export function registerPatientInvoicesRoutes(app: Express) {
 
         const dynamicAccountOverrides: Record<string, { debitAccountId?: string | null; creditAccountId?: string | null }> = {};
         if (result.doctorId) {
-          const [doc] = await db.select({ payableAccountId: doctors.payableAccountId }).from(doctors).where(eq(doctors.id, result.doctorId)).limit(1);
+          const [doc] = await db.select({
+            payableAccountId: doctors.payableAccountId,
+            costCenterId: doctors.costCenterId,
+          }).from(doctors).where(eq(doctors.id, result.doctorId)).limit(1);
           if (doc?.payableAccountId) {
             dynamicAccountOverrides["doctor_cost"] = { creditAccountId: doc.payableAccountId };
+          }
+          if (doc?.costCenterId) {
+            for (const gl of glLines) {
+              if (gl.lineType === "doctor_cost") {
+                gl.costCenterId = doc.costCenterId;
+              }
+            }
           }
         }
 

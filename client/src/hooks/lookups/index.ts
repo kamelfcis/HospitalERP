@@ -18,3 +18,6 @@ export type { UseClinicsLookupOptions } from "./useClinicsLookup";
 
 export { useDepartmentsLookup } from "./useDepartmentsLookup";
 export type { UseDepartmentsLookupOptions } from "./useDepartmentsLookup";
+
+export { useCostCentersLookup } from "./useCostCentersLookup";
+export type { UseCostCentersLookupOptions } from "./useCostCentersLookup";

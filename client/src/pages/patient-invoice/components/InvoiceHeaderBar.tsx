@@ -7,8 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   Save, Plus, Loader2, CreditCard,
-  Search, XCircle, CheckCircle2, ChevronDown, ChevronUp, BookmarkPlus, Cloud, CloudOff,
+  Search, XCircle, CheckCircle2, ChevronDown, ChevronUp, BookmarkPlus, Cloud, CloudOff, AlertTriangle,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import type { AutoSaveStatus } from "../hooks/useAutoSave";
 import { patientInvoiceStatusLabels } from "@shared/schema";
 import type { Department, Admission } from "@shared/schema";
@@ -117,6 +118,12 @@ export function InvoiceHeaderBar({
   useEffect(() => {
     setExpanded(!invoiceId);
   }, [invoiceId]);
+
+  const { data: doctorData } = useQuery<{ financialMode?: string }>({
+    queryKey: ["/api/doctors", doctorId],
+    enabled: !!doctorId,
+  });
+  const billingMismatch = doctorId && doctorData?.financialMode && doctorData.financialMode !== "payable_only" && doctorData.financialMode !== billingMode;
 
   // ── member card lookup ────────────────────────────────────────────────────
   const [cardNumber,   setCardNumber]   = useState("");
@@ -457,6 +464,12 @@ export function InvoiceHeaderBar({
                   </SelectContent>
                 </Select>
               </div>
+              {billingMismatch && (
+                <div className="flex items-center gap-1 text-amber-600 dark:text-amber-400 shrink-0" data-testid="billing-mode-mismatch-warning">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  <span className="text-[10px]">طريقة التحصيل لا تتطابق مع النموذج المالي للطبيب ({doctorData?.financialMode === "hospital_collect" ? "تحصيل المستشفى" : "تحصيل الطبيب"})</span>
+                </div>
+              )}
             </div>
 
             {/* Row: notes */}

@@ -8,6 +8,7 @@ export const QUERY_KEYS = {
   treasuries:  () => ["/api/treasuries"] as const,
   clinics:     () => ["/api/clinic-clinics"] as const,
   departments: () => ["/api/departments"] as const,
+  costCenters: () => ["/api/cost-centers"] as const,
 } as const;
 
 export const INVALIDATE = {

@@ -247,7 +247,7 @@ const methods = {
     return [...resultMap.values()];
   },
 
-  buildPatientInvoiceGLLines(this: DatabaseStorage, header: PatientInvoiceHeader, lines: PatientInvoiceLine[]): { lineType: string; amount: string }[] {
+  buildPatientInvoiceGLLines(this: DatabaseStorage, header: PatientInvoiceHeader, lines: PatientInvoiceLine[]): { lineType: string; amount: string; costCenterId?: string | null }[] {
     const lineTypeMap: Record<string, string> = {
       service: "revenue_services",
       drug: "revenue_drugs",
@@ -289,7 +289,7 @@ const methods = {
     reference: string;
     description: string;
     entryDate: string;
-    lines: { lineType: string; amount: string }[];
+    lines: { lineType: string; amount: string; costCenterId?: string | null }[];
     periodId?: string;
     /**
      * Dynamic account overrides — applied BEFORE the static mapping lookup.
@@ -361,6 +361,7 @@ const methods = {
           debit: roundMoney(amount),
           credit: "0.00",
           description: mapping?.description || params.description,
+          ...(line.costCenterId ? { costCenterId: line.costCenterId } : {}),
         });
         journalLineData.push({
           journalEntryId: "",
@@ -369,6 +370,7 @@ const methods = {
           debit: "0.00",
           credit: roundMoney(amount),
           description: mapping?.description || params.description,
+          ...(line.costCenterId ? { costCenterId: line.costCenterId } : {}),
         });
       }
 

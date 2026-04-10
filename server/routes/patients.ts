@@ -464,6 +464,45 @@ export function registerPatientsRoutes(app: Express) {
     }
   });
 
+  app.get("/api/doctors/profitability", requireAuth, checkPermission(PERMISSIONS.DOCTORS_VIEW), async (req, res) => {
+    try {
+      const { dateFrom, dateTo } = req.query as Record<string, string>;
+      let dateFilter = sql``;
+      if (dateFrom) dateFilter = sql`${dateFilter} AND h.invoice_date >= ${dateFrom}`;
+      if (dateTo) dateFilter = sql`${dateFilter} AND h.invoice_date <= ${dateTo}`;
+
+      const result = await db.execute(sql`
+        SELECT
+          d.id AS doctor_id,
+          d.name AS doctor_name,
+          d.specialty,
+          d.financial_mode,
+          COALESCE(SUM(CASE WHEN l.line_type != 'doctor_cost' AND NOT COALESCE(l.is_void, false) THEN CAST(COALESCE(l.net_amount, l.total_amount, '0') AS numeric) ELSE 0 END), 0) AS total_revenue,
+          COALESCE(SUM(CASE WHEN l.line_type = 'doctor_cost' AND NOT COALESCE(l.is_void, false) THEN CAST(COALESCE(l.net_amount, l.total_amount, '0') AS numeric) ELSE 0 END), 0) AS total_doctor_cost,
+          COUNT(DISTINCT h.id) AS invoice_count
+        FROM doctors d
+        LEFT JOIN patient_invoice_headers h ON h.doctor_id = d.id AND h.status = 'finalized' ${dateFilter}
+        LEFT JOIN patient_invoice_lines l ON l.header_id = h.id
+        GROUP BY d.id, d.name, d.specialty, d.financial_mode
+        ORDER BY d.name
+      `);
+      const rows = (result.rows || []).map((r: any) => ({
+        doctorId: r.doctor_id,
+        doctorName: r.doctor_name,
+        specialty: r.specialty,
+        financialMode: r.financial_mode,
+        totalRevenue: String(r.total_revenue ?? "0"),
+        totalDoctorCost: String(r.total_doctor_cost ?? "0"),
+        margin: String(Number(r.total_revenue ?? 0) - Number(r.total_doctor_cost ?? 0)),
+        invoiceCount: Number(r.invoice_count ?? 0),
+      }));
+      res.json(rows);
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ message: _em });
+    }
+  });
+
   app.get("/api/doctors", requireAuth, checkPermission(PERMISSIONS.DOCTORS_VIEW), async (req, res) => {
     try {
       const search = req.query.search as string;

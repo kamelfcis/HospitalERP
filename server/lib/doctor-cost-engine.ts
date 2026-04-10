@@ -14,6 +14,7 @@ interface LineInput {
   sourceType?: string | null;
   encounterId?: string | null;
   businessClassification?: string | null;
+  id?: string | null;
   [key: string]: unknown;
 }
 
@@ -87,7 +88,7 @@ export async function injectDoctorCostLines<L extends LineInput>(
       sortOrder: sortIdx++,
       sourceType: "DOCTOR_COST",
       sourceId: null,
-      linkedLineId: null,
+      linkedLineId: line.id || null,
       doctorCostAmount: roundMoney(costAmount),
       encounterId: line.encounterId || null,
       businessClassification: "doctor_cost",
