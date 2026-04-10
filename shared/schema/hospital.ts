@@ -21,6 +21,7 @@ export const patients = pgTable("patients", {
   fullName: text("full_name").notNull(),
   phone: varchar("phone", { length: 20 }),
   nationalId: varchar("national_id", { length: 20 }),
+  dateOfBirth: date("date_of_birth"),
   age: integer("age"),
   gender: varchar("gender", { length: 10 }),
   isActive: boolean("is_active").notNull().default(true),

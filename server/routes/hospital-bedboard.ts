@@ -85,7 +85,7 @@ export function registerBedBoardRoutes(app: Express) {
 
   app.post("/api/beds/:id/admit", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_CREATE), async (req, res) => {
     try {
-      const { patientName, patientPhone, patientId, nationalId, departmentId, serviceId, doctorName, notes, paymentType, insuranceCompany, surgeryTypeId } = req.body;
+      const { patientName, patientPhone, patientId, nationalId, dateOfBirth, age, departmentId, serviceId, doctorName, notes, paymentType, insuranceCompany, surgeryTypeId } = req.body;
       if (!patientName?.trim()) return res.status(400).json({ message: "اسم المريض مطلوب" });
       if (doctorName !== undefined && typeof doctorName === "string") {
         logger.info({ event: "BED_ADMIT_DOCTOR", doctorName, bedId: req.params.id }, "[BED_ADMIT] doctor_name received");
@@ -95,8 +95,14 @@ export function registerBedBoardRoutes(app: Express) {
         const pt = await findOrCreatePatient(patientName.trim(), patientPhone || null);
         resolvedPatientId = pt.id;
       }
-      if (nationalId && resolvedPatientId) {
-        await db.execute(sql`UPDATE patients SET national_id = ${nationalId} WHERE id = ${resolvedPatientId} AND (national_id IS NULL OR national_id = '')`);
+      if (resolvedPatientId) {
+        const patientUpdates: Record<string, any> = {};
+        if (nationalId) patientUpdates.nationalId = nationalId;
+        if (dateOfBirth) patientUpdates.dateOfBirth = dateOfBirth;
+        if (age != null && age !== '') patientUpdates.age = parseInt(String(age), 10);
+        if (Object.keys(patientUpdates).length > 0) {
+          try { await storage.updatePatient(resolvedPatientId, patientUpdates); } catch {}
+        }
       }
       const result = await storage.admitPatientToBed({
         bedId: req.params.id as string,

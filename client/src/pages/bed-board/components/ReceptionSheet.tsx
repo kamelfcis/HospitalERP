@@ -17,6 +17,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation }                              from "@tanstack/react-query";
 import { queryClient, apiRequest }                            from "@/lib/queryClient";
 import { useToast }                                           from "@/hooks/use-toast";
+import { NationalIdField } from "@/components/shared/NationalIdField";
 import { Button }                                             from "@/components/ui/button";
 import { Badge }                                              from "@/components/ui/badge";
 import { Input }                                              from "@/components/ui/input";
@@ -113,6 +114,8 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
   const [patientName,      setPatientName]      = useState("");
   const [patientPhone,     setPatientPhone]     = useState("");
   const [nationalId,       setNationalId]       = useState("");
+  const [dateOfBirth,      setDateOfBirth]      = useState("");
+  const [age,              setAge]              = useState("");
   const [selectedPatient,  setSelectedPatient]  = useState<PatientOption | null>(null);
   const [departmentId,     setDepartmentId]     = useState("");
   const [selectedDoctor,   setSelectedDoctor]   = useState<LookupItem | null>(null);
@@ -181,6 +184,8 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
     setTypedName("");
     setPatientPhone("");
     setNationalId("");
+    setDateOfBirth("");
+    setAge("");
     setSelectedPatient(null);
     setDepartmentId("");
     setSelectedDoctor(null);
@@ -203,6 +208,8 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
     setSelectedPatient(patient);
     setPatientPhone("");
     setNationalId("");
+    setDateOfBirth("");
+    setAge(patient.age != null ? String(patient.age) : "");
     setTimeout(() => patientPhoneRef.current?.focus(), 50);
   }, []);
 
@@ -211,6 +218,8 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
     setTypedName("");
     setPatientPhone("");
     setNationalId("");
+    setDateOfBirth("");
+    setAge("");
   }, []);
 
   // ── Surgery search keyboard navigation ───────────────────────────────────────
@@ -253,6 +262,8 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
         patientPhone:     effectivePhone,
         patientId:        selectedPatient?.id || undefined,
         nationalId:       effectiveNationalId || undefined,
+        dateOfBirth:      dateOfBirth || undefined,
+        age:              age !== "" ? parseInt(age, 10) : undefined,
         departmentId:     departmentId   || undefined,
         doctorName:       selectedDoctor?.name || undefined,
         notes:            notes          || undefined,
@@ -363,81 +374,69 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
 
             {/* ── Phone + NID (when no patient selected — manual entry mode) ── */}
             {!selectedPatient && (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label htmlFor="patient-phone-manual">رقم الهاتف</Label>
-                  <Input
-                    id="patient-phone-manual"
-                    ref={patientPhoneRef}
-                    data-testid="input-patient-phone"
-                    placeholder="01XXXXXXXXX"
-                    autoComplete="tel"
-                    value={patientPhone}
-                    onChange={e => setPatientPhone(e.target.value)}
-                    dir="ltr"
-                  />
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="patient-phone-manual">رقم الهاتف</Label>
+                    <Input
+                      id="patient-phone-manual"
+                      ref={patientPhoneRef}
+                      data-testid="input-patient-phone"
+                      placeholder="01XXXXXXXXX"
+                      autoComplete="tel"
+                      value={patientPhone}
+                      onChange={e => setPatientPhone(e.target.value)}
+                      dir="ltr"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <Label htmlFor="patient-nid-manual">الرقم القومي</Label>
-                  <Input
-                    id="patient-nid-manual"
-                    data-testid="input-patient-nid"
-                    placeholder="الرقم القومي (14 رقم)"
-                    autoComplete="off"
-                    value={nationalId}
-                    onChange={e => setNationalId(e.target.value)}
-                    dir="ltr"
-                    maxLength={14}
-                  />
-                </div>
-              </div>
+                <NationalIdField
+                  nationalId={nationalId}
+                  onNationalIdChange={setNationalId}
+                  dateOfBirth={dateOfBirth}
+                  onDateOfBirthChange={setDateOfBirth}
+                  age={age}
+                  onAgeChange={setAge}
+                  disabled={false}
+                />
+              </>
             )}
 
             {/* ── Phone + NID override (when patient selected) ── */}
             {selectedPatient && (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label htmlFor="patient-phone-override">
-                    رقم الهاتف
-                    <span className="text-xs text-muted-foreground mr-1.5">
-                      {selectedPatient.phone
-                        ? `(المحفوظ: ${selectedPatient.phone})`
-                        : "(غير محفوظ)"}
-                    </span>
-                  </Label>
-                  <Input
-                    id="patient-phone-override"
-                    ref={patientPhoneRef}
-                    data-testid="input-patient-phone-override"
-                    placeholder={selectedPatient.phone ?? "01XXXXXXXXX"}
-                    autoComplete="tel"
-                    value={patientPhone}
-                    onChange={e => setPatientPhone(e.target.value)}
-                    dir="ltr"
-                  />
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="patient-phone-override">
+                      رقم الهاتف
+                      <span className="text-xs text-muted-foreground mr-1.5">
+                        {selectedPatient.phone
+                          ? `(المحفوظ: ${selectedPatient.phone})`
+                          : "(غير محفوظ)"}
+                      </span>
+                    </Label>
+                    <Input
+                      id="patient-phone-override"
+                      ref={patientPhoneRef}
+                      data-testid="input-patient-phone-override"
+                      placeholder={selectedPatient.phone ?? "01XXXXXXXXX"}
+                      autoComplete="tel"
+                      value={patientPhone}
+                      onChange={e => setPatientPhone(e.target.value)}
+                      dir="ltr"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <Label htmlFor="patient-nid-override">
-                    الرقم القومي
-                    <span className="text-xs text-muted-foreground mr-1.5">
-                      {selectedPatient.nationalId
-                        ? `(المحفوظ: ${selectedPatient.nationalId})`
-                        : "(غير محفوظ)"}
-                    </span>
-                  </Label>
-                  <Input
-                    id="patient-nid-override"
-                    data-testid="input-patient-nid-override"
-                    placeholder={selectedPatient.nationalId ?? "الرقم القومي"}
-                    autoComplete="off"
-                    value={selectedPatient.nationalId ? (selectedPatient.nationalId) : nationalId}
-                    onChange={e => setNationalId(e.target.value)}
-                    dir="ltr"
-                    maxLength={14}
-                    disabled={!!selectedPatient.nationalId}
-                  />
-                </div>
-              </div>
+                <NationalIdField
+                  nationalId={selectedPatient.nationalId || nationalId}
+                  onNationalIdChange={setNationalId}
+                  dateOfBirth={dateOfBirth}
+                  onDateOfBirthChange={setDateOfBirth}
+                  age={age}
+                  onAgeChange={setAge}
+                  disabled={!!selectedPatient.nationalId}
+                />
+              </>
             )}
           </section>
 

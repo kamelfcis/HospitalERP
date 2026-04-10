@@ -43,6 +43,7 @@ import type { PatientFormDialogProps, PrefilledPatient } from "./types";
 import { useDebounce }                from "./useDebounce";
 import { useContractResolution }      from "./hooks/useContractResolution";
 import { ContractMemberLookup }       from "./components/ContractMemberLookup";
+import { NationalIdField } from "@/components/shared/NationalIdField";
 
 // ===== Types =====
 
@@ -140,6 +141,7 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
   const [fullName,        setFullName]        = useState("");
   const [phone,           setPhone]           = useState("");
   const [nationalId,      setNationalId]      = useState("");
+  const [dateOfBirth,     setDateOfBirth]     = useState("");
   const [age,             setAge]             = useState("");
   const [existingPatient, setExistingPatient] = useState<PatientSuggest | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -212,6 +214,7 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
       setFullName(editingPatient.fullName);
       setPhone(editingPatient.phone || "");
       setNationalId(editingPatient.nationalId || "");
+      setDateOfBirth((editingPatient as any).dateOfBirth || "");
       setAge(editingPatient.age != null ? String(editingPatient.age) : "");
       setExistingPatient(null);
       setShowSuggestions(false);
@@ -220,10 +223,11 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
       setFullName(prefilledPatient.fullName);
       setPhone(prefilledPatient.phone || "");
       setNationalId(prefilledPatient.nationalId || "");
+      setDateOfBirth((prefilledPatient as any).dateOfBirth || "");
       setAge(prefilledPatient.age != null ? String(prefilledPatient.age) : "");
       setShowSuggestions(false);
     } else {
-      setFullName(""); setPhone(""); setNationalId(""); setAge("");
+      setFullName(""); setPhone(""); setNationalId(""); setDateOfBirth(""); setAge("");
       setExistingPatient(null); setShowSuggestions(false);
     }
   }, [editingPatient, prefilledPatient, open]); // eslint-disable-line
@@ -350,16 +354,16 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
     setFullName(p.fullName);
     setPhone(p.phone || "");
     setNationalId(p.nationalId || "");
+    setDateOfBirth((p as any).dateOfBirth || "");
     setAge(p.age != null ? String(p.age) : "");
     setShowSuggestions(false);
-    // Move focus to phone field so the user can continue filling in
     setTimeout(() => phoneInputRef.current?.focus(), 50);
   }, []);
 
   /* Clear selected patient and return to search */
   const handleClearExistingPatient = useCallback(() => {
     setExistingPatient(null);
-    setFullName(""); setPhone(""); setNationalId(""); setAge("");
+    setFullName(""); setPhone(""); setNationalId(""); setDateOfBirth(""); setAge("");
     setTimeout(() => nameInputRef.current?.focus(), 50);
   }, []);
 
@@ -507,6 +511,7 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
       fullName:   fullName.trim(),
       phone:      phone || null,
       nationalId: nationalId || null,
+      dateOfBirth: dateOfBirth || null,
       age:        age !== "" ? parseInt(age, 10) : null,
       isActive:   true,
     };
@@ -525,6 +530,9 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
           patientName:      fullName.trim(),
           patientPhone:     phone || undefined,
           patientId:        existingPatient?.id || undefined,
+          nationalId:       nationalId || undefined,
+          dateOfBirth:      dateOfBirth || undefined,
+          age:              age !== "" ? parseInt(age, 10) : undefined,
           doctorName:       admDoctor?.name || undefined,
           surgeryTypeId:    selectedSurgery?.id || undefined,
           paymentType,
@@ -557,6 +565,7 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
             fullName:   fullName.trim(),
             phone:      phone || null,
             nationalId: nationalId || null,
+            dateOfBirth: dateOfBirth || null,
             age:        age !== "" ? parseInt(age, 10) : null,
           });
         } catch { /* تجاهل خطأ التحديث ولا نوقف الحجز */ }
@@ -818,30 +827,17 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
                     dir="ltr"
                   />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">السن</Label>
-                  <Input
-                    type="number" min={0} max={120} value={age}
-                    onChange={e => setAge(e.target.value)}
-                    placeholder="—"
-                    className="h-7 text-xs"
-                    data-testid="input-patient-age"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">الرقم القومي</Label>
-                  <Input
-                    value={nationalId}
-                    onChange={e => setNationalId(e.target.value.replace(/\D/g, "").slice(0, 14))}
-                    placeholder="14 رقم"
-                    maxLength={14}
-                    autoComplete="off"
-                    className="h-7 text-xs font-mono"
-                    data-testid="input-patient-nationalid"
-                    dir="ltr"
-                  />
-                </div>
               </div>
+              <NationalIdField
+                nationalId={nationalId}
+                onNationalIdChange={setNationalId}
+                dateOfBirth={dateOfBirth}
+                onDateOfBirthChange={setDateOfBirth}
+                age={age}
+                onAgeChange={setAge}
+                disabled={false}
+                compact
+              />
             </section>
 
             {/* ╔══════════════════════════════════════════════════════════════╗ */}

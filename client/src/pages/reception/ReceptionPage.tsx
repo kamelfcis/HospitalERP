@@ -22,6 +22,7 @@ import type { LookupItem } from "@/lib/lookupTypes";
 import { printReceptionTicket } from "@/components/printing/ReceptionTicketPrint";
 import { useContractResolution } from "@/pages/patients/hooks/useContractResolution";
 import { ContractMemberLookup } from "@/pages/patients/components/ContractMemberLookup";
+import { NationalIdField } from "@/components/shared/NationalIdField";
 
 type VisitReason = "" | "consultation" | "admission" | "lab" | "radiology";
 type PaymentKind = "CASH" | "INSURANCE" | "CONTRACT";
@@ -33,6 +34,7 @@ interface PatientSuggest {
   phone?: string | null;
   age?: number | null;
   nationalId?: string | null;
+  dateOfBirth?: string | null;
 }
 
 interface DuplicateCandidate {
@@ -42,6 +44,7 @@ interface DuplicateCandidate {
   phone: string | null;
   nationalId: string | null;
   age: number | null;
+  dateOfBirth?: string | null;
   score: number;
   reasons: string[];
 }
@@ -202,6 +205,7 @@ export default function ReceptionPage() {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [nationalId, setNationalId] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
   const [age, setAge] = useState("");
   const [existingPatient, setExistingPatient] = useState<PatientSuggest | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -358,6 +362,7 @@ export default function ReceptionPage() {
     setFullName(p.fullName);
     setPhone(p.phone || "");
     setNationalId(p.nationalId || "");
+    setDateOfBirth(p.dateOfBirth || "");
     setAge(p.age != null ? String(p.age) : "");
     setShowSuggestions(false);
     setTimeout(() => phoneInputRef.current?.focus(), 50);
@@ -365,7 +370,7 @@ export default function ReceptionPage() {
 
   const handleClearExistingPatient = useCallback(() => {
     setExistingPatient(null);
-    setFullName(""); setPhone(""); setNationalId(""); setAge("");
+    setFullName(""); setPhone(""); setNationalId(""); setDateOfBirth(""); setAge("");
     setTimeout(() => nameInputRef.current?.focus(), 50);
   }, []);
 
@@ -431,7 +436,7 @@ export default function ReceptionPage() {
     admitMutation.isPending || saveVisitMutation.isPending;
 
   function resetForm() {
-    setFullName(""); setPhone(""); setNationalId(""); setAge("");
+    setFullName(""); setPhone(""); setNationalId(""); setDateOfBirth(""); setAge("");
     setExistingPatient(null); setShowSuggestions(false);
     setPaymentType("CASH"); setInsuranceCo(""); resolution.clear();
     setVisitReason("");
@@ -480,6 +485,7 @@ export default function ReceptionPage() {
       fullName: fullName.trim(),
       phone: phone || null,
       nationalId: nationalId || null,
+      dateOfBirth: dateOfBirth || null,
       age: age !== "" ? parseInt(age, 10) : null,
       isActive: true,
     };
@@ -535,6 +541,7 @@ export default function ReceptionPage() {
             fullName: fullName.trim(),
             phone: phone || null,
             nationalId: nationalId || null,
+            dateOfBirth: dateOfBirth || null,
             age: age !== "" ? parseInt(age, 10) : null,
           });
         } catch { /* ignore update error */ }
@@ -770,7 +777,7 @@ export default function ReceptionPage() {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
                       <Label className="text-xs">التليفون</Label>
                       <Input
@@ -783,26 +790,17 @@ export default function ReceptionPage() {
                         data-testid="input-patient-phone"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">السن</Label>
-                      <Input
-                        type="number" min={0} max={120} value={age}
-                        onChange={e => setAge(e.target.value)}
-                        placeholder="—" className="h-7 text-xs"
-                        data-testid="input-patient-age"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">الرقم القومي</Label>
-                      <Input
-                        value={nationalId}
-                        onChange={e => setNationalId(e.target.value.replace(/\D/g, "").slice(0, 14))}
-                        placeholder="14 رقم" maxLength={14}
-                        className="h-7 text-xs font-mono" dir="ltr"
-                        data-testid="input-patient-nationalid"
-                      />
-                    </div>
                   </div>
+                  <NationalIdField
+                    nationalId={nationalId}
+                    onNationalIdChange={setNationalId}
+                    dateOfBirth={dateOfBirth}
+                    onDateOfBirthChange={setDateOfBirth}
+                    age={age}
+                    onAgeChange={setAge}
+                    disabled={false}
+                    compact
+                  />
                 </section>
 
                 {shouldCheckDup && (
