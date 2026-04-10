@@ -1278,11 +1278,7 @@ const HeaderDiscountPanel = memo(function HeaderDiscountPanel({
   if (!isEditable) return null;
 
   return (
-    <div className="border rounded-xl p-3 flex flex-col gap-2 bg-white">
-      <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
-        <Scissors className="h-3.5 w-3.5" />
-        خصم الإجمالي
-      </p>
+    <div className="flex flex-col gap-2">
       {(currentDiscountPercent > 0 || currentDiscountAmount > 0) && (
         <div className="text-[10px] bg-purple-50 text-purple-700 border border-purple-200 rounded-lg px-2 py-1">
           الخصم الحالي: {currentDiscountPercent > 0 ? `${currentDiscountPercent}%` : ""} {currentDiscountAmount > 0 ? `— ${fmtMoney(currentDiscountAmount)}` : ""}
@@ -1411,15 +1407,17 @@ const DoctorTransferPanel = memo(function DoctorTransferPanel({
     setConfirmOpen(true);
   }
 
-  if (!canTransfer && invoiceStatus !== "finalized") return null;
+  if (invoiceStatus === "draft") {
+    return (
+      <div className="flex flex-col items-center gap-1.5 py-4 text-center">
+        <Clock className="h-4 w-4 text-muted-foreground" />
+        <p className="text-xs text-muted-foreground">يجب تأكيد الفاتورة أولاً قبل تحويل المديونية</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="border rounded-xl p-3 flex flex-col gap-2 bg-white">
-      <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
-        <DoctorIcon className="h-3.5 w-3.5" />
-        تحويل مديونية لطبيب
-      </p>
-
+    <div className="flex flex-col gap-2">
       {transfers.length > 0 && (
         <div className="flex flex-col gap-1">
           {transfers.map((t: any) => (
@@ -1523,8 +1521,16 @@ const DoctorTransferPanel = memo(function DoctorTransferPanel({
       )}
 
       {canTransfer && remaining <= 0 && (
-        <div className="text-center text-[10px] text-green-600 font-semibold py-1">
-          تم تحويل كامل المبلغ
+        <div className="text-center text-[10px] text-green-600 font-semibold py-2 flex flex-col items-center gap-1">
+          <CheckCircle2 className="h-4 w-4 text-green-500" />
+          تم تحويل كامل المبلغ — يمكنك الحفظ النهائي
+        </div>
+      )}
+
+      {isFinalClosed && (
+        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground py-2">
+          <Lock className="h-3 w-3" />
+          مغلقة نهائياً
         </div>
       )}
     </div>
@@ -1987,47 +1993,66 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
             />
 
             <div className="bg-white border rounded-xl overflow-hidden">
-              <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border-b">
-                <Banknote className="h-3.5 w-3.5 text-green-600" />
-                <span className="text-xs font-semibold text-green-700">المدفوعات</span>
-              </div>
-              <div className="p-2">
-                <InvoicePaymentsTab
-                  patientId={patientId}
-                  admissionId={admissionId}
-                  visitId={visitId}
-                  isFinalClosed={isFinalClosed}
-                  primaryInvoiceId={primaryInvoice?.id}
-                  primaryInvoiceStatus={invoiceStatus}
-                  onPaymentAdded={handlePaymentAdded}
-                />
-              </div>
-            </div>
+              <Tabs defaultValue="payments" className="w-full">
+                <TabsList className="w-full h-8 rounded-none border-b bg-slate-50/80 px-1">
+                  <TabsTrigger value="payments" className="text-[11px] px-2 py-1 gap-1 data-[state=active]:bg-green-50 data-[state=active]:text-green-700" data-testid="sidebar-tab-payments">
+                    <Banknote className="h-3 w-3" />
+                    المدفوعات
+                  </TabsTrigger>
+                  <TabsTrigger value="transfer" className="text-[11px] px-2 py-1 gap-1 data-[state=active]:bg-teal-50 data-[state=active]:text-teal-700" data-testid="sidebar-tab-transfer">
+                    <DoctorIcon className="h-3 w-3" />
+                    تحويل مديونية
+                  </TabsTrigger>
+                  {!isFinalClosed && invoiceStatus === "draft" && (
+                    <TabsTrigger value="discount" className="text-[11px] px-2 py-1 gap-1 data-[state=active]:bg-purple-50 data-[state=active]:text-purple-700" data-testid="sidebar-tab-discount">
+                      <Scissors className="h-3 w-3" />
+                      خصم عام
+                    </TabsTrigger>
+                  )}
+                </TabsList>
 
-            {primaryInvoice && (
-              <>
-                {!isFinalClosed && invoiceStatus === "draft" && (
-                  <HeaderDiscountPanel
-                    invoiceId={primaryInvoice.id}
+                <TabsContent value="payments" className="mt-0 p-2">
+                  <InvoicePaymentsTab
+                    patientId={patientId}
+                    admissionId={admissionId}
+                    visitId={visitId}
                     isFinalClosed={isFinalClosed}
-                    invoiceStatus={invoiceStatus ?? "draft"}
-                    currentDiscountPercent={headerDiscountPercent}
-                    currentDiscountAmount={headerDiscountAmount}
-                    netAmount={totalsForSidebar.netAmount}
-                    onUpdated={handleDiscountUpdated}
+                    primaryInvoiceId={primaryInvoice?.id}
+                    primaryInvoiceStatus={invoiceStatus}
+                    onPaymentAdded={handlePaymentAdded}
                   />
-                )}
+                </TabsContent>
 
-                <DoctorTransferPanel
-                  invoiceId={primaryInvoice.id}
-                  isFinalClosed={isFinalClosed}
-                  invoiceStatus={invoiceStatus ?? "draft"}
-                  netAmount={primaryInvoice.netAmount}
-                  patientId={patientId}
-                  onTransferred={handlePaymentAdded}
-                />
-              </>
-            )}
+                <TabsContent value="transfer" className="mt-0 p-2">
+                  {primaryInvoice ? (
+                    <DoctorTransferPanel
+                      invoiceId={primaryInvoice.id}
+                      isFinalClosed={isFinalClosed}
+                      invoiceStatus={invoiceStatus ?? "draft"}
+                      netAmount={primaryInvoice.netAmount}
+                      patientId={patientId}
+                      onTransferred={handlePaymentAdded}
+                    />
+                  ) : (
+                    <p className="text-xs text-muted-foreground text-center py-4">لا توجد فاتورة محددة</p>
+                  )}
+                </TabsContent>
+
+                {!isFinalClosed && invoiceStatus === "draft" && primaryInvoice && (
+                  <TabsContent value="discount" className="mt-0 p-2">
+                    <HeaderDiscountPanel
+                      invoiceId={primaryInvoice.id}
+                      isFinalClosed={isFinalClosed}
+                      invoiceStatus={invoiceStatus ?? "draft"}
+                      currentDiscountPercent={headerDiscountPercent}
+                      currentDiscountAmount={headerDiscountAmount}
+                      netAmount={totalsForSidebar.netAmount}
+                      onUpdated={handleDiscountUpdated}
+                    />
+                  </TabsContent>
+                )}
+              </Tabs>
+            </div>
           </div>
         );
 
