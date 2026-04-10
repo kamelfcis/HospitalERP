@@ -1769,11 +1769,12 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
   });
 
   const finalizeMutation = useMutation({
-    mutationFn: async (visitId: string) => apiRequest("POST", `/api/visits/${visitId}/finalize-invoice`),
+    mutationFn: async (invoiceId: string) => apiRequest("POST", `/api/patient-invoices/${invoiceId}/finalize`),
     onSuccess: () => {
       toast({ title: "تم الاعتماد", description: "تم اعتماد فاتورة الزيارة بنجاح" });
       queryClient.invalidateQueries({ queryKey: ["/api/patients", patientId, "invoices-aggregated"] });
       if (selectedVisitId) queryClient.invalidateQueries({ queryKey: ["/api/visits", selectedVisitId, "invoice-summary"] });
+      if (primaryInvoice?.id) queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices", primaryInvoice.id] });
     },
     onError: (err: Error) => toast({ title: "خطأ", description: err.message, variant: "destructive" }),
   });
@@ -1907,7 +1908,7 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
               visitId={selectedVisitId!}
               patientId={patientId}
               admissionId={admissionId}
-              onFinalize={() => finalizeMutation.mutate(selectedVisitId!)}
+              onFinalize={() => primaryInvoice && finalizeMutation.mutate(primaryInvoice.id)}
               isFinalizePending={finalizeMutation.isPending}
             />
           </div>
@@ -1966,7 +1967,7 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
               companyShareAmount={data?.totals.companyShareAmount}
               patientShareAmount={data?.totals.patientShareAmount}
               invoiceStatus={invoiceStatus}
-              onFinalize={selectedVisitId ? () => finalizeMutation.mutate(selectedVisitId) : undefined}
+              onFinalize={primaryInvoice ? () => finalizeMutation.mutate(primaryInvoice.id) : undefined}
               isFinalizePending={finalizeMutation.isPending}
             />
 
