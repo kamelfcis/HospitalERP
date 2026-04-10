@@ -517,6 +517,27 @@ export function registerCashierRoutes(app: Express) {
     catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
   });
 
+  app.get("/api/treasuries/my-assigned", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.session as { userId?: string }).userId!;
+      const rows = await db.execute(sql`
+        SELECT t.id, t.name, t.gl_account_id, t.is_active, t.notes, t.created_at,
+               a.code AS gl_account_code, a.name AS gl_account_name
+        FROM   user_treasuries ut
+        JOIN   treasuries t ON t.id = ut.treasury_id
+        JOIN   accounts   a ON a.id = t.gl_account_id
+        WHERE  ut.user_id = ${userId}
+      `);
+      if (!rows.rows.length) return res.json(null);
+      const r = rows.rows[0] as Record<string, unknown>;
+      res.json({
+        id: r.id, name: r.name, glAccountId: r.gl_account_id,
+        isActive: r.is_active, notes: r.notes, createdAt: r.created_at,
+        glAccountCode: r.gl_account_code, glAccountName: r.gl_account_name,
+      });
+    } catch (e: unknown) { res.status(500).json({ message: e instanceof Error ? e.message : String(e) }); }
+  });
+
   app.get("/api/treasuries/mine", requireAuth, async (req, res) => {
     try {
       const userId = (req.session as { userId?: string }).userId!;

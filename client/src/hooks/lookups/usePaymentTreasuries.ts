@@ -14,9 +14,9 @@ export interface UsePaymentTreasuriesResult {
 
 export function usePaymentTreasuries(): UsePaymentTreasuriesResult {
   const { data: myTreasury, isLoading: mineLoading } = useQuery<PaymentTreasury | null>({
-    queryKey: ["/api/treasuries/mine"],
+    queryKey: ["/api/treasuries/my-assigned"],
     queryFn: async () => {
-      const r = await fetch("/api/treasuries/mine", { credentials: "include" });
+      const r = await fetch("/api/treasuries/my-assigned", { credentials: "include" });
       if (!r.ok) return null;
       const d = await r.json();
       return d && d.id ? d : null;
