@@ -26,10 +26,11 @@ export interface UseServicesLookupOptions {
   departmentId?: string;
   active?: boolean;
   enabled?: boolean;
+  selectedId?: string;
 }
 
 export function useServicesLookup(options: UseServicesLookupOptions = {}): UseLookupResult {
-  const { search = "", departmentId, active = true, enabled = true } = options;
+  const { search = "", departmentId, active = true, enabled = true, selectedId } = options;
 
   async function fetchServices(q?: string): Promise<ServiceRaw[]> {
     const params = new URLSearchParams();
@@ -60,5 +61,6 @@ export function useServicesLookup(options: UseServicesLookupOptions = {}): UseLo
     staleTime: 0,
     enabled,
     resolveByIdFetcher: fetchServiceById,
+    selectedId,
   });
 }

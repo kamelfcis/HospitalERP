@@ -6,6 +6,7 @@ import type { LookupItem } from "@/lib/lookupTypes";
 export interface ServiceLookupProps {
   value: string;
   onChange: (item: LookupItem | null) => void;
+  displayValue?: string;
   departmentId?: string;
   active?: boolean;
   placeholder?: string;
@@ -17,6 +18,7 @@ export interface ServiceLookupProps {
 export function ServiceLookup({
   value,
   onChange,
+  displayValue: displayValueOverride,
   departmentId,
   active = true,
   placeholder = "ابحث عن خدمة...",
@@ -30,9 +32,10 @@ export function ServiceLookup({
     departmentId,
     active,
     enabled: !disabled,
+    selectedId: value || undefined,
   });
 
-  const displayValue = resolveById(value)?.name;
+  const displayValue = displayValueOverride ?? resolveById(value)?.name;
 
   return (
     <BaseLookupCombobox
