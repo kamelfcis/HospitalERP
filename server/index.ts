@@ -1242,6 +1242,21 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     if (hdrFixed > 0 || lineFixed > 0) {
       log(`[STARTUP] doctor_id backfill: ${hdrFixed} header(s), ${lineFixed} line(s) linked`);
     }
+
+    const unmatchedRes = await db.execute(sql`
+      SELECT DISTINCT doctor_name
+      FROM (
+        SELECT doctor_name FROM patient_invoice_headers
+        WHERE doctor_id IS NULL AND doctor_name IS NOT NULL AND doctor_name != ''
+        UNION
+        SELECT doctor_name FROM patient_invoice_lines
+        WHERE doctor_id IS NULL AND doctor_name IS NOT NULL AND doctor_name != ''
+      ) u
+    `);
+    const unmatchedNames = (unmatchedRes.rows || []).map((r: any) => r.doctor_name);
+    if (unmatchedNames.length > 0) {
+      logger.warn({ unmatchedNames, count: unmatchedNames.length }, "[STARTUP] doctor_id backfill: unmatched doctor names (no matching doctor record)");
+    }
   } catch (err: unknown) {
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] doctor_id backfill error");
   }

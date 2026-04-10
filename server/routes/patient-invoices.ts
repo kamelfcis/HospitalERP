@@ -5,7 +5,7 @@ import { db } from "../db";
 import { logger } from "../lib/logger";
 import { logAcctEvent } from "../lib/accounting-event-logger";
 import { runRefresh, REFRESH_KEYS } from "../lib/rpt-refresh-orchestrator";
-import { sql } from "drizzle-orm";
+import { sql, eq, inArray } from "drizzle-orm";
 import { PERMISSIONS } from "@shared/permissions";
 import { auditLog } from "../route-helpers";
 import {
@@ -23,13 +23,13 @@ import {
   patientInvoiceHeaders,
   patientInvoiceLines,
   doctors,
+  services,
 } from "@shared/schema";
 import { resolveBusinessClassificationWithMeta } from "@shared/resolve-business-classification";
 import { applyContractCoverage } from "../lib/patient-invoice-coverage";
 import { injectDoctorCostLines } from "../lib/doctor-cost-engine";
 import { assertInvoiceScopeGuard, assertServiceDeptMatch, ScopeViolationError } from "../lib/scope-guard";
 import { findOrCreatePatient } from "../lib/find-or-create-patient";
-import { eq } from "drizzle-orm";
 import {
   enforceNonZeroPrice,
   auditContractPriceOverrides,
@@ -70,10 +70,15 @@ async function processInvoiceLines(
   );
   auditContractPriceOverrides(processed, headerParsed.contractId, userId);
 
-  processed = await injectDoctorCostLines(processed, {
-    headerDoctorId: headerParsed.doctorId ?? null,
-    headerDoctorName: headerParsed.doctorName ?? null,
-  });
+  const billingMode = headerParsed.billingMode || "hospital_collect";
+  if (billingMode !== "doctor_collect") {
+    processed = await injectDoctorCostLines(processed, {
+      headerDoctorId: headerParsed.doctorId ?? null,
+      headerDoctorName: headerParsed.doctorName ?? null,
+    });
+  } else {
+    processed = processed.filter((l: any) => l.lineType !== "doctor_cost");
+  }
 
   return processed;
 }
@@ -186,6 +191,13 @@ export function registerPatientInvoicesRoutes(app: Express) {
       const headerParsed = insertPatientInvoiceHeaderSchema.partial().parse(header);
       let linesParsed = (lines || []).map((l: Record<string, unknown>) => insertPatientInvoiceLineSchema.omit({ headerId: true }).parse(l));
       const paymentsParsed = (payments || []).map((p: Record<string, unknown>) => insertPatientInvoicePaymentSchema.omit({ headerId: true }).parse(p));
+
+      if (!(headerParsed as any).billingMode) {
+        const [existingHdr] = await db.select({ billingMode: patientInvoiceHeaders.billingMode }).from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, req.params.id as string)).limit(1);
+        if (existingHdr?.billingMode) {
+          (headerParsed as any).billingMode = existingHdr.billingMode;
+        }
+      }
 
       linesParsed = await processInvoiceLines(linesParsed, headerParsed, req.session.userId as string);
 
@@ -334,6 +346,8 @@ export function registerPatientInvoicesRoutes(app: Express) {
       // ── Hard validation: doctor financial accounts ──────────────────────
       const existingLines = (existing as any).lines ?? [];
       const hasDoctorCostLines = existingLines.some((l: any) => l.lineType === "doctor_cost" && !l.isVoid);
+      const validationBillingMode = (existing as any).billingMode || "hospital_collect";
+
       if (hasDoctorCostLines) {
         const orphanCostLines = existingLines.filter((l: any) => l.lineType === "doctor_cost" && !l.isVoid && !l.doctorId);
         if (orphanCostLines.length > 0) {
@@ -342,26 +356,26 @@ export function registerPatientInvoicesRoutes(app: Express) {
             code: "DOCTOR_COST_NO_DOCTOR",
           });
         }
-        if (existing.doctorId) {
-          const [doc] = await db.select({
-            payableAccountId: doctors.payableAccountId,
-            receivableAccountId: doctors.receivableAccountId,
-            financialMode: doctors.financialMode,
-          }).from(doctors).where(eq(doctors.id, existing.doctorId)).limit(1);
+      }
 
-          const billingMode = (existing as any).billingMode || "hospital_collect";
-          if (billingMode === "hospital_collect" && !doc?.payableAccountId) {
-            return res.status(400).json({
-              message: "لا يمكن اعتماد فاتورة تحصيل مستشفى بدون تحديد حساب الدائنين (مستحقات الطبيب). عدّل بيانات الطبيب أولاً.",
-              code: "DOCTOR_NO_PAYABLE",
-            });
-          }
-          if (billingMode === "doctor_collect" && !doc?.receivableAccountId) {
-            return res.status(400).json({
-              message: "لا يمكن اعتماد فاتورة تحصيل طبيب بدون تحديد حساب المدينين للطبيب. عدّل بيانات الطبيب أولاً.",
-              code: "DOCTOR_NO_RECEIVABLE",
-            });
-          }
+      if (existing.doctorId) {
+        const [doc] = await db.select({
+          payableAccountId: doctors.payableAccountId,
+          receivableAccountId: doctors.receivableAccountId,
+          financialMode: doctors.financialMode,
+        }).from(doctors).where(eq(doctors.id, existing.doctorId)).limit(1);
+
+        if (validationBillingMode === "hospital_collect" && hasDoctorCostLines && !doc?.payableAccountId) {
+          return res.status(400).json({
+            message: "لا يمكن اعتماد فاتورة تحصيل مستشفى بدون تحديد حساب الدائنين (مستحقات الطبيب). عدّل بيانات الطبيب أولاً.",
+            code: "DOCTOR_NO_PAYABLE",
+          });
+        }
+        if (validationBillingMode === "doctor_collect" && !doc?.receivableAccountId) {
+          return res.status(400).json({
+            message: "لا يمكن اعتماد فاتورة تحصيل طبيب بدون تحديد حساب المدينين للطبيب. عدّل بيانات الطبيب أولاً.",
+            code: "DOCTOR_NO_RECEIVABLE",
+          });
         }
       }
       // ─────────────────────────────────────────────────────────────────────
@@ -463,18 +477,41 @@ export function registerPatientInvoicesRoutes(app: Express) {
         const glLines = storage.buildPatientInvoiceGLLines(result, invoiceLines.lines || []);
 
         const dynamicAccountOverrides: Record<string, { debitAccountId?: string | null; creditAccountId?: string | null }> = {};
+        const invBillingMode = (result as any).billingMode || "hospital_collect";
+
         if (result.doctorId) {
           const [doc] = await db.select({
             payableAccountId: doctors.payableAccountId,
+            receivableAccountId: doctors.receivableAccountId,
             costCenterId: doctors.costCenterId,
           }).from(doctors).where(eq(doctors.id, result.doctorId)).limit(1);
-          if (doc?.payableAccountId) {
-            dynamicAccountOverrides["doctor_cost"] = { creditAccountId: doc.payableAccountId };
+
+          if (invBillingMode === "doctor_collect") {
+            if (doc?.receivableAccountId) {
+              const paymentType = (result as any).patientType === "cash" ? "cash" : "receivables";
+              dynamicAccountOverrides[paymentType] = { debitAccountId: doc.receivableAccountId };
+            }
+          } else {
+            if (doc?.payableAccountId) {
+              dynamicAccountOverrides["doctor_cost"] = { creditAccountId: doc.payableAccountId };
+            }
           }
-          if (doc?.costCenterId) {
+
+          const doctorCostCenterId = doc?.costCenterId || null;
+          let fallbackCostCenterId: string | null = null;
+          if (!doctorCostCenterId) {
+            const costLines = (invoiceLines.lines || []).filter((l: any) => l.lineType === "doctor_cost" && !l.isVoid && l.serviceId);
+            const svcIds = [...new Set(costLines.map((l: any) => l.serviceId))].filter(Boolean) as string[];
+            if (svcIds.length > 0) {
+              const svcRows = await db.select({ costCenterId: services.costCenterId }).from(services).where(inArray(services.id, svcIds));
+              fallbackCostCenterId = svcRows.find(s => s.costCenterId)?.costCenterId || null;
+            }
+          }
+          const effectiveCostCenterId = doctorCostCenterId || fallbackCostCenterId;
+          if (effectiveCostCenterId) {
             for (const gl of glLines) {
               if (gl.lineType === "doctor_cost") {
-                gl.costCenterId = doc.costCenterId;
+                gl.costCenterId = effectiveCostCenterId;
               }
             }
           }

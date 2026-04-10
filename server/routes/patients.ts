@@ -477,8 +477,8 @@ export function registerPatientsRoutes(app: Express) {
           d.name AS doctor_name,
           d.specialty,
           d.financial_mode,
-          COALESCE(SUM(CASE WHEN l.line_type != 'doctor_cost' AND NOT COALESCE(l.is_void, false) THEN CAST(COALESCE(l.net_amount, l.total_amount, '0') AS numeric) ELSE 0 END), 0) AS total_revenue,
-          COALESCE(SUM(CASE WHEN l.line_type = 'doctor_cost' AND NOT COALESCE(l.is_void, false) THEN CAST(COALESCE(l.net_amount, l.total_amount, '0') AS numeric) ELSE 0 END), 0) AS total_doctor_cost,
+          COALESCE(SUM(CASE WHEN l.line_type != 'doctor_cost' AND NOT COALESCE(l.is_void, false) THEN CAST(COALESCE(l.total_price, '0') AS numeric) ELSE 0 END), 0) AS total_revenue,
+          COALESCE(SUM(CASE WHEN l.line_type = 'doctor_cost' AND NOT COALESCE(l.is_void, false) THEN CAST(COALESCE(l.total_price, '0') AS numeric) ELSE 0 END), 0) AS total_doctor_cost,
           COUNT(DISTINCT h.id) AS invoice_count
         FROM doctors d
         LEFT JOIN patient_invoice_headers h ON h.doctor_id = d.id AND h.status = 'finalized' ${dateFilter}
