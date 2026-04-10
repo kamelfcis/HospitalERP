@@ -144,29 +144,30 @@ export function NationalIdField({
             )}
           </div>
         </div>
-      <div className="flex items-center gap-0.5 shrink-0">
-        <span className={compact ? "text-[10px] text-muted-foreground" : "text-xs text-muted-foreground"}>تاريخ الميلاد</span>
-        <Input
-          type="date"
-          value={dateOfBirth}
-          onChange={(e) => handleDateOfBirthChange(e.target.value)}
-          disabled={disabled}
-          className={`${h} ${compact ? "w-32" : "w-36"} px-1`}
-          data-testid="input-date-of-birth"
-        />
-      </div>
-      <div className="flex items-center gap-0.5 shrink-0">
-        <span className={compact ? "text-[10px] text-muted-foreground" : "text-xs text-muted-foreground"}>العمر</span>
-        <Input
-          type="number"
-          value={age}
-          onChange={(e) => onAgeChange(e.target.value)}
-          disabled={disabled}
-          className={`${h} w-14 px-1 text-center`}
-          min={0}
-          max={150}
-          data-testid="input-age"
-        />
+        <div className="flex items-center gap-0.5 shrink-0">
+          <span className={compact ? "text-[10px] text-muted-foreground" : "text-xs text-muted-foreground"}>تاريخ الميلاد</span>
+          <Input
+            type="date"
+            value={dateOfBirth}
+            onChange={(e) => handleDateOfBirthChange(e.target.value)}
+            disabled={disabled}
+            className={`${h} ${compact ? "w-32" : "w-36"} px-1`}
+            data-testid="input-date-of-birth"
+          />
+        </div>
+        <div className="flex items-center gap-0.5 shrink-0">
+          <span className={compact ? "text-[10px] text-muted-foreground" : "text-xs text-muted-foreground"}>العمر</span>
+          <Input
+            type="number"
+            value={age}
+            onChange={(e) => onAgeChange(e.target.value)}
+            disabled={disabled}
+            className={`${h} w-14 px-1 text-center`}
+            min={0}
+            max={150}
+            data-testid="input-age"
+          />
+        </div>
       </div>
       {requiredHint && (
         <p className="text-[10px] text-amber-600 flex items-center gap-1 mt-0.5">
