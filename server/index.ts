@@ -1172,6 +1172,30 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] encounters backfill error");
   }
 
+  // ── 5g4. Backfill normalized_full_name for patients missing it ────────────
+  try {
+    const normFix = await db.execute(sql`
+      UPDATE patients
+      SET normalized_full_name = LOWER(TRIM(
+        REGEXP_REPLACE(
+          TRANSLATE(
+            REPLACE(REPLACE(REPLACE(REPLACE(
+              REGEXP_REPLACE(
+                REGEXP_REPLACE(full_name, E'[\\u064B-\\u065F]', '', 'g'),
+                'ـ', '', 'g'),
+              'أ','ا'), 'إ','ا'), 'آ','ا'), 'ة','ه'),
+            'ى', 'ي'),
+          '\\s+', ' ', 'g')
+      ))
+      WHERE full_name IS NOT NULL
+        AND (normalized_full_name IS NULL OR normalized_full_name = '')
+    `);
+    const normFixed = (normFix as any).rowCount ?? 0;
+    if (normFixed > 0) log(`[STARTUP] patient normalized_full_name backfill: ${normFixed} row(s) fixed`);
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] patient normalization backfill error");
+  }
+
   // ── 5h. Backfill expiry_month/expiry_year from expiry_date ────────────────
   // حالات تاريخية: دفعات دخلت بـ expiry_date لكن بدون expiry_month/expiry_year
   // (استيراد إكسيل، opening stock قديم). آمن ومتكرر الإجراء.
