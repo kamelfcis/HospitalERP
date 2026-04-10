@@ -12,7 +12,7 @@
  *    2. default_price_list   — قائمة الأسعار الافتراضية
  *    3. service_base_price   — السعر الأساسي (unit_price من السطر)
  *
- *  لا يُعدّل سطور STAY_ENGINE — هذه يتحكم فيها محرّك الإقامة فقط.
+ *  سطور STAY_ENGINE تخضع لنفس قواعد التغطية (السعر يبقى من المحرك).
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
@@ -47,7 +47,7 @@ export async function applyContractCoverage<
   const contractBasePriceListId: string | null = (contract as any).basePriceListId ?? null;
 
   // ── تحليل أسعار قوائم الأسعار دفعة واحدة (منع N+1) ─────────────────────
-  const serviceLines = lines.filter(l => l.sourceType !== "STAY_ENGINE" && l.serviceId);
+  const serviceLines = lines.filter(l => l.serviceId);
   const serviceIds = [...new Set(serviceLines.map(l => l.serviceId!))];
 
   const priceMap = serviceIds.length > 0
@@ -59,8 +59,6 @@ export async function applyContractCoverage<
     : new Map();
 
   return lines.map((line) => {
-    if (line.sourceType === "STAY_ENGINE") return line;
-
     // السعر الذي يدخل محرك التغطية: من القائمة المحلولة أو unit_price الحالي
     const resolved = line.serviceId ? priceMap.get(line.serviceId) : undefined;
     const listPriceStr = resolved
