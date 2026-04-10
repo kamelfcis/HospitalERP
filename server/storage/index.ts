@@ -575,7 +575,7 @@ export interface IStorage {
   // Bed Board
   getBedBoard(departmentIds?: string[]): Promise<Array<Floor & { departmentId?: string | null; departmentName?: string | null; rooms: Array<Room & { beds: Array<Bed & { patientName?: string; admissionNumber?: string }> }> }>>;
   getAvailableBeds(): Promise<Array<Bed & { roomNameAr: string; floorNameAr: string }>>;
-  admitPatientToBed(params: { bedId: string; patientName: string; patientPhone?: string; patientId?: string; departmentId?: string; serviceId?: string; doctorName?: string; notes?: string; paymentType?: string; insuranceCompany?: string; surgeryTypeId?: string }): Promise<{ bed: Bed; admissionId: string; invoiceId: string; segmentId?: string }>;
+  admitPatientToBed(params: { bedId: string; patientName: string; patientPhone?: string; patientId?: string; departmentId?: string; serviceId?: string; doctorName?: string; notes?: string; paymentType?: string; insuranceCompany?: string; surgeryTypeId?: string; contractMemberId?: string }): Promise<{ bed: Bed; admissionId: string; invoiceId: string; segmentId?: string }>;
   transferPatientBed(params: { sourceBedId: string; targetBedId: string; newServiceId?: string; newInvoiceId?: string }): Promise<{ sourceBed: Bed; targetBed: Bed }>;
   dischargeFromBed(bedId: string): Promise<{ bed: Bed }>;
   setBedStatus(bedId: string, status: string): Promise<Bed>;

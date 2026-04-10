@@ -26,7 +26,6 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from "@/components/ui/sheet";
 import { DoctorLookup, DepartmentLookup } from "@/components/lookups";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PatientSearchCombobox, type PatientOption } from "@/components/shared/PatientSearchCombobox";
 import { Tag, Loader2, Printer, UserCheck } from "lucide-react";
 import { printReceptionTicket } from "@/components/printing/ReceptionTicketPrint";
@@ -127,6 +126,13 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
   const [notes,            setNotes]            = useState("");
   const [paymentType,      setPaymentType]      = useState<"cash" | "contract">("cash");
   const [insuranceCompany, setInsuranceCompany] = useState("");
+  const [memberCardInput,  setMemberCardInput]  = useState("");
+  const [resolvedMember,   setResolvedMember]   = useState<{
+    memberId: string; memberCardNumber: string; memberName: string;
+    contractId: string; contractName: string; companyId: string; companyName: string;
+  } | null>(null);
+  const [memberLookupLoading, setMemberLookupLoading] = useState(false);
+  const [memberLookupError, setMemberLookupError] = useState("");
 
   /* printing */
   const [printTicket, setPrintTicket] = useState(true);
@@ -143,12 +149,6 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
   }, [highlightedSurgery]);
 
   // ===== Data Fetching =====
-
-  interface CompanyOption { id: string; nameAr: string; code: string; isActive: boolean; }
-  const { data: activeCompanies = [] } = useQuery<CompanyOption[]>({
-    queryKey: ["/api/beds/admission-companies"],
-    enabled: paymentType === "contract",
-  });
 
   // Active filtered surgeries (server returns all matches; we hide inactive ones here)
   const { data: surgeriesRaw = [] } = useQuery<SurgeryType[]>({
@@ -205,8 +205,8 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
       !!departmentId &&
       !!selectedDoctor &&
       (!surgeryRequired || !!selectedSurgery) &&
-      !(paymentType === "contract" && !insuranceCompany.trim()),
-    [effectiveName, nameIsQuad, nidIsValid, phoneIsValid, departmentId, selectedDoctor, surgeryRequired, selectedSurgery, paymentType, insuranceCompany],
+      !(paymentType === "contract" && !resolvedMember),
+    [effectiveName, nameIsQuad, nidIsValid, phoneIsValid, departmentId, selectedDoctor, surgeryRequired, selectedSurgery, paymentType, resolvedMember],
   );
 
   // ===== Handlers =====
@@ -229,6 +229,9 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
     setNotes("");
     setPaymentType("cash");
     setInsuranceCompany("");
+    setMemberCardInput("");
+    setResolvedMember(null);
+    setMemberLookupError("");
     setPrintTicket(true);
   }, []);
 
@@ -283,10 +286,41 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
   // ── Payment type handler (also clears insurance when switching to cash) ───────
   const handlePaymentTypeChange = useCallback((v: "cash" | "contract") => {
     setPaymentType(v);
-    if (v === "cash") setInsuranceCompany("");
+    if (v === "cash") {
+      setInsuranceCompany("");
+      setMemberCardInput("");
+      setResolvedMember(null);
+      setMemberLookupError("");
+    }
   }, []);
 
   // ===== Mutation =====
+
+  const handleMemberLookup = useCallback(async () => {
+    const card = memberCardInput.trim();
+    if (card.length < 3) {
+      setMemberLookupError("أدخل 3 أحرف على الأقل");
+      return;
+    }
+    setMemberLookupLoading(true);
+    setMemberLookupError("");
+    setResolvedMember(null);
+    try {
+      const res = await fetch(`/api/beds/member-lookup?cardNumber=${encodeURIComponent(card)}`, { credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "خطأ" }));
+        setMemberLookupError(err.message || "لم يُعثر على الكارنيه");
+        return;
+      }
+      const data = await res.json();
+      setResolvedMember(data);
+      setInsuranceCompany(data.companyName);
+    } catch {
+      setMemberLookupError("خطأ في الاتصال");
+    } finally {
+      setMemberLookupLoading(false);
+    }
+  }, [memberCardInput]);
 
   const admitMutation = useMutation({
     mutationFn: () =>
@@ -303,6 +337,7 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
         paymentType,
         insuranceCompany: paymentType === "contract" ? (insuranceCompany || undefined) : undefined,
         surgeryTypeId:    selectedSurgery?.id || undefined,
+        contractMemberId: resolvedMember?.memberId || undefined,
       }).then(r => r.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bed-board"] });
@@ -665,27 +700,71 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
             </div>
 
             {paymentType === "contract" && (
-              <div className="space-y-1">
-                <Label>
-                  شركة التأمين / الجهة المتعاقدة
-                  <span className="text-destructive mr-1" aria-hidden="true">*</span>
-                </Label>
-                <Select
-                  value={insuranceCompany || "__none__"}
-                  onValueChange={v => setInsuranceCompany(v === "__none__" ? "" : v)}
-                >
-                  <SelectTrigger data-testid="select-insurance-company">
-                    <SelectValue placeholder="اختر الشركة أو الجهة المتعاقدة" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">— اختر —</SelectItem>
-                    {activeCompanies.map(c => (
-                      <SelectItem key={c.id} value={c.nameAr} data-testid={`company-option-${c.id}`}>
-                        {c.nameAr} ({c.code})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <Label>
+                    رقم كارنيه المنتسب
+                    <span className="text-destructive mr-1" aria-hidden="true">*</span>
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input
+                      data-testid="input-member-card"
+                      placeholder="أدخل رقم الكارنيه..."
+                      value={memberCardInput}
+                      onChange={e => {
+                        setMemberCardInput(e.target.value);
+                        if (resolvedMember) {
+                          setResolvedMember(null);
+                          setInsuranceCompany("");
+                        }
+                        setMemberLookupError("");
+                      }}
+                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleMemberLookup(); } }}
+                      dir="ltr"
+                      className={memberLookupError ? "border-destructive" : ""}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      data-testid="btn-lookup-member"
+                      disabled={memberLookupLoading || memberCardInput.trim().length < 3}
+                      onClick={handleMemberLookup}
+                      className="shrink-0"
+                    >
+                      {memberLookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "بحث"}
+                    </Button>
+                  </div>
+                  {memberLookupError && (
+                    <p className="text-[10px] text-destructive flex items-center gap-1">
+                      <span>✕</span> {memberLookupError}
+                    </p>
+                  )}
+                  {!resolvedMember && !memberLookupError && (
+                    <p className="text-[10px] text-amber-600 flex items-center gap-1">
+                      <span>⚠</span> رقم الكارنيه مطلوب لمرضى التعاقد
+                    </p>
+                  )}
+                </div>
+
+                {resolvedMember && (
+                  <div className="rounded-lg border border-green-300 bg-green-50 dark:bg-green-950/30 dark:border-green-800 p-3 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <UserCheck className="h-4 w-4 text-green-600" />
+                      <span className="text-sm font-medium text-green-700 dark:text-green-400">تم التحقق من الكارنيه</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+                      <span>اسم المنتسب:</span>
+                      <span className="font-medium text-foreground">{resolvedMember.memberName}</span>
+                      <span>الشركة:</span>
+                      <span className="font-medium text-foreground">{resolvedMember.companyName}</span>
+                      <span>العقد:</span>
+                      <span className="font-medium text-foreground">{resolvedMember.contractName}</span>
+                      <span>رقم الكارنيه:</span>
+                      <span className="font-medium text-foreground" dir="ltr">{resolvedMember.memberCardNumber}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </section>

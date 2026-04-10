@@ -139,6 +139,7 @@ const methods = {
     bedId: string; patientName: string; patientPhone?: string; patientId?: string;
     departmentId?: string; serviceId?: string; doctorName?: string; notes?: string;
     paymentType?: string; insuranceCompany?: string; surgeryTypeId?: string;
+    contractMemberId?: string;
   }) {
     const result = await db.transaction(async (tx) => {
       const bedRes = await tx.execute(sql`SELECT * FROM beds WHERE id = ${params.bedId} FOR UPDATE`);
@@ -222,9 +223,26 @@ const methods = {
 
       let resolvedCompanyId: string | null = null;
       let resolvedContractId: string | null = null;
-      let resolvedContractName: string | null = params.paymentType === "contract" ? (params.insuranceCompany || null) : null;
+      let resolvedContractName: string | null = null;
 
-      if (params.paymentType === "contract" && params.insuranceCompany) {
+      if (params.paymentType === "contract" && params.contractMemberId) {
+        const memberRes = await tx.execute(
+          sql`SELECT cm.id, cm.contract_id,
+                     c.contract_name, c.company_id,
+                     co.name_ar AS company_name
+              FROM contract_members cm
+              JOIN contracts c  ON c.id  = cm.contract_id
+              JOIN companies co ON co.id = c.company_id
+              WHERE cm.id = ${params.contractMemberId}
+              LIMIT 1`
+        );
+        if (memberRes.rows.length > 0) {
+          const mr = memberRes.rows[0] as Record<string, unknown>;
+          resolvedCompanyId    = mr.company_id   as string;
+          resolvedContractId   = mr.contract_id  as string;
+          resolvedContractName = (mr.contract_name as string) || (mr.company_name as string);
+        }
+      } else if (params.paymentType === "contract" && params.insuranceCompany) {
         const compRes = await tx.execute(
           sql`SELECT id FROM companies WHERE name_ar = ${params.insuranceCompany} AND is_active = true LIMIT 1`
         );
@@ -238,9 +256,10 @@ const methods = {
           if (contrRes.rows.length > 0) {
             const cr = contrRes.rows[0] as Record<string, unknown>;
             resolvedContractId = cr.id as string;
-            resolvedContractName = (cr.contract_name as string) || resolvedContractName;
+            resolvedContractName = (cr.contract_name as string) || params.insuranceCompany;
           }
         }
+        resolvedContractName = resolvedContractName || params.insuranceCompany;
       }
 
       const [invoice] = await tx.insert(patientInvoiceHeaders).values({
@@ -257,6 +276,7 @@ const methods = {
         contractName: resolvedContractName,
         companyId: resolvedCompanyId,
         contractId: resolvedContractId,
+        contractMemberId: params.contractMemberId || null,
         status: "draft" as "draft",
         invoiceDate: new Date().toISOString().split("T")[0] as unknown as Date,
         totalAmount: "0",

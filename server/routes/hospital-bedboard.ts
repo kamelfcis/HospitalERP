@@ -84,10 +84,39 @@ export function registerBedBoardRoutes(app: Express) {
     }
   });
 
+  app.get("/api/beds/member-lookup", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_CREATE), async (req, res) => {
+    try {
+      const rawCard = (req.query.cardNumber as string | undefined)?.trim() ?? "";
+      if (rawCard.length < 3) {
+        return res.status(400).json({ message: "رقم البطاقة قصير جداً — أدخل 3 أحرف على الأقل" });
+      }
+      const resolvedDate = new Date().toISOString().slice(0, 10);
+      const result = await storage.lookupMemberByCard(rawCard, resolvedDate);
+      if (!result) {
+        return res.status(404).json({ message: "لم يُعثر على بطاقة منتسب نشطة بهذا الرقم" });
+      }
+      res.json({
+        memberId:         result.member.id,
+        memberCardNumber: result.member.memberCardNumber,
+        memberName:       result.member.memberNameAr,
+        contractId:       result.contract.id,
+        contractName:     result.contract.contractName,
+        companyId:        result.company.id,
+        companyName:      result.company.nameAr,
+        coverageUntil:    result.member.endDate,
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message ?? "خطأ في البحث" });
+    }
+  });
+
   app.post("/api/beds/:id/admit", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_CREATE), async (req, res) => {
     try {
-      const { patientName, patientPhone, patientId, nationalId, dateOfBirth, age, departmentId, serviceId, doctorName, notes, paymentType, insuranceCompany, surgeryTypeId } = req.body;
+      const { patientName, patientPhone, patientId, nationalId, dateOfBirth, age, departmentId, serviceId, doctorName, notes, paymentType, insuranceCompany, surgeryTypeId, contractMemberId } = req.body;
       if (!patientName?.trim()) return res.status(400).json({ message: "اسم المريض مطلوب" });
+      if (paymentType === "contract" && !contractMemberId) {
+        return res.status(400).json({ message: "رقم كارنيه المنتسب مطلوب لمرضى التعاقد" });
+      }
       if (doctorName !== undefined && typeof doctorName === "string") {
         logger.info({ event: "BED_ADMIT_DOCTOR", doctorName, bedId: req.params.id }, "[BED_ADMIT] doctor_name received");
       }
@@ -117,6 +146,7 @@ export function registerBedBoardRoutes(app: Express) {
         paymentType: paymentType || undefined,
         insuranceCompany: insuranceCompany || undefined,
         surgeryTypeId: surgeryTypeId || undefined,
+        contractMemberId: contractMemberId || undefined,
       });
       broadcastBedBoardUpdate();
       runRefresh(REFRESH_KEYS.PATIENT_VISIT, () => storage.refreshPatientVisitSummary(), "event-driven").catch(() => {});
