@@ -13,6 +13,7 @@ import type { AutoSaveStatus } from "../hooks/useAutoSave";
 import { patientInvoiceStatusLabels } from "@shared/schema";
 import type { Department, Admission } from "@shared/schema";
 import type { LineLocal } from "../types";
+import { DIRECT_SOURCE_TYPES } from "../utils/distributeHelpers";
 import { DoctorLookup } from "@/components/lookups";
 import { PatientSearchCombobox } from "@/components/shared/PatientSearchCombobox";
 import { ContractSelectCombobox, type ContractResolved } from "@/components/shared/ContractSelectCombobox";
@@ -169,10 +170,16 @@ export function InvoiceHeaderBar({
     if (!name || lines.length === 0) return;
     setSavingTemplate(true);
     try {
+      const templateLines = lines.filter(l => !DIRECT_SOURCE_TYPES.has(l.sourceType || ""));
+      if (templateLines.length === 0) {
+        toast({ title: "لا توجد بنود", description: "جميع البنود مولّدة تلقائياً ولا يمكن حفظها كنموذج", variant: "destructive" });
+        setSavingTemplate(false);
+        return;
+      }
       const body = {
         name,
         category: templateCategory.trim() || null,
-        lines: lines.map((l, idx) => ({
+        lines: templateLines.map((l, idx) => ({
           lineType:               l.lineType,
           serviceId:              l.serviceId              || null,
           itemId:                 l.itemId                 || null,
