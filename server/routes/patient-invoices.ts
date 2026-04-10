@@ -729,9 +729,6 @@ export function registerPatientInvoicesRoutes(app: Express) {
       if (inv.is_final_closed) {
         return res.status(409).json({ message: "لا يمكن تعديل فاتورة تم إغلاقها نهائيًا" });
       }
-      if (inv.status !== "draft") {
-        return res.status(409).json({ message: "لا يمكن تعديل التشخيص على فاتورة نهائية — يسمح فقط على المسودة" });
-      }
 
       const oldDiagnosis = inv.diagnosis;
       const oldNotes = inv.notes;

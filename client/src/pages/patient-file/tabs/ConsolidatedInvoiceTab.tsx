@@ -13,7 +13,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -1242,89 +1241,8 @@ function ReadinessCheck({ label, ok }: { label: string; ok: boolean }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// NEW PANELS
+// SIDEBAR PANELS
 // ──────────────────────────────────────────────────────────────────────────────
-
-const ClinicalInfoPanel = memo(function ClinicalInfoPanel({
-  invoiceId, isFinalClosed, invoiceStatus, initialDiagnosis, initialNotes, onSaved,
-}: {
-  invoiceId: string;
-  isFinalClosed: boolean;
-  invoiceStatus: string;
-  initialDiagnosis: string;
-  initialNotes: string;
-  onSaved: () => void;
-}) {
-  const { toast } = useToast();
-  const [diagnosis, setDiagnosis] = useState(initialDiagnosis);
-  const [notes, setNotes] = useState(initialNotes);
-  const isDirty = diagnosis !== initialDiagnosis || notes !== initialNotes;
-  const isEditable = !isFinalClosed && invoiceStatus === "draft";
-
-  useEffect(() => {
-    setDiagnosis(initialDiagnosis);
-    setNotes(initialNotes);
-  }, [initialDiagnosis, initialNotes]);
-
-  const saveMutation = useMutation({
-    mutationFn: () => apiRequest("PATCH", `/api/patient-invoices/${invoiceId}/clinical-info`, { diagnosis, notes }),
-    onSuccess: () => {
-      toast({ title: "تم الحفظ", description: "تم حفظ التشخيص والملاحظات" });
-      onSaved();
-    },
-    onError: (err: Error) => toast({ title: "خطأ", description: err.message, variant: "destructive" }),
-  });
-
-  return (
-    <div className="border rounded-xl p-3 flex flex-col gap-2 bg-white">
-      <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
-        <FileCheck className="h-3.5 w-3.5" />
-        التشخيص والملاحظات
-      </p>
-      <div className="flex flex-col gap-1.5">
-        <Label className="text-[10px] text-muted-foreground">التشخيص</Label>
-        <Textarea
-          value={diagnosis}
-          onChange={e => setDiagnosis(e.target.value)}
-          disabled={!isEditable}
-          placeholder={isEditable ? "أدخل التشخيص..." : "—"}
-          rows={2}
-          className="text-xs resize-none"
-          data-testid="textarea-diagnosis"
-        />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label className="text-[10px] text-muted-foreground">ملاحظات</Label>
-        <Textarea
-          value={notes}
-          onChange={e => setNotes(e.target.value)}
-          disabled={!isEditable}
-          placeholder={isEditable ? "ملاحظات إضافية..." : "—"}
-          rows={2}
-          className="text-xs resize-none"
-          data-testid="textarea-notes"
-        />
-      </div>
-      {isEditable && isDirty && (
-        <Button
-          size="sm"
-          className="w-full text-xs gap-1 h-7"
-          onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending}
-          data-testid="button-save-clinical"
-        >
-          {saveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-          حفظ
-        </Button>
-      )}
-      {isFinalClosed && (
-        <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-          <Lock className="h-3 w-3" /> مغلق — غير قابل للتعديل
-        </p>
-      )}
-    </div>
-  );
-});
 
 const HeaderDiscountPanel = memo(function HeaderDiscountPanel({
   invoiceId, isFinalClosed, invoiceStatus,
@@ -1418,20 +1336,31 @@ const HeaderDiscountPanel = memo(function HeaderDiscountPanel({
 
 const DoctorTransferPanel = memo(function DoctorTransferPanel({
   invoiceId, isFinalClosed, invoiceStatus, netAmount, patientId,
+  onTransferred,
 }: {
   invoiceId: string;
   isFinalClosed: boolean;
   invoiceStatus: string;
   netAmount: number;
   patientId: string;
+  onTransferred?: () => void;
 }) {
   const { toast } = useToast();
-  const [doctorName, setDoctorName] = useState("");
+  const [selectedDoctorId, setSelectedDoctorId] = useState("");
   const [amount, setAmount] = useState("");
-  const [notes, setNotes] = useState("");
+  const [transferNotes, setTransferNotes] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const canTransfer = !isFinalClosed && invoiceStatus === "finalized";
+
+  const { data: doctors = [] } = useQuery<any[]>({
+    queryKey: ["/api/doctors"],
+    queryFn: async () => {
+      const r = await fetch("/api/doctors", { credentials: "include" });
+      if (!r.ok) return [];
+      return r.json();
+    },
+  });
 
   const { data: transfers = [], refetch: refetchTransfers } = useQuery<any[]>({
     queryKey: ["/api/patient-invoices", invoiceId, "transfers"],
@@ -1446,23 +1375,27 @@ const DoctorTransferPanel = memo(function DoctorTransferPanel({
   const alreadyTransferred = transfers.reduce((s: number, t: any) => s + parseFloat(t.amount || "0"), 0);
   const remaining = Math.max(0, netAmount - alreadyTransferred);
 
+  const selectedDoctor = doctors.find((d: any) => d.id === selectedDoctorId);
+  const showDoctorSelect = !!amount && parseFloat(amount) > 0;
+
   const transferMutation = useMutation({
     mutationFn: () => {
       const clientRequestId = crypto.randomUUID();
       return apiRequest("POST", `/api/patient-invoices/${invoiceId}/transfer-to-doctor`, {
-        doctorName: doctorName.trim(),
+        doctorName: selectedDoctor?.name ?? "",
         amount: parseFloat(amount),
-        notes: notes.trim() || undefined,
+        notes: transferNotes.trim() || undefined,
         clientRequestId,
       });
     },
     onSuccess: () => {
       toast({ title: "تم التحويل", description: "تم تحويل المستحقات للطبيب بنجاح" });
-      setDoctorName("");
+      setSelectedDoctorId("");
       setAmount("");
-      setNotes("");
+      setTransferNotes("");
       setConfirmOpen(false);
       refetchTransfers();
+      onTransferred?.();
     },
     onError: (err: Error) => {
       setConfirmOpen(false);
@@ -1471,7 +1404,7 @@ const DoctorTransferPanel = memo(function DoctorTransferPanel({
   });
 
   function handleConfirm() {
-    if (!doctorName.trim()) { toast({ variant: "destructive", title: "اسم الطبيب مطلوب" }); return; }
+    if (!selectedDoctorId) { toast({ variant: "destructive", title: "اختر الطبيب" }); return; }
     const amt = parseFloat(amount);
     if (!amount || isNaN(amt) || amt <= 0) { toast({ variant: "destructive", title: "أدخل مبلغاً صحيحاً" }); return; }
     if (amt > remaining + 0.001) { toast({ variant: "destructive", title: `المبلغ يتجاوز المتبقي (${fmtMoney(remaining)})` }); return; }
@@ -1484,14 +1417,14 @@ const DoctorTransferPanel = memo(function DoctorTransferPanel({
     <div className="border rounded-xl p-3 flex flex-col gap-2 bg-white">
       <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
         <DoctorIcon className="h-3.5 w-3.5" />
-        تحويل مستحقات طبيب
+        تحويل مديونية لطبيب
       </p>
 
       {transfers.length > 0 && (
         <div className="flex flex-col gap-1">
           {transfers.map((t: any) => (
             <div key={t.id} className="flex items-center justify-between text-[10px] bg-slate-50 border rounded px-2 py-1">
-              <span className="font-medium truncate max-w-[80px]">{t.doctor_name}</span>
+              <span className="font-medium truncate max-w-[120px]">{t.doctor_name}</span>
               <span className="font-mono text-green-700">{fmtMoney(t.amount)}</span>
             </div>
           ))}
@@ -1502,61 +1435,97 @@ const DoctorTransferPanel = memo(function DoctorTransferPanel({
         </div>
       )}
 
-      {canTransfer && (
+      {canTransfer && remaining > 0 && (
         <>
           <Input
-            placeholder="اسم الطبيب *"
-            value={doctorName}
-            onChange={e => setDoctorName(e.target.value)}
-            className="h-7 text-xs"
-            data-testid="input-transfer-doctor"
-          />
-          <Input
             type="number"
-            placeholder="المبلغ"
+            placeholder={`المبلغ (الحد الأقصى: ${fmtMoney(remaining)})`}
             min="0.01"
             step="0.01"
+            max={remaining}
             value={amount}
             onChange={e => setAmount(e.target.value)}
-            className="h-7 text-xs"
+            className="h-8 text-xs"
             dir="ltr"
             data-testid="input-transfer-amount"
           />
-          <Input
-            placeholder="ملاحظات (اختياري)"
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-            className="h-7 text-xs"
-            data-testid="input-transfer-notes"
-          />
-          <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-full text-xs gap-1 h-7 border-teal-300 text-teal-700 hover:bg-teal-50"
-              onClick={handleConfirm}
-              disabled={transferMutation.isPending}
-              data-testid="button-transfer-doctor"
+          {remaining > 0 && (
+            <button
+              type="button"
+              className="text-[10px] text-teal-600 hover:text-teal-800 underline self-start"
+              onClick={() => setAmount(String(remaining))}
+              data-testid="btn-fill-remaining"
             >
-              {transferMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <DoctorIcon className="h-3 w-3" />}
-              تحويل
-            </Button>
-            <AlertDialogContent dir="rtl">
-              <AlertDialogHeader>
-                <AlertDialogTitle>تأكيد التحويل</AlertDialogTitle>
-                <AlertDialogDescription>
-                  تحويل <strong>{fmtMoney(parseFloat(amount) || 0)}</strong> للطبيب <strong>{doctorName}</strong>
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>إلغاء</AlertDialogCancel>
-                <AlertDialogAction onClick={() => transferMutation.mutate()} className="bg-teal-600 hover:bg-teal-700">
-                  تأكيد
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+              كامل المبلغ المتبقي ({fmtMoney(remaining)})
+            </button>
+          )}
+
+          {showDoctorSelect && (
+            <Select value={selectedDoctorId || "__none__"} onValueChange={v => setSelectedDoctorId(v === "__none__" ? "" : v)}>
+              <SelectTrigger className="h-8 text-xs" data-testid="select-transfer-doctor">
+                <SelectValue placeholder="اختر الطبيب *" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__" disabled>اختر الطبيب</SelectItem>
+                {doctors.map((d: any) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          {showDoctorSelect && selectedDoctorId && (
+            <>
+              <Input
+                placeholder="ملاحظات (اختياري)"
+                value={transferNotes}
+                onChange={e => setTransferNotes(e.target.value)}
+                className="h-7 text-xs"
+                data-testid="input-transfer-notes"
+              />
+              <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full text-xs gap-1 h-7 border-teal-300 text-teal-700 hover:bg-teal-50"
+                  onClick={handleConfirm}
+                  disabled={transferMutation.isPending}
+                  data-testid="button-transfer-doctor"
+                >
+                  {transferMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <DoctorIcon className="h-3 w-3" />}
+                  تحويل {fmtMoney(parseFloat(amount) || 0)} لـ {selectedDoctor?.name ?? ""}
+                </Button>
+                <AlertDialogContent dir="rtl">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>تأكيد التحويل</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      تحويل <strong>{fmtMoney(parseFloat(amount) || 0)}</strong> للطبيب <strong>{selectedDoctor?.name ?? ""}</strong>
+                      {parseFloat(amount) >= remaining - 0.001 && (
+                        <span className="block mt-2 text-amber-600 font-semibold">
+                          هذا كامل المبلغ المتبقي — سيصبح رصيد الفاتورة صفر
+                        </span>
+                      )}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => transferMutation.mutate()} className="bg-teal-600 hover:bg-teal-700">
+                      تأكيد
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </>
+          )}
         </>
+      )}
+
+      {canTransfer && remaining <= 0 && (
+        <div className="text-center text-[10px] text-green-600 font-semibold py-1">
+          تم تحويل كامل المبلغ
+        </div>
       )}
     </div>
   );
@@ -1814,11 +1783,6 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
     onError: (err: Error) => toast({ title: "خطأ", description: err.message, variant: "destructive" }),
   });
 
-  const handleClinicalSaved = useCallback(() => {
-    refetchFullInvoice();
-    queryClient.invalidateQueries({ queryKey: ["/api/patients", patientId, "invoices-aggregated"] });
-  }, [patientId, refetchFullInvoice]);
-
   const handleDiscountUpdated = useCallback(() => {
     refetchFullInvoice();
     queryClient.invalidateQueries({ queryKey: ["/api/patients", patientId, "invoices-aggregated"] });
@@ -1852,7 +1816,6 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
 
   const invoiceStatus = primaryInvoice?.status;
   const invoiceNumber = visitSummary?.invoice?.invoiceNumber ?? primaryInvoice?.invoiceNumber;
-  const diagnosis = fullInvoice?.diagnosis ?? "";
   const notes = fullInvoice?.notes ?? "";
   const headerDiscountPercent = parseFloat(String(fullInvoice?.headerDiscountPercent ?? primaryInvoice?.["headerDiscountPercent"] ?? "0"));
   const headerDiscountAmount = parseFloat(String(fullInvoice?.headerDiscountAmount ?? primaryInvoice?.["headerDiscountAmount"] ?? "0"));
@@ -1917,6 +1880,15 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
 
           {selectedVisitId && isSummaryLoading && (
             <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+          )}
+
+          {notes && (
+            <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1">
+              <FileText className="h-3 w-3 text-amber-600 shrink-0" />
+              <span className="text-[10px] text-amber-700 truncate max-w-[300px]" title={notes}>
+                {notes}
+              </span>
+            </div>
           )}
         </div>
 
@@ -2046,23 +2018,13 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
                   />
                 )}
 
-                {invoiceStatus === "finalized" && (
-                  <DoctorTransferPanel
-                    invoiceId={primaryInvoice.id}
-                    isFinalClosed={isFinalClosed}
-                    invoiceStatus={invoiceStatus}
-                    netAmount={primaryInvoice.netAmount}
-                    patientId={patientId}
-                  />
-                )}
-
-                <ClinicalInfoPanel
+                <DoctorTransferPanel
                   invoiceId={primaryInvoice.id}
                   isFinalClosed={isFinalClosed}
                   invoiceStatus={invoiceStatus ?? "draft"}
-                  initialDiagnosis={diagnosis}
-                  initialNotes={notes}
-                  onSaved={handleClinicalSaved}
+                  netAmount={primaryInvoice.netAmount}
+                  patientId={patientId}
+                  onTransferred={handlePaymentAdded}
                 />
               </>
             )}

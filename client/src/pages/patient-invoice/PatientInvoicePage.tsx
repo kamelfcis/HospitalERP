@@ -53,6 +53,8 @@ export default function PatientInvoice() {
   const [distOpen, setDistOpen]               = useState(false);
   const [showDiscountDialog, setShowDiscountDialog] = useState(false);
 
+  const [isFinalClosed, setIsFinalClosed] = useState(false);
+
   // ── OPD Appointment context ──────────────────────────────────────────────────
   const [opdContext, setOpdContext] = useState<{
     appointmentId: string;
@@ -136,6 +138,7 @@ export default function PatientInvoice() {
     payments.resetPayments();
     setSubTab("lines");
     setOpdContext(null);
+    setIsFinalClosed(false);
   }, [form.resetForm, lm.resetLines, payments.resetPayments, userDefaults.warehouseId, userDefaults.departmentId]);
 
   // ── Totals ───────────────────────────────────────────────────────────────────
@@ -385,6 +388,8 @@ export default function PatientInvoice() {
       form.setContractMemberId(data.contractMemberId || "");
       form.setCompanyCoveragePct(parseFloat(data.companyCoveragePct) || 100);
       form.setNotes(data.notes || "");
+      form.setDiagnosis(data.diagnosis || "");
+      setIsFinalClosed(data.isFinalClosed ?? false);
       form.setAdmissionId(data.admissionId || "");
       form.setIsPackage(data.isPackage ?? false);
       form.setStatus(data.status);
@@ -522,6 +527,9 @@ export default function PatientInvoice() {
             onMemberCleared={onMemberCleared}
             notes={form.notes}
             setNotes={form.setNotes}
+            diagnosis={form.diagnosis}
+            setDiagnosis={form.setDiagnosis}
+            isFinalClosed={isFinalClosed}
             subTab={subTab}
             setSubTab={setSubTab}
             lines={lm.lines}

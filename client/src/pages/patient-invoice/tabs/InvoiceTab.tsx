@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -6,8 +7,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeftRight, Stethoscope } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { ArrowLeftRight, Stethoscope, FileCheck, Loader2, Save, Lock } from "lucide-react";
 import { formatCurrency, formatDateShort } from "@/lib/formatters";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 import type { Department, Service, Item, Admission, DoctorTransfer } from "@shared/schema";
 import type { LineLocal, PaymentLocal } from "../types";
 import { InvoiceHeaderBar } from "../components/InvoiceHeaderBar";
@@ -92,6 +96,10 @@ interface InvoiceTabProps {
   notes: string;
   setNotes: (v: string) => void;
 
+  diagnosis: string;
+  setDiagnosis: (v: string) => void;
+  isFinalClosed: boolean;
+
   subTab: string;
   setSubTab: (v: string) => void;
 
@@ -165,6 +173,7 @@ export function InvoiceTab({
   onContractChange, onContractClear,
   contractMemberId, onMemberResolved, onMemberCleared,
   notes, setNotes,
+  diagnosis, setDiagnosis, isFinalClosed,
   subTab, setSubTab,
   lines,
   itemSearch, setItemSearch, setItemResults, itemResults, searchingItems, fefoLoading,
@@ -183,6 +192,14 @@ export function InvoiceTab({
   applyTemplate,
 }: InvoiceTabProps) {
   const [localDtDoctorId, setLocalDtDoctorId] = useState("");
+  const { toast } = useToast();
+
+  const diagnosisEditable = !isFinalClosed;
+  const saveDiagnosisMutation = useMutation({
+    mutationFn: () => apiRequest("PATCH", `/api/patient-invoices/${invoiceId}/clinical-info`, { diagnosis, notes }),
+    onSuccess: () => toast({ title: "تم الحفظ", description: "تم حفظ التشخيص والتقرير الطبي" }),
+    onError: (err: Error) => toast({ title: "خطأ", description: err.message, variant: "destructive" }),
+  });
 
   return (
     <div className="space-y-2">
@@ -242,6 +259,12 @@ export function InvoiceTab({
             <TabsTrigger value="lines" data-testid="tab-lines">بنود الفاتورة</TabsTrigger>
             <TabsTrigger value="payments" data-testid="tab-payments">سداد دفعات</TabsTrigger>
             <TabsTrigger value="consolidated" data-testid="tab-consolidated">فاتورة مجمعة</TabsTrigger>
+            {invoiceId && (
+              <TabsTrigger value="diagnosis" data-testid="tab-diagnosis">
+                <FileCheck className="h-3 w-3 ml-1" />
+                التشخيص والتقرير الطبي
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="lines" className="mt-2">
@@ -290,6 +313,46 @@ export function InvoiceTab({
               getServiceRowClass={getServiceRowClass}
             />
           </TabsContent>
+
+          {invoiceId && (
+            <TabsContent value="diagnosis" className="mt-2">
+              <div className="space-y-4 max-w-2xl">
+                <div className="flex items-center gap-2">
+                  <FileCheck className="h-4 w-4 text-blue-600" />
+                  <h3 className="text-sm font-semibold">التشخيص والتقرير الطبي</h3>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-xs text-muted-foreground">التشخيص</Label>
+                  <Textarea
+                    value={diagnosis}
+                    onChange={e => setDiagnosis(e.target.value)}
+                    disabled={!diagnosisEditable}
+                    placeholder={diagnosisEditable ? "أدخل التشخيص..." : "—"}
+                    rows={4}
+                    className="text-sm resize-none"
+                    data-testid="textarea-diagnosis"
+                  />
+                </div>
+                {isFinalClosed && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Lock className="h-3 w-3" /> مغلق نهائياً — غير قابل للتعديل
+                  </p>
+                )}
+                {diagnosisEditable && (
+                  <Button
+                    size="sm"
+                    className="gap-1"
+                    onClick={() => saveDiagnosisMutation.mutate()}
+                    disabled={saveDiagnosisMutation.isPending}
+                    data-testid="button-save-diagnosis"
+                  >
+                    {saveDiagnosisMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                    حفظ التشخيص
+                  </Button>
+                )}
+              </div>
+            </TabsContent>
+          )}
         </Tabs>
       </div>
 

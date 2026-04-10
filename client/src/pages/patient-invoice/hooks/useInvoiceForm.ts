@@ -19,6 +19,7 @@ export interface InvoiceFormState {
   contractMemberId: string;
   companyCoveragePct: number;
   notes: string;
+  diagnosis: string;
   status: string;
   admissionId: string;
   visitId: string;
@@ -47,6 +48,7 @@ export interface InvoiceFormSetters {
   setContractMemberId: (v: string) => void;
   setCompanyCoveragePct: (v: number) => void;
   setNotes: (v: string) => void;
+  setDiagnosis: (v: string) => void;
   setStatus: (v: string) => void;
   setAdmissionId: (v: string) => void;
   setVisitId: (v: string) => void;
@@ -81,6 +83,7 @@ export function useInvoiceForm(
   const [contractMemberId, setContractMemberId] = useState("");
   const [companyCoveragePct, setCompanyCoveragePct] = useState(100);
   const [notes, setNotes]                 = useState("");
+  const [diagnosis, setDiagnosis]         = useState("");
   const [status, setStatus]               = useState("draft");
   const [admissionId, setAdmissionId]     = useState("");
   const [isPackage, setIsPackage]         = useState(false);
@@ -109,6 +112,7 @@ export function useInvoiceForm(
     setContractMemberId("");
     setCompanyCoveragePct(100);
     setNotes("");
+    setDiagnosis("");
     setAdmissionId("");
     setIsPackage(false);
     setVisitId("");
@@ -136,6 +140,7 @@ export function useInvoiceForm(
     contractMemberId, setContractMemberId,
     companyCoveragePct, setCompanyCoveragePct,
     notes, setNotes,
+    diagnosis, setDiagnosis,
     status, setStatus,
     admissionId, setAdmissionId,
     isPackage, setIsPackage,

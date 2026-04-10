@@ -1,9 +1,9 @@
 import { memo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, User, Phone, CreditCard, Calendar, Bed, Activity, Building2, Receipt } from "lucide-react";
+import { Loader2, User, Phone, CreditCard, Calendar, Bed, Activity, Building2, Receipt, FileCheck } from "lucide-react";
 import { fmtDate, fmtMoney, STATUS_LABELS } from "../shared/formatters";
-import type { FinancialSummary } from "../shared/types";
+import type { FinancialSummary, AggregatedViewData } from "../shared/types";
 
 interface PatientRecord {
   id: string;
@@ -23,6 +23,7 @@ interface Props {
   patient: PatientRecord | undefined;
   financial: FinancialSummary | undefined;
   isLoading: boolean;
+  aggregated?: AggregatedViewData;
 }
 
 function InfoItem({ icon, label, value }: { icon: React.ReactNode; label: string; value?: string | null }) {
@@ -46,7 +47,7 @@ function FinancialCard({ label, amount, colorClass, sub }: { label: string; amou
   );
 }
 
-export const OverviewTab = memo(function OverviewTab({ patient, financial, isLoading }: Props) {
+export const OverviewTab = memo(function OverviewTab({ patient, financial, isLoading, aggregated }: Props) {
   if (isLoading) {
     return (
       <div className="flex justify-center items-center py-16">
@@ -115,6 +116,34 @@ export const OverviewTab = memo(function OverviewTab({ patient, financial, isLoa
                 <span className="font-semibold">{financial.admissionCount}</span>
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {aggregated?.invoices?.some(inv => inv.diagnosis) && (
+        <Card>
+          <CardContent className="p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <FileCheck className="h-4 w-4 text-muted-foreground" />
+              <h3 className="font-semibold text-sm">التشخيص والتقرير الطبي</h3>
+            </div>
+            <div className="flex flex-col gap-3">
+              {aggregated.invoices
+                .filter(inv => inv.diagnosis)
+                .map(inv => (
+                  <div key={inv.id} className="bg-slate-50 border rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">
+                        PI-{inv.invoiceNumber}
+                      </Badge>
+                      {inv.invoiceDate && (
+                        <span className="text-[10px] text-muted-foreground">{fmtDate(inv.invoiceDate)}</span>
+                      )}
+                    </div>
+                    <p className="text-sm whitespace-pre-wrap">{inv.diagnosis}</p>
+                  </div>
+                ))}
+            </div>
           </CardContent>
         </Card>
       )}

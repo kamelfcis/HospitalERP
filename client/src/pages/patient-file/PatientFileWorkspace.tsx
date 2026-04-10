@@ -212,6 +212,7 @@ export const PatientFileWorkspace = memo(function PatientFileWorkspace({ patient
                   patient={patient}
                   financial={financial}
                   isLoading={loadingPatient || loadingFinancial}
+                  aggregated={aggregated}
                 />
               )}
 

@@ -64,6 +64,7 @@ export interface AggregatedInvoice {
   netAmount: number;
   paidAmount: number;
   remaining: number;
+  diagnosis: string | null;
 }
 
 export interface AggregatedViewData {

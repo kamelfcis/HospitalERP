@@ -782,6 +782,7 @@ export function registerPatientsRoutes(app: Express) {
           h.final_closed_at,
           h.final_closed_by,
           h.visit_id,
+          h.diagnosis,
           COALESCE(d.name_ar, '—') AS department_name
         FROM patient_invoice_headers h
         LEFT JOIN departments d ON d.id = h.department_id
@@ -799,7 +800,7 @@ export function registerPatientsRoutes(app: Express) {
         doctor_name: string | null; contract_name: string | null;
         created_at: string; department_id: string | null; department_name: string;
         is_final_closed: boolean | null; final_closed_at: string | null; final_closed_by: string | null;
-        visit_id: string | null;
+        visit_id: string | null; diagnosis: string | null;
       }>;
 
       if (headers.length === 0) {
@@ -980,6 +981,7 @@ export function registerPatientsRoutes(app: Express) {
         netAmount: round2(n(h.net_amount)),
         paidAmount: round2(n(h.paid_amount)),
         remaining: round2(n(h.net_amount) - n(h.paid_amount)),
+        diagnosis: h.diagnosis ?? null,
       }));
 
       return res.json({
