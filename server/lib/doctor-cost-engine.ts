@@ -8,6 +8,7 @@ interface LineInput {
   quantity?: string | null;
   totalPrice?: string | null;
   description?: string | null;
+  doctorId?: string | null;
   doctorName?: string | null;
   sortOrder?: number | null;
   sourceType?: string | null;
@@ -17,6 +18,7 @@ interface LineInput {
 }
 
 interface DoctorCostOptions {
+  headerDoctorId?: string | null;
   headerDoctorName?: string | null;
 }
 
@@ -41,7 +43,8 @@ export async function injectDoctorCostLines<L extends LineInput>(
   );
   if (shareMap.size === 0) return lines;
 
-  const headerDoctor = opts?.headerDoctorName || null;
+  const headerDoctorId = opts?.headerDoctorId || null;
+  const headerDoctorName = opts?.headerDoctorName || null;
 
   const result: L[] = [];
   let sortIdx = 0;
@@ -62,7 +65,8 @@ export async function injectDoctorCostLines<L extends LineInput>(
         ? lineTotal * (share.value / 100)
         : share.value;
 
-    const effectiveDoctorName = line.doctorName || headerDoctor;
+    const effectiveDoctorId = line.doctorId || headerDoctorId;
+    const effectiveDoctorName = line.doctorName || headerDoctorName;
 
     result.push({
       ...({} as L),
@@ -76,7 +80,9 @@ export async function injectDoctorCostLines<L extends LineInput>(
       discountAmount: "0",
       totalPrice: roundMoney(costAmount),
       unitLevel: "minor",
+      doctorId: effectiveDoctorId,
       doctorName: effectiveDoctorName,
+      costSubtype: "doctor",
       notes: `${share.type === "percentage" ? share.value + "%" : share.value + " ج.م"} من ${line.description || ""}`,
       sortOrder: sortIdx++,
       sourceType: "DOCTOR_COST",

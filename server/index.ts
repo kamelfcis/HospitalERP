@@ -1214,7 +1214,39 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] expiry backfill error");
   }
 
-  // ── 5i. Listen ────────────────────────────────────────────────────────────
+  // ── 5i. Backfill doctor_id on patient invoice headers and lines ──────────
+  try {
+    const hdrFix = await db.execute(sql`
+      UPDATE patient_invoice_headers h
+      SET    doctor_id  = d.id,
+             updated_at = NOW()
+      FROM   doctors d
+      WHERE  h.doctor_id IS NULL
+        AND  h.doctor_name IS NOT NULL
+        AND  h.doctor_name != ''
+        AND  LOWER(TRIM(h.doctor_name)) = LOWER(TRIM(d.name))
+    `);
+    const hdrFixed = (hdrFix as any).rowCount ?? 0;
+
+    const lineFix = await db.execute(sql`
+      UPDATE patient_invoice_lines l
+      SET    doctor_id = d.id
+      FROM   doctors d
+      WHERE  l.doctor_id IS NULL
+        AND  l.doctor_name IS NOT NULL
+        AND  l.doctor_name != ''
+        AND  LOWER(TRIM(l.doctor_name)) = LOWER(TRIM(d.name))
+    `);
+    const lineFixed = (lineFix as any).rowCount ?? 0;
+
+    if (hdrFixed > 0 || lineFixed > 0) {
+      log(`[STARTUP] doctor_id backfill: ${hdrFixed} header(s), ${lineFixed} line(s) linked`);
+    }
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] doctor_id backfill error");
+  }
+
+  // ── 5j. Listen ────────────────────────────────────────────────────────────
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen({ port, host: "0.0.0.0", reusePort: true }, () => {
     log(`serving on port ${port}`);

@@ -9,7 +9,9 @@ export interface InvoiceFormState {
   patientId: string;
   patientCode: string;
   departmentId: string;
+  doctorId: string;
   doctorName: string;
+  billingMode: "hospital_collect" | "doctor_collect";
   patientType: "cash" | "contract";
   contractName: string;
   contractId: string;
@@ -35,7 +37,9 @@ export interface InvoiceFormSetters {
   setPatientId: (v: string) => void;
   setPatientCode: (v: string) => void;
   setDepartmentId: (v: string) => void;
+  setDoctorId: (v: string) => void;
   setDoctorName: (v: string) => void;
+  setBillingMode: (v: "hospital_collect" | "doctor_collect") => void;
   setPatientType: (v: "cash" | "contract") => void;
   setContractName: (v: string) => void;
   setContractId: (v: string) => void;
@@ -67,7 +71,9 @@ export function useInvoiceForm(
   const [patientId, setPatientId]         = useState("");
   const [patientCode, setPatientCode]     = useState("");
   const [departmentId, setDepartmentId]   = useState("");
+  const [doctorId, setDoctorId]           = useState("");
   const [doctorName, setDoctorName]       = useState("");
+  const [billingMode, setBillingMode]     = useState<"hospital_collect" | "doctor_collect">("hospital_collect");
   const [patientType, setPatientType]     = useState<"cash" | "contract">("cash");
   const [contractName, setContractName]   = useState("");
   const [contractId, setContractId]       = useState("");
@@ -92,7 +98,9 @@ export function useInvoiceForm(
     setPatientCode("");
     setDepartmentId(defaults?.departmentId ?? userDefaults?.departmentId ?? "");
     setWarehouseId(defaults?.warehouseId ?? userDefaults?.warehouseId ?? "");
+    setDoctorId("");
     setDoctorName("");
+    setBillingMode("hospital_collect");
     setPatientType("cash");
     setContractName("");
     setContractId("");
@@ -116,7 +124,9 @@ export function useInvoiceForm(
     patientId, setPatientId,
     patientCode, setPatientCode,
     departmentId, setDepartmentId,
+    doctorId, setDoctorId,
     doctorName, setDoctorName,
+    billingMode, setBillingMode,
     patientType, setPatientType,
     contractName, setContractName,
     contractId, setContractId,

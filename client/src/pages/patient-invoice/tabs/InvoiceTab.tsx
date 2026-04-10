@@ -58,8 +58,12 @@ interface InvoiceTabProps {
   onPatientChange: (id: string, name: string, patientCode?: string | null) => void;
   onPatientClear: () => void;
 
+  doctorId: string;
+  setDoctorId: (v: string) => void;
   doctorName: string;
   setDoctorName: (v: string) => void;
+  billingMode: "hospital_collect" | "doctor_collect";
+  setBillingMode: (v: "hospital_collect" | "doctor_collect") => void;
 
   departmentId: string;
   setDepartmentId: (v: string) => void;
@@ -151,7 +155,8 @@ export function InvoiceTab({
   status, isDraft,
   patientId, patientName, patientCode, patientPhone, setPatientPhone,
   onPatientChange, onPatientClear,
-  doctorName, setDoctorName,
+  doctorId, setDoctorId, doctorName, setDoctorName,
+  billingMode, setBillingMode,
   departmentId, setDepartmentId, departments,
   warehouseId, setWarehouseId, warehouses,
   admissionId, setAdmissionId, activeAdmissions,
@@ -196,8 +201,12 @@ export function InvoiceTab({
         setPatientPhone={setPatientPhone}
         onPatientChange={onPatientChange}
         onPatientClear={onPatientClear}
+        doctorId={doctorId}
+        setDoctorId={setDoctorId}
         doctorName={doctorName}
         setDoctorName={setDoctorName}
+        billingMode={billingMode}
+        setBillingMode={setBillingMode}
         departmentId={departmentId}
         setDepartmentId={setDepartmentId}
         departments={departments}

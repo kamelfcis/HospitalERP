@@ -32,7 +32,9 @@ interface UseAutoSaveParams {
   patientType:      "cash" | "contract";
   departmentId:     string;
   warehouseId:      string;
+  doctorId:         string;
   doctorName:       string;
+  billingMode:      string;
   contractName:     string;
   contractId:       string;
   companyId:        string;
@@ -58,7 +60,7 @@ function canAutoSave(p: UseAutoSaveParams): boolean {
 function buildAutoSavePayload(params: UseAutoSaveParams) {
   const {
     invoiceNumber, invoiceDate, patientName, patientPhone, patientId,
-    patientType, departmentId, warehouseId, doctorName,
+    patientType, departmentId, warehouseId, doctorId, doctorName, billingMode,
     contractName, contractId, companyId, contractMemberId,
     notes, admissionId, totals, lines, payments,
   } = params;
@@ -70,7 +72,9 @@ function buildAutoSavePayload(params: UseAutoSaveParams) {
     patientType,
     departmentId: departmentId || null,
     warehouseId: warehouseId || null,
+    doctorId: doctorId || null,
     doctorName: doctorName || null,
+    billingMode: billingMode || "hospital_collect",
     contractName: patientType === "contract" ? contractName : null,
     contractId: patientType === "contract" ? contractId || null : null,
     companyId: patientType === "contract" ? companyId || null : null,
@@ -179,7 +183,7 @@ export function useAutoSave(params: UseAutoSaveParams) {
   }, [
     params.formStatus, params.invoiceId, params.invoiceNumber, params.invoiceDate,
     params.patientName, params.patientPhone, params.patientId, params.patientType,
-    params.departmentId, params.warehouseId, params.doctorName,
+    params.departmentId, params.warehouseId, params.doctorId, params.doctorName, params.billingMode,
     params.contractName, params.contractId, params.companyId, params.contractMemberId,
     params.notes, params.admissionId, params.lines, params.payments,
     params.totals, performAutoSave,

@@ -47,8 +47,12 @@ interface InvoiceHeaderBarProps {
   onPatientChange: (id: string, name: string, patientCode?: string | null) => void;
   onPatientClear: () => void;
 
+  doctorId: string;
+  setDoctorId: (v: string) => void;
   doctorName: string;
   setDoctorName: (v: string) => void;
+  billingMode: "hospital_collect" | "doctor_collect";
+  setBillingMode: (v: "hospital_collect" | "doctor_collect") => void;
 
   departmentId: string;
   setDepartmentId: (v: string) => void;
@@ -91,7 +95,8 @@ export function InvoiceHeaderBar({
   status, isDraft,
   patientId, patientName, patientCode, patientPhone, setPatientPhone,
   onPatientChange, onPatientClear,
-  doctorName, setDoctorName,
+  doctorId, setDoctorId, doctorName, setDoctorName,
+  billingMode, setBillingMode,
   departmentId, setDepartmentId, departments, deptLocked,
   warehouseId, setWarehouseId, warehouses, whLocked,
   admissionId, setAdmissionId, activeAdmissions,
@@ -106,7 +111,6 @@ export function InvoiceHeaderBar({
   getStatusBadgeClass,
 }: InvoiceHeaderBarProps) {
   const { toast } = useToast();
-  const [localDoctorId, setLocalDoctorId] = useState("");
 
   // ── collapse: new invoice→expanded, loaded invoice→collapsed ─────────────
   const [expanded, setExpanded] = useState(!invoiceId);
@@ -438,8 +442,20 @@ export function InvoiceHeaderBar({
               <div className="flex items-center gap-0.5 shrink-0">
                 <span className="text-[10px] text-muted-foreground">طبيب</span>
                 <div className="w-36">
-                  <DoctorLookup value={localDoctorId} displayValue={doctorName} onChange={(item) => { setLocalDoctorId(item?.id || ""); setDoctorName(item?.name || ""); }} disabled={!isDraft} data-testid="lookup-invoice-doctor" />
+                  <DoctorLookup value={doctorId} displayValue={doctorName} onChange={(item) => { setDoctorId(item?.id || ""); setDoctorName(item?.name || ""); }} disabled={!isDraft} data-testid="lookup-invoice-doctor" />
                 </div>
+              </div>
+              <div className="flex items-center gap-0.5 shrink-0">
+                <span className="text-[10px] text-muted-foreground">طريقة التحصيل</span>
+                <Select value={billingMode} onValueChange={(v) => setBillingMode(v as "hospital_collect" | "doctor_collect")} disabled={!isDraft}>
+                  <SelectTrigger className="h-6 text-[11px] w-28 px-1" data-testid="select-billing-mode">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="hospital_collect">تحصيل المستشفى</SelectItem>
+                    <SelectItem value="doctor_collect">تحصيل الطبيب</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 

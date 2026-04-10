@@ -78,9 +78,14 @@ export const doctors = pgTable("doctors", {
   name: text("name").notNull(),
   specialty: text("specialty"),
   isActive: boolean("is_active").notNull().default(true),
+  payableAccountId: varchar("payable_account_id").references(() => accounts.id),
+  receivableAccountId: varchar("receivable_account_id").references(() => accounts.id),
+  financialMode: text("financial_mode").notNull().default("payable_only"),
+  costCenterId: varchar("cost_center_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   nameIdx: index("idx_doctors_name").on(table.name),
+  financialModeIdx: index("idx_doctors_financial_mode").on(table.financialMode),
 }));
 
 // ─── الكاشير ───────────────────────────────────────────────────────────────

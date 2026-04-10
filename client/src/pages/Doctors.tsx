@@ -10,7 +10,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/formatters";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Search, Edit2, Trash2, Stethoscope, FileText } from "lucide-react";
+import { AccountLookup } from "@/components/lookups";
 import type { Doctor, InsertDoctor } from "@shared/schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -36,11 +38,22 @@ function DoctorFormDialog({
   const { toast } = useToast();
   const [name, setName]         = useState(doctor?.name ?? "");
   const [specialty, setSpecialty] = useState(doctor?.specialty ?? "");
+  const [financialMode, setFinancialMode] = useState(doctor?.financialMode ?? "payable_only");
+  const [payableAccountId, setPayableAccountId] = useState(doctor?.payableAccountId ?? "");
+  const [receivableAccountId, setReceivableAccountId] = useState(doctor?.receivableAccountId ?? "");
+  const [costCenterId, setCostCenterId] = useState(doctor?.costCenterId ?? "");
 
   const save = useMutation({
     mutationFn: async () => {
       if (!name.trim()) throw new Error("اسم الطبيب مطلوب");
-      const body: Partial<InsertDoctor> = { name: name.trim(), specialty: specialty.trim() || null };
+      const body: Partial<InsertDoctor> = {
+        name: name.trim(),
+        specialty: specialty.trim() || null,
+        financialMode,
+        payableAccountId: payableAccountId || null,
+        receivableAccountId: receivableAccountId || null,
+        costCenterId: costCenterId || null,
+      };
       return doctor
         ? apiRequest("PATCH", `/api/doctors/${doctor.id}`, body)
         : apiRequest("POST", "/api/doctors", body);
@@ -56,32 +69,70 @@ function DoctorFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-sm p-4" dir="rtl">
+      <DialogContent className="max-w-md p-4" dir="rtl">
         <DialogHeader className="pb-2">
           <DialogTitle className="text-sm font-bold">
             {doctor ? "تعديل بيانات طبيب" : "إضافة طبيب جديد"}
           </DialogTitle>
         </DialogHeader>
         <div className="grid gap-3 py-2">
-          <div className="space-y-1">
-            <Label className="text-xs">اسم الطبيب *</Label>
-            <input
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="اسم الطبيب"
-              className="peachtree-input w-full text-xs"
-              data-testid="input-doctor-name"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">اسم الطبيب *</Label>
+              <input
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="اسم الطبيب"
+                className="peachtree-input w-full text-xs"
+                data-testid="input-doctor-name"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">التخصص</Label>
+              <input
+                value={specialty}
+                onChange={e => setSpecialty(e.target.value)}
+                placeholder="التخصص (اختياري)"
+                className="peachtree-input w-full text-xs"
+                data-testid="input-doctor-specialty"
+              />
+            </div>
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs">التخصص</Label>
-            <input
-              value={specialty}
-              onChange={e => setSpecialty(e.target.value)}
-              placeholder="التخصص (اختياري)"
-              className="peachtree-input w-full text-xs"
-              data-testid="input-doctor-specialty"
-            />
+          <div className="border-t pt-3 space-y-3">
+            <Label className="text-xs font-semibold text-muted-foreground">الإعدادات المالية</Label>
+            <div className="space-y-1">
+              <Label className="text-xs">النموذج المالي</Label>
+              <Select value={financialMode} onValueChange={setFinancialMode}>
+                <SelectTrigger className="h-7 text-xs" data-testid="select-financial-mode">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="payable_only">مستحق فقط (payable)</SelectItem>
+                  <SelectItem value="hospital_collect">تحصيل المستشفى</SelectItem>
+                  <SelectItem value="doctor_collect">تحصيل الطبيب</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">حساب الدائنين (مستحقات الطبيب)</Label>
+                <AccountLookup
+                  value={payableAccountId}
+                  onChange={(item) => setPayableAccountId(item?.id || "")}
+                  placeholder="حساب الدائنين..."
+                  data-testid="lookup-doctor-payable"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">حساب المدينين</Label>
+                <AccountLookup
+                  value={receivableAccountId}
+                  onChange={(item) => setReceivableAccountId(item?.id || "")}
+                  placeholder="حساب المدينين..."
+                  data-testid="lookup-doctor-receivable"
+                />
+              </div>
+            </div>
           </div>
         </div>
         <DialogFooter className="gap-1 pt-2">

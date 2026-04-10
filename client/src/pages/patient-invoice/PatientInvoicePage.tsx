@@ -175,7 +175,9 @@ export default function PatientInvoice() {
     patientType:      form.patientType,
     departmentId:     form.departmentId,
     warehouseId:      form.warehouseId,
+    doctorId:         form.doctorId,
     doctorName:       form.doctorName,
+    billingMode:      form.billingMode,
     contractName:     form.contractName,
     contractId:       form.contractId,
     companyId:        form.companyId,
@@ -210,7 +212,9 @@ export default function PatientInvoice() {
     patientType:      form.patientType,
     departmentId:     form.departmentId,
     warehouseId:      form.warehouseId,
+    doctorId:         form.doctorId,
     doctorName:       form.doctorName,
+    billingMode:      form.billingMode,
     contractName:     form.contractName,
     contractId:       form.contractId,
     companyId:        form.companyId,
@@ -488,8 +492,12 @@ export default function PatientInvoice() {
             setPatientPhone={form.setPatientPhone}
             onPatientChange={onPatientChange}
             onPatientClear={onPatientClear}
+            doctorId={form.doctorId}
+            setDoctorId={form.setDoctorId}
             doctorName={form.doctorName}
             setDoctorName={form.setDoctorName}
+            billingMode={form.billingMode}
+            setBillingMode={form.setBillingMode}
             departmentId={form.departmentId}
             setDepartmentId={form.setDepartmentId}
             departments={visibleDepartments}

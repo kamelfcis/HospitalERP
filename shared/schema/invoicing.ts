@@ -337,7 +337,9 @@ export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   visitGroupId: varchar("visit_group_id"),
   isConsolidated: boolean("is_consolidated").notNull().default(false),
   sourceInvoiceIds: text("source_invoice_ids"),
+  doctorId: varchar("doctor_id"),
   doctorName: text("doctor_name"),
+  billingMode: text("billing_mode").notNull().default("hospital_collect"),
   contractName: text("contract_name"),
   // ── Contract FK fields (nullable — Phase 1 foundation) ───────────────────
   companyId:        varchar("company_id").references(() => companies.id),
@@ -371,6 +373,8 @@ export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   dateIdx: index("idx_pat_inv_date").on(table.invoiceDate),
   patientIdx: index("idx_pat_inv_patient").on(table.patientName),
   doctorIdx: index("idx_pat_inv_doctor").on(table.doctorName),
+  doctorIdIdx: index("idx_pat_inv_doctor_id").on(table.doctorId),
+  billingModeIdx: index("idx_pat_inv_billing_mode").on(table.billingMode),
   statusIdx: index("idx_pat_inv_status").on(table.status),
   admissionIdx: index("idx_pat_inv_admission").on(table.admissionId),
   patientIdIdx: index("idx_pat_inv_patient_id").on(table.patientId),
@@ -407,7 +411,9 @@ export const patientInvoiceLines = pgTable("patient_invoice_lines", {
   expiryMonth: integer("expiry_month"),
   expiryYear: integer("expiry_year"),
   priceSource: text("price_source"),
+  doctorId: varchar("doctor_id"),
   doctorName: text("doctor_name"),
+  costSubtype: text("cost_subtype"),
   nurseName: text("nurse_name"),
   notes: text("notes"),
   sortOrder: integer("sort_order").notNull().default(0),
@@ -457,6 +463,8 @@ export const patientInvoiceLines = pgTable("patient_invoice_lines", {
   // ── فهارس التصنيف التجاري — للتقارير والـ grouping ──────────────────────────
   bizClassIdx:       index("idx_invoice_lines_classification").on(table.businessClassification),
   bizClassHeaderIdx: index("idx_invoice_lines_invoice_class").on(table.headerId, table.businessClassification),
+  doctorIdIdx:       index("idx_pat_line_doctor_id").on(table.doctorId),
+  costSubtypeIdx:    index("idx_pat_line_cost_subtype").on(table.costSubtype),
 }));
 
 export const patientInvoicePayments = pgTable("patient_invoice_payments", {

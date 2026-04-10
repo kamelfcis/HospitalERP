@@ -1,0 +1,309 @@
+أنا عندي نظام ERP لمستشفى (React + Node + PostgreSQL) وفيه:
+
+* Patient Invoices (Headers + Lines)
+* Invoice Lines أنواعها:
+  service / item / consumable / gas / equipment
+* يوجد Doctor Cost system (يولد cost line تلقائي)
+* Account Mapping مسؤول عن القيود
+* Cost Centers موجودة
+* حالياً يتم تخزين doctorName كنص فقط (بدون doctor_id)
+
+أريد إعادة تصميم نظام الأطباء بالكامل ليكون:
+
+✔ Relational (doctor_id)
+✔ Financially accurate (Payable + Receivable)
+✔ متكامل مع Doctor Cost Engine
+✔ بدون كسر النظام الحالي
+
+========================
+🔴 أولاً: Core Problem
+======================
+
+* doctorName (text) غير كافي
+* لا يمكن عمل:
+
+  * مستحقات أطباء دقيقة
+  * تقارير مالية صحيحة
+  * ربط محاسبي سليم
+
+========================
+🔴 ثانياً: Database Design
+==========================
+
+1. إنشاء جدول doctors:
+
+* id (uuid PK)
+
+* name (text)
+
+* specialty (optional)
+
+* is_active (boolean)
+
+* payable_account_id (FK → accounts)
+
+* receivable_account_id (FK → accounts)
+
+* financial_mode:
+
+  * payable_only
+  * receivable_only
+  * both
+
+* cost_center_id (optional)
+
+---
+
+2. تعديل patient_invoice_headers:
+
+* doctor_id (uuid FK nullable)
+
+* doctorName (existing — for migration only)
+
+* billing_mode:
+
+  * hospital_collect
+  * doctor_collect
+
+---
+
+3. تعديل patient_invoice_lines:
+
+* line_type:
+  service / item / consumable / gas / equipment / cost
+
+* cost_subtype:
+  doctor / nursing / anesthesia
+
+* doctor_id (uuid nullable)
+
+* linked_line_id (FK self reference)
+
+* is_cost_line (boolean)
+
+* affects_patient_total (boolean)
+
+========================
+🔴 ثالثاً: Doctor Source Rule (VERY IMPORTANT)
+==============================================
+
+✔ النظام يعتمد على:
+invoice.doctor_id (المحدد في الاستقبال)
+
+❌ لا يعتمد على line.doctorName كنص
+
+Priority:
+
+1. line.doctor_id (لو موجود مستقبلاً)
+2. invoice.doctor_id (الأساسي)
+3. fallback: doctorName (migration only)
+
+========================
+🔴 رابعاً: Doctor Cost Engine (Critical Fix)
+============================================
+
+تعديل engine ليعمل كالتالي:
+
+Input:
+
+* lines
+* header_doctor_id
+* header_doctor_name
+
+---
+
+Logic:
+
+* عند إضافة Service:
+
+  * قراءة doctor_share من service
+
+* حساب cost:
+
+if percentage:
+cost = service_price * percentage
+else:
+cost = fixed
+
+---
+
+إنشاء cost line:
+
+* line_type = cost
+
+* cost_subtype = doctor
+
+* doctor_id = header_doctor_id
+
+* doctor_name = header_doctor_name
+
+* linked_line_id = service_line_id
+
+---
+
+Rules:
+
+* cost line auto-generated
+* read-only
+* لا يمكن تعديله أو حذفه
+* يتم تحديثه عند:
+
+  * تغيير السعر
+  * تغيير الكمية
+  * حذف السطر الأساسي
+
+========================
+🔴 خامساً: Accounting Logic
+===========================
+
+Case 1: hospital_collect
+
+Revenue:
+Dr Cash / Patient
+Cr Revenue
+
+Doctor Cost:
+Dr Cost of Doctors
+Cr Doctor Payable Account (من جدول doctors)
+
+---
+
+Case 2: doctor_collect
+
+Revenue:
+Dr Doctor Receivable Account
+Cr Revenue
+
+* لا يتم إنشاء doctor_cost line
+
+========================
+🔴 سادساً: Account Mapping
+==========================
+
+إضافة line_type:
+
+doctor_cost
+
+Mapping:
+
+Debit:
+
+* Cost of Doctors
+
+Credit:
+
+* Doctor Payable
+
+---
+
+Rules:
+
+* لا يتم hardcoding الحسابات
+* validation قبل finalize
+
+========================
+🔴 سابعاً: Frontend
+===================
+
+1. Doctor Selection:
+
+* Dropdown من doctors table
+* تخزين doctor_id فقط
+* عرض doctorName فقط
+
+---
+
+2. Invoice UI:
+
+* عرض cost line داخل الجدول
+
+* Badge: "Cost Only"
+
+* لون مميز
+
+* لا يدخل في إجمالي الفاتورة
+
+---
+
+3. Controls:
+
+* منع تعديل cost line
+* منع الحذف
+* تحديث تلقائي
+
+========================
+🔴 ثامناً: Migration Plan (NO BREAK)
+====================================
+
+Step 1:
+
+* إنشاء جدول doctors
+
+Step 2:
+
+* استخراج doctorName distinct
+
+Step 3:
+
+* إدخالهم في doctors
+
+Step 4:
+
+* mapping:
+  doctorName → doctor_id
+
+Step 5:
+
+* تحديث البيانات
+
+Step 6:
+
+* استخدام doctor_id في الإدخال الجديد
+
+Step 7:
+
+* إلغاء doctorName تدريجياً
+
+========================
+🔴 تاسعاً: Controls
+===================
+
+* منع Finalize إذا:
+
+  * doctor_id فارغ
+  * billing_mode غير صالح
+  * الحسابات غير مربوطة
+
+* Audit Log:
+
+  * doctor_id
+  * doctor share
+  * billing_mode
+
+========================
+🔴 عاشراً: Performance
+======================
+
+* index على doctor_id
+* batch queries
+* منع N+1
+
+========================
+🔴 Constraints
+==============
+
+* عدم كسر النظام الحالي
+* الحفاظ على Account Mapping
+* الحفاظ على invoice structure
+* عدم استخدام hardcoded values
+
+========================
+
+اعمل لي:
+
+1. SQL migrations
+2. Data migration script
+3. Backend updates (routes + engine)
+4. Frontend updates (doctor dropdown)
+5. Accounting integration
+6. Step-by-step rollout بدون downtime

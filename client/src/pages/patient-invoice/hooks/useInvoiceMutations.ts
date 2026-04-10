@@ -23,7 +23,9 @@ interface UseInvoiceMutationsParams {
   patientType: "cash" | "contract";
   departmentId: string;
   warehouseId: string;
+  doctorId: string;
   doctorName: string;
+  billingMode: string;
   contractName: string;
   contractId: string;
   companyId: string;
@@ -41,8 +43,8 @@ interface UseInvoiceMutationsParams {
 
 export function useInvoiceMutations({
   invoiceId, invoiceNumber, invoiceDate, patientName, patientPhone,
-  patientId, patientType, departmentId, warehouseId, doctorName, contractName,
-  contractId, companyId, contractMemberId,
+  patientId, patientType, departmentId, warehouseId, doctorId, doctorName, billingMode,
+  contractName, contractId, companyId, contractMemberId,
   notes, admissionId, visitId, totals, lines, payments,
   setInvoiceId, setStatus, resetAll,
 }: UseInvoiceMutationsParams) {
@@ -60,7 +62,9 @@ export function useInvoiceMutations({
       patientType,
       departmentId: departmentId || null,
       warehouseId: warehouseId || null,
+      doctorId: doctorId || null,
       doctorName: doctorName || null,
+      billingMode: billingMode || "hospital_collect",
       contractName: patientType === "contract" ? contractName : null,
       contractId: patientType === "contract" ? contractId || null : null,
       companyId: patientType === "contract" ? companyId || null : null,

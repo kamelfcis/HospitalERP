@@ -22,6 +22,7 @@ import {
   insertPatientInvoicePaymentSchema,
   patientInvoiceHeaders,
   patientInvoiceLines,
+  doctors,
 } from "@shared/schema";
 import { resolveBusinessClassificationWithMeta } from "@shared/resolve-business-classification";
 import { applyContractCoverage } from "../lib/patient-invoice-coverage";
@@ -136,6 +137,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
       auditContractPriceOverrides(linesParsed, (headerParsed as any).contractId, req.session.userId);
 
       linesParsed = await injectDoctorCostLines(linesParsed, {
+        headerDoctorId: (headerParsed as any).doctorId ?? null,
         headerDoctorName: (headerParsed as any).doctorName ?? null,
       });
 
@@ -213,6 +215,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
       auditContractPriceOverrides(linesParsed, (headerParsed as any).contractId, req.session.userId);
 
       linesParsed = await injectDoctorCostLines(linesParsed, {
+        headerDoctorId: (headerParsed as any).doctorId ?? null,
         headerDoctorName: (headerParsed as any).doctorName ?? null,
       });
 
@@ -471,6 +474,14 @@ export function registerPatientInvoicesRoutes(app: Express) {
 
         const glLines = storage.buildPatientInvoiceGLLines(result, invoiceLines.lines || []);
 
+        const dynamicAccountOverrides: Record<string, { debitAccountId?: string | null; creditAccountId?: string | null }> = {};
+        if (result.doctorId) {
+          const [doc] = await db.select({ payableAccountId: doctors.payableAccountId }).from(doctors).where(eq(doctors.id, result.doctorId)).limit(1);
+          if (doc?.payableAccountId) {
+            dynamicAccountOverrides["doctor_cost"] = { creditAccountId: doc.payableAccountId };
+          }
+        }
+
         // Set source doc + event log to "pending" BEFORE fire-and-forget
         await db.update(patientInvoiceHeaders).set({ journalStatus: "pending", updatedAt: new Date() }).where(eq(patientInvoiceHeaders.id, invoiceId));
         await logAcctEvent({ sourceType: "patient_invoice", sourceId: invoiceId, eventType: "patient_invoice_journal", status: "pending" });
@@ -482,6 +493,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
           description: `قيد فاتورة مريض رقم ${result.invoiceNumber} - ${result.patientName}`,
           entryDate: result.invoiceDate,
           lines: glLines,
+          ...(Object.keys(dynamicAccountOverrides).length > 0 ? { dynamicAccountOverrides } : {}),
         }).then(async (entry) => {
           if (entry) {
             await db.update(patientInvoiceHeaders).set({ journalStatus: "posted", journalError: null, updatedAt: new Date() }).where(eq(patientInvoiceHeaders.id, invoiceId));
