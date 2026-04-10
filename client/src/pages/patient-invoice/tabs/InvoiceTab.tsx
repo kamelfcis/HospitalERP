@@ -36,6 +36,8 @@ interface Totals {
   netAmount: number;
   paidAmount: number;
   remaining: number;
+  companyShareTotal?: number;
+  patientShareTotal?: number;
 }
 
 interface InvoiceTabProps {
@@ -282,7 +284,7 @@ export function InvoiceTab({
 
       <div className="border rounded-md p-2">
         <div className="flex flex-row-reverse items-center gap-2">
-          <TotalsSummaryCard totals={totals} />
+          <TotalsSummaryCard totals={totals} patientType={patientType} />
           {isDraft && canDiscount && invoiceId && (
             <Button
               size="sm"

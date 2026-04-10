@@ -145,6 +145,8 @@ export default function PatientInvoice() {
     const netAmount    = totalAmount - totalDiscount - form.headerDiscountAmount;
     const paidAmount   = payments.payments.reduce((s, p) => s + p.amount, 0);
     const remaining    = netAmount - paidAmount;
+    const companyShareTotal = lm.lines.reduce((s, l) => s + parseFloat(l.companyShareAmount || "0"), 0);
+    const patientShareTotal = lm.lines.reduce((s, l) => s + parseFloat(l.patientShareAmount || "0"), 0);
     return {
       totalAmount:          +totalAmount.toFixed(2),
       discountAmount:       +totalDiscount.toFixed(2),
@@ -153,6 +155,8 @@ export default function PatientInvoice() {
       netAmount:            +netAmount.toFixed(2),
       paidAmount:           +paidAmount.toFixed(2),
       remaining:            +remaining.toFixed(2),
+      companyShareTotal:    +companyShareTotal.toFixed(2),
+      patientShareTotal:    +patientShareTotal.toFixed(2),
     };
   }, [lm.lines, payments.payments, form.headerDiscountAmount, form.headerDiscountPercent]);
 
