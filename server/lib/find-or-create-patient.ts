@@ -11,6 +11,7 @@
  */
 
 import { pool } from "../db";
+import { normalizeArabicName } from "../services/patient-dedup";
 
 export interface FoundOrCreatedPatient {
   id: string;
@@ -27,11 +28,12 @@ export async function findOrCreatePatient(
   const trimmedName = fullName.trim().replace(/\s+/g, " ");
   if (!trimmedName) throw new Error("اسم المريض لا يمكن أن يكون فارغاً");
 
+  const normName = normalizeArabicName(trimmedName);
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // 1. البحث عن مريض بنفس الاسم (case-insensitive)
     const { rows: found } = await client.query<{
       id: string;
       patient_code: string | null;
@@ -41,8 +43,9 @@ export async function findOrCreatePatient(
       `SELECT id, patient_code, full_name, phone
        FROM patients
        WHERE LOWER(TRIM(full_name)) = LOWER($1)
+          OR normalized_full_name = $2
        LIMIT 1`,
-      [trimmedName],
+      [trimmedName, normName],
     );
 
     if (found.length > 0) {
@@ -56,7 +59,6 @@ export async function findOrCreatePatient(
       };
     }
 
-    // 2. توليد كود مريض تسلسلي
     const { rows: maxRows } = await client.query<{ max_code: string | null }>(
       `SELECT patient_code AS max_code
        FROM patients
@@ -71,17 +73,16 @@ export async function findOrCreatePatient(
     }
     const patientCode = `PAT-${String(nextNum).padStart(6, "0")}`;
 
-    // 3. إنشاء ملف المريض
     const { rows: created } = await client.query<{
       id: string;
       patient_code: string | null;
       full_name: string;
       phone: string | null;
     }>(
-      `INSERT INTO patients (full_name, patient_code, phone, is_active, created_at)
-       VALUES ($1, $2, $3, true, NOW())
+      `INSERT INTO patients (full_name, normalized_full_name, patient_code, phone, is_active, created_at)
+       VALUES ($1, $2, $3, $4, true, NOW())
        RETURNING id, patient_code, full_name, phone`,
-      [trimmedName, patientCode, phone?.trim() || null],
+      [trimmedName, normName, patientCode, phone?.trim() || null],
     );
 
     await client.query("COMMIT");

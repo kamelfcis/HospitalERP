@@ -13,6 +13,7 @@
 
 import { db } from "../db";
 import { getSetting } from "../settings-cache";
+import { normalizeArabicName } from "../services/patient-dedup";
 import { eq, and, sql, asc, ilike } from "drizzle-orm";
 import { buildStayLineSQL } from "../lib/stay-engine";
 import {
@@ -152,13 +153,14 @@ const methods = {
       let resolvedPatientId: string | null = params.patientId || null;
 
       if (!resolvedPatientId) {
+        const normName = normalizeArabicName(params.patientName);
         const existingPatient = await tx.execute(
-          sql`SELECT id FROM patients WHERE full_name = ${params.patientName} AND is_active = true LIMIT 1`
+          sql`SELECT id FROM patients WHERE LOWER(TRIM(full_name)) = LOWER(${params.patientName}) OR normalized_full_name = ${normName} LIMIT 1`
         );
         if (existingPatient.rows.length === 0) {
           const newPat = await tx.execute(sql`
-            INSERT INTO patients (id, full_name, phone, national_id, age, is_active, created_at)
-            VALUES (gen_random_uuid(), ${params.patientName}, ${params.patientPhone || null}, null, null, true, NOW())
+            INSERT INTO patients (id, full_name, normalized_full_name, phone, national_id, age, is_active, created_at)
+            VALUES (gen_random_uuid(), ${params.patientName}, ${normName}, ${params.patientPhone || null}, null, null, true, NOW())
             RETURNING id
           `);
           resolvedPatientId = (newPat.rows[0] as Record<string, unknown>).id as string;
