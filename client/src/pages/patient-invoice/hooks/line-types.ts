@@ -55,6 +55,7 @@ export interface RawInvoiceLine {
   sortOrder?: number | null;
   unitLevel?: string | null;
   itemData?: ItemSearchResult | null;
+  item?: ItemSearchResult | null;
   priceSource?: string | null;
   sourceType?: string | null;
   sourceId?: string | null;

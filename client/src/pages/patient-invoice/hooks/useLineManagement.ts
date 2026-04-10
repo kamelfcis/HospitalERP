@@ -74,7 +74,7 @@ export function useLineManagement({
       sortOrder: l.sortOrder || 0,
       serviceType: l.service?.serviceType || "",
       unitLevel: (l.unitLevel as LineLocal["unitLevel"] | null | undefined) || "minor",
-      item: l.itemData || null,
+      item: l.itemData || l.item || null,
       lotId: l.line?.lotId ?? l.lotId ?? null,
       expiryMonth: (l.line?.expiryMonth ?? l.expiryMonth) ? Number(l.line?.expiryMonth ?? l.expiryMonth) : null,
       expiryYear: (l.line?.expiryYear ?? l.expiryYear) ? Number(l.line?.expiryYear ?? l.expiryYear) : null,
