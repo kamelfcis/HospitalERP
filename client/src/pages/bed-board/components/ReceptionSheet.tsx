@@ -118,6 +118,7 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
   const [age,              setAge]              = useState("");
   const [selectedPatient,  setSelectedPatient]  = useState<PatientOption | null>(null);
   const [departmentId,     setDepartmentId]     = useState("");
+  const [departmentCode,   setDepartmentCode]   = useState("");
   const [selectedDoctor,   setSelectedDoctor]   = useState<LookupItem | null>(null);
   const [surgerySearch,    setSurgerySearch]    = useState("");
   const [highlightedSurgery, setHighlightedSurgery] = useState(-1);
@@ -172,6 +173,8 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
 
   const nameIsQuad = useMemo(() => isFullName(effectiveName), [effectiveName]);
   const nidIsValid = useMemo(() => /^\d{14}$/.test(effectiveNationalId || ""), [effectiveNationalId]);
+  const isSurgeryDept = departmentCode.toLowerCase() === "surgery";
+  const surgeryRequired = isSurgeryDept;
 
   const nameError = useMemo(() => {
     if (!effectiveName.trim()) return "اسم المريض مطلوب";
@@ -190,8 +193,11 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
       effectiveName.trim().length > 0 &&
       nameIsQuad &&
       nidIsValid &&
+      !!departmentId &&
+      !!selectedDoctor &&
+      (!surgeryRequired || !!selectedSurgery) &&
       !(paymentType === "contract" && !insuranceCompany.trim()),
-    [effectiveName, nameIsQuad, nidIsValid, paymentType, insuranceCompany],
+    [effectiveName, nameIsQuad, nidIsValid, departmentId, selectedDoctor, surgeryRequired, selectedSurgery, paymentType, insuranceCompany],
   );
 
   // ===== Handlers =====
@@ -205,6 +211,7 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
     setAge("");
     setSelectedPatient(null);
     setDepartmentId("");
+    setDepartmentCode("");
     setSelectedDoctor(null);
     setSurgerySearch("");
     setSelectedSurgery(null);
@@ -480,20 +487,37 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
             {/* Department + Doctor side-by-side */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label>القسم</Label>
+                <Label>القسم <span className="text-destructive">*</span></Label>
                 <DepartmentLookup
                   value={departmentId}
-                  onChange={item => setDepartmentId(item?.id ?? "")}
+                  onChange={item => {
+                    setDepartmentId(item?.id ?? "");
+                    setDepartmentCode(item?.code ?? "");
+                    if (item?.code?.toLowerCase() !== "surgery") {
+                      setSelectedSurgery(null);
+                      setSurgerySearch("");
+                    }
+                  }}
                   data-testid="lookup-department"
                 />
+                {!departmentId && (
+                  <p className="text-[10px] text-amber-600 flex items-center gap-1">
+                    <span>⚠</span> القسم إجباري للتسكين
+                  </p>
+                )}
               </div>
               <div className="space-y-1">
-                <Label>الطبيب</Label>
+                <Label>الطبيب <span className="text-destructive">*</span></Label>
                 <DoctorLookup
                   value={selectedDoctor?.id ?? ""}
                   onChange={setSelectedDoctor}
                   data-testid="lookup-doctor"
                 />
+                {!selectedDoctor && (
+                  <p className="text-[10px] text-amber-600 flex items-center gap-1">
+                    <span>⚠</span> الطبيب إجباري للتسكين
+                  </p>
+                )}
               </div>
             </div>
 
@@ -501,8 +525,16 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
             <div className="space-y-1">
               <Label htmlFor="surgery-search">
                 نوع العملية
-                <span className="text-xs text-muted-foreground mr-1.5">(اختياري)</span>
+                {surgeryRequired
+                  ? <span className="text-destructive mr-1">*</span>
+                  : <span className="text-xs text-muted-foreground mr-1.5">(اختياري)</span>
+                }
               </Label>
+              {surgeryRequired && !selectedSurgery && (
+                <p className="text-[10px] text-amber-600 flex items-center gap-1 mb-1">
+                  <span>⚠</span> نوع العملية إجباري عند اختيار قسم العمليات
+                </p>
+              )}
 
               {selectedSurgery ? (
                 <div className="flex items-center gap-2 px-3 py-2 bg-purple-50 dark:bg-purple-950 rounded-lg border border-purple-200 dark:border-purple-800">
