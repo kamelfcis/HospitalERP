@@ -25,6 +25,7 @@
 
 import type { Express } from "express";
 import { storage } from "../storage";
+import { runRefresh, REFRESH_KEYS } from "../lib/rpt-refresh-orchestrator";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { bedBoardClients, broadcastBedBoardUpdate, requireAuth, checkHospitalAccess, checkPermission } from "./_shared";
@@ -118,6 +119,7 @@ export function registerBedBoardRoutes(app: Express) {
         surgeryTypeId: surgeryTypeId || undefined,
       });
       broadcastBedBoardUpdate();
+      runRefresh(REFRESH_KEYS.PATIENT_VISIT, () => storage.refreshPatientVisitSummary(), "event-driven").catch(() => {});
       res.status(201).json(result);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -177,6 +179,7 @@ export function registerBedBoardRoutes(app: Express) {
 
       const result = await storage.dischargeFromBed(bedId);
       broadcastBedBoardUpdate();
+      runRefresh(REFRESH_KEYS.PATIENT_VISIT, () => storage.refreshPatientVisitSummary(), "event-driven").catch(() => {});
       res.json(result);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);

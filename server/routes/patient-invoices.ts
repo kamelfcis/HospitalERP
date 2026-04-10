@@ -4,6 +4,7 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { logger } from "../lib/logger";
 import { logAcctEvent } from "../lib/accounting-event-logger";
+import { runRefresh, REFRESH_KEYS } from "../lib/rpt-refresh-orchestrator";
 import { sql } from "drizzle-orm";
 import { PERMISSIONS } from "@shared/permissions";
 import { auditLog } from "../route-helpers";
@@ -163,6 +164,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
         setImmediate(() => fireApprovalRequestsForInvoice(rh.id, rh.contractId));
       }
 
+      runRefresh(REFRESH_KEYS.PATIENT_VISIT, () => storage.refreshPatientVisitSummary(), "event-driven").catch(() => {});
       res.status(201).json(result);
     } catch (error: unknown) {
       if (error instanceof ScopeViolationError) {
@@ -518,6 +520,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
       generateClaimsForInvoice(invoiceId)
         .catch(err => logger.warn({ err: err.message, invoiceId }, "[Claims] fire-and-forget outer catch"));
 
+      runRefresh(REFRESH_KEYS.PATIENT_VISIT, () => storage.refreshPatientVisitSummary(), "event-driven").catch(() => {});
       res.json(result);
     } catch (error: unknown) {
       if (error instanceof ScopeViolationError) {
@@ -777,6 +780,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
         newValues: JSON.stringify({ amount, paymentMethod, treasuryId, paymentDate: actualDate, referenceNumber }),
       });
 
+      runRefresh(REFRESH_KEYS.PATIENT_VISIT, () => storage.refreshPatientVisitSummary(), "event-driven").catch(() => {});
       const updated = await storage.getPatientInvoice(invoiceId);
       return res.json(updated);
     } catch (err) {
