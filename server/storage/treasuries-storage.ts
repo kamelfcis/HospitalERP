@@ -48,7 +48,7 @@ const methods = {
       const invRes = await tx.execute(sql`SELECT * FROM patient_invoice_headers WHERE id = ${params.invoiceId} FOR UPDATE`);
       const inv = invRes.rows[0] as any;
       if (!inv) throw Object.assign(new Error("الفاتورة غير موجودة"), { statusCode: 404 });
-      if (inv.status !== "finalized") throw Object.assign(new Error("يمكن التحويل فقط للفواتير المعتمدة"), { statusCode: 400 });
+      if (inv.is_final_closed) throw Object.assign(new Error("الفاتورة مغلقة نهائياً — لا يمكن التحويل"), { statusCode: 400 });
 
       const already = await tx.execute(sql`SELECT COALESCE(SUM(amount), 0) AS total FROM doctor_transfers WHERE invoice_id = ${params.invoiceId}`);
       const alreadyAmount = parseFloat((already.rows[0] as any)?.total ?? "0");

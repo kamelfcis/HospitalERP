@@ -1347,7 +1347,7 @@ const DoctorTransferPanel = memo(function DoctorTransferPanel({
   const [transferNotes, setTransferNotes] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const canTransfer = !isFinalClosed && invoiceStatus === "finalized";
+  const canTransfer = !isFinalClosed;
 
   const { data: doctors = [] } = useQuery<any[]>({
     queryKey: ["/api/doctors"],
@@ -1365,7 +1365,7 @@ const DoctorTransferPanel = memo(function DoctorTransferPanel({
       if (!r.ok) return [];
       return r.json();
     },
-    enabled: !!invoiceId && invoiceStatus === "finalized",
+    enabled: !!invoiceId,
   });
 
   const alreadyTransferred = transfers.reduce((s: number, t: any) => s + parseFloat(t.amount || "0"), 0);
@@ -1405,15 +1405,6 @@ const DoctorTransferPanel = memo(function DoctorTransferPanel({
     if (!amount || isNaN(amt) || amt <= 0) { toast({ variant: "destructive", title: "أدخل مبلغاً صحيحاً" }); return; }
     if (amt > remaining + 0.001) { toast({ variant: "destructive", title: `المبلغ يتجاوز المتبقي (${fmtMoney(remaining)})` }); return; }
     setConfirmOpen(true);
-  }
-
-  if (invoiceStatus === "draft") {
-    return (
-      <div className="flex flex-col items-center gap-1.5 py-4 text-center">
-        <Clock className="h-4 w-4 text-muted-foreground" />
-        <p className="text-xs text-muted-foreground">يجب تأكيد الفاتورة أولاً قبل تحويل المديونية</p>
-      </div>
-    );
   }
 
   return (
