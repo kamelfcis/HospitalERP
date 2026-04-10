@@ -33,11 +33,12 @@ interface Props {
   onChange:  (resolved: ContractResolved) => void;
   onClear?:  () => void;
   disabled?: boolean;
+  fallbackLabel?: string;
   "data-testid"?: string;
 }
 
 export function ContractSelectCombobox({
-  value, onChange, onClear, disabled,
+  value, onChange, onClear, disabled, fallbackLabel,
   "data-testid": testId = "contract-select",
 }: Props) {
   const { data: contracts = [], isLoading } = useQuery<ActiveContract[]>({
@@ -46,6 +47,7 @@ export function ContractSelectCombobox({
   });
 
   const selected = contracts.find(c => c.id === value);
+  const showFallback = !!value && !selected && !isLoading && !!fallbackLabel;
 
   function handleChange(contractId: string) {
     if (!contractId) { onClear?.(); return; }
@@ -74,6 +76,11 @@ export function ContractSelectCombobox({
           <option value="">
             {isLoading ? "جارٍ التحميل..." : "اختر العقد / الجهة..."}
           </option>
+          {showFallback && (
+            <option key="__fallback__" value={value}>
+              {fallbackLabel}
+            </option>
+          )}
           {contracts.map(c => (
             <option key={c.id} value={c.id}>
               {c.contractName} — {c.companyName}

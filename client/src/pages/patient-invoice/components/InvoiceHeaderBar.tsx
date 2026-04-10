@@ -447,7 +447,7 @@ export function InvoiceHeaderBar({
               <div className="flex items-center gap-2 px-2 py-1 bg-blue-50/60 dark:bg-blue-950/20 border-b border-blue-200/50 flex-wrap">
                 <span className="text-[10px] font-semibold text-blue-700 dark:text-blue-300 shrink-0">العقد / الجهة:</span>
                 <div className="shrink-0">
-                  <ContractSelectCombobox value={contractId} onChange={onContractChange} onClear={onContractClear} disabled={!isDraft} data-testid="contract-select" />
+                  <ContractSelectCombobox value={contractId} onChange={onContractChange} onClear={onContractClear} disabled={!isDraft} fallbackLabel={contractName || undefined} data-testid="contract-select" />
                 </div>
                 <div className="w-px h-4 bg-blue-200/60 shrink-0" />
                 <CreditCard className="h-3 w-3 text-muted-foreground shrink-0" />

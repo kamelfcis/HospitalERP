@@ -35,6 +35,7 @@
 import { type Express } from "express";
 import { storage } from "../storage";
 import { requireAuth, checkPermission } from "./_shared";
+import { checkAnyPermission } from "./_auth";
 import { PERMISSIONS } from "@shared/permissions";
 import {
   insertCompanySchema,
@@ -209,7 +210,7 @@ export function registerContractRoutes(app: Express) {
   app.get(
     "/api/contracts/active",
     requireAuth,
-    checkPermission(PERMISSIONS.SALES_CREATE),
+    checkAnyPermission(PERMISSIONS.SALES_CREATE, PERMISSIONS.PATIENT_INVOICES_VIEW, PERMISSIONS.PATIENT_INVOICES_CREATE),
     async (_req, res) => {
       try {
         const list = await storage.getAllActiveContracts();
