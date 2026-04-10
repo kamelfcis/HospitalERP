@@ -67,7 +67,7 @@ export function PriceListItemsTable({ selectedListId }: PriceListItemsTableProps
   // ─── mutation تحديث السعر ─────────────────────────────────────────────────
   const updatePriceMutation = useMutation({
     mutationFn: ({ serviceId, price }: { serviceId: string; price: string }) =>
-      apiRequest("POST", `/api/price-lists/${selectedListId}/items`, { serviceId, price }),
+      apiRequest("POST", `/api/price-lists/${selectedListId}/items`, { items: [{ serviceId, price }] }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/price-lists", selectedListId] });
       setEditingPriceId(null);
