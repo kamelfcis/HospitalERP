@@ -548,6 +548,7 @@ export default function PatientInvoice() {
             totals={totals}
             resetForm={resetAll}
             saveMutation={saveMutation}
+            finalizeMutation={finalizeMutation}
             autoSaveStatus={autoSaveStatus}
             dtTransfers={dt.dtTransfers}
             dtAlreadyTransferred={dt.dtAlreadyTransferred}

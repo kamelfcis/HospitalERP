@@ -1,21 +1,10 @@
-import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Loader2, ArrowLeftRight, Stethoscope } from "lucide-react";
-import { formatCurrency, formatDateShort } from "@/lib/formatters";
 import type { Department, Service, Item, Admission, DoctorTransfer } from "@shared/schema";
 import type { LineLocal, PaymentLocal } from "../types";
 import { InvoiceHeaderBar } from "../components/InvoiceHeaderBar";
-import { TotalsSummaryCard } from "../components/TotalsSummaryCard";
-import { DoctorLookup } from "@/components/lookups";
-import { PaymentsTab } from "./PaymentsTab";
-import { ConsolidatedTab } from "./ConsolidatedTab";
+import { InvoiceSidebar } from "../components/InvoiceSidebar";
 import { UnifiedLinesTab } from "../components/UnifiedLinesTab";
+import { ConsolidatedTab } from "./ConsolidatedTab";
 import type { ContractResolved } from "@/components/shared/ContractSelectCombobox";
 
 interface MemberResolved {
@@ -38,6 +27,7 @@ interface Totals {
   remaining: number;
   companyShareTotal?: number;
   patientShareTotal?: number;
+  doctorCostTotal?: number;
 }
 
 interface InvoiceTabProps {
@@ -49,7 +39,6 @@ interface InvoiceTabProps {
   status: string;
   isDraft: boolean;
 
-  // Patient (via PatientSearchCombobox)
   patientId: string;
   patientName: string;
   patientCode: string;
@@ -68,16 +57,17 @@ interface InvoiceTabProps {
   departmentId: string;
   setDepartmentId: (v: string) => void;
   departments: Department[] | undefined;
+  deptLocked?: boolean;
 
   warehouseId: string;
   setWarehouseId: (v: string) => void;
   warehouses: Record<string, unknown>[] | undefined;
+  whLocked?: boolean;
 
   admissionId: string;
   setAdmissionId: (v: string) => void;
   activeAdmissions: Admission[] | undefined;
 
-  // Contract / member card
   patientType: "cash" | "contract";
   setPatientType: (v: "cash" | "contract") => void;
   contractId: string;
@@ -145,7 +135,6 @@ interface InvoiceTabProps {
   onOpenDiscountDialog?: () => void;
   applyTemplate?: (templateId: string, opts?: { replaceExisting?: boolean }) => Promise<void>;
 
-  // ItemFastSearch support
   warehouseIdForSearch?: string;
 }
 
@@ -157,8 +146,8 @@ export function InvoiceTab({
   onPatientChange, onPatientClear,
   doctorId, setDoctorId, doctorName, setDoctorName,
   billingMode, setBillingMode,
-  departmentId, setDepartmentId, departments,
-  warehouseId, setWarehouseId, warehouses,
+  departmentId, setDepartmentId, departments, deptLocked,
+  warehouseId, setWarehouseId, warehouses, whLocked,
   admissionId, setAdmissionId, activeAdmissions,
   patientType, setPatientType,
   contractId, contractName,
@@ -182,8 +171,6 @@ export function InvoiceTab({
   canDiscount, onOpenDiscountDialog,
   applyTemplate,
 }: InvoiceTabProps) {
-  const [localDtDoctorId, setLocalDtDoctorId] = useState("");
-
   return (
     <div className="space-y-2">
       <InvoiceHeaderBar
@@ -210,8 +197,10 @@ export function InvoiceTab({
         departmentId={departmentId}
         setDepartmentId={setDepartmentId}
         departments={departments}
+        deptLocked={deptLocked}
         warehouseId={warehouseId}
         setWarehouseId={setWarehouseId}
+        whLocked={whLocked}
         warehouses={warehouses}
         admissionId={admissionId}
         setAdmissionId={setAdmissionId}
@@ -230,182 +219,93 @@ export function InvoiceTab({
         lines={lines}
         resetForm={resetForm}
         saveMutation={saveMutation}
-        finalizeMutation={finalizeMutation}
         autoSaveStatus={autoSaveStatus}
         getStatusBadgeClass={getStatusBadgeClass}
       />
 
-      <div className="border rounded-md p-2">
-        <Tabs value={subTab} onValueChange={setSubTab}>
-          <TabsList className="w-full justify-start flex-wrap" data-testid="tabs-sub">
-            <TabsTrigger value="lines" data-testid="tab-lines">بنود الفاتورة</TabsTrigger>
-            <TabsTrigger value="payments" data-testid="tab-payments">سداد دفعات</TabsTrigger>
-            <TabsTrigger value="consolidated" data-testid="tab-consolidated">فاتورة مجمعة</TabsTrigger>
-          </TabsList>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
+        <div className="lg:col-span-2 min-w-0">
+          <div className="border rounded-md p-2">
+            <Tabs value={subTab} onValueChange={setSubTab}>
+              <TabsList className="w-full justify-start flex-wrap" data-testid="tabs-sub">
+                <TabsTrigger value="lines" data-testid="tab-lines">بنود الفاتورة</TabsTrigger>
+                <TabsTrigger value="consolidated" data-testid="tab-consolidated">فاتورة مجمعة</TabsTrigger>
+              </TabsList>
 
-          <TabsContent value="lines" className="mt-2">
-            <UnifiedLinesTab
-              lines={lines}
-              isDraft={isDraft}
-              itemSearch={itemSearch}
-              setItemSearch={setItemSearch}
-              setItemResults={setItemResults}
-              itemResults={itemResults}
-              searchingItems={searchingItems}
-              fefoLoading={fefoLoading}
-              itemSearchRef={itemSearchRef}
-              itemDropdownRef={itemDropdownRef}
-              pendingQtyRef={pendingQtyRef}
-              addServiceLine={addServiceLine}
-              addItemLine={addItemLine}
-              updateLine={updateLine}
-              removeLine={removeLine}
-              handleQtyConfirm={handleQtyConfirm}
-              handleUnitLevelChange={handleUnitLevelChange}
-              openStatsPopup={openStatsPopup}
-              getServiceRowClass={getServiceRowClass}
-              applyTemplate={applyTemplate}
-              warehouseId={warehouseId}
-              invoiceDate={invoiceDate}
-              departmentId={departmentId}
-            />
-          </TabsContent>
+              <TabsContent value="lines" className="mt-2">
+                <UnifiedLinesTab
+                  lines={lines}
+                  isDraft={isDraft}
+                  itemSearch={itemSearch}
+                  setItemSearch={setItemSearch}
+                  setItemResults={setItemResults}
+                  itemResults={itemResults}
+                  searchingItems={searchingItems}
+                  fefoLoading={fefoLoading}
+                  itemSearchRef={itemSearchRef}
+                  itemDropdownRef={itemDropdownRef}
+                  pendingQtyRef={pendingQtyRef}
+                  addServiceLine={addServiceLine}
+                  addItemLine={addItemLine}
+                  updateLine={updateLine}
+                  removeLine={removeLine}
+                  handleQtyConfirm={handleQtyConfirm}
+                  handleUnitLevelChange={handleUnitLevelChange}
+                  openStatsPopup={openStatsPopup}
+                  getServiceRowClass={getServiceRowClass}
+                  applyTemplate={applyTemplate}
+                  warehouseId={warehouseId}
+                  invoiceDate={invoiceDate}
+                  departmentId={departmentId}
+                />
+              </TabsContent>
 
-          <TabsContent value="payments" className="mt-2">
-            <PaymentsTab
+              <TabsContent value="consolidated" className="mt-2">
+                <ConsolidatedTab
+                  lines={lines}
+                  payments={payments}
+                  totals={totals}
+                  getServiceRowClass={getServiceRowClass}
+                />
+              </TabsContent>
+            </Tabs>
+          </div>
+        </div>
+
+        <div className="lg:col-span-1">
+          <div className="border rounded-md p-3 lg:sticky lg:top-2 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
+            <InvoiceSidebar
+              invoiceId={invoiceId}
+              invoiceNumber={invoiceNumber}
+              patientName={patientName}
+              patientCode={patientCode}
+              status={status}
               isDraft={isDraft}
+              patientType={patientType}
+              totals={totals}
+              canDiscount={canDiscount}
+              onOpenDiscountDialog={onOpenDiscountDialog}
               payments={payments}
               addPayment={addPayment}
               updatePayment={updatePayment}
               removePayment={removePayment}
+              dtTransfers={dtTransfers}
+              dtAlreadyTransferred={dtAlreadyTransferred}
+              dtRemaining={dtRemaining}
+              dtOpen={dtOpen}
+              setDtOpen={setDtOpen}
+              dtAmount={dtAmount}
+              setDtAmount={setDtAmount}
+              dtDoctorName={dtDoctorName}
+              setDtDoctorName={setDtDoctorName}
+              dtNotes={dtNotes}
+              setDtNotes={setDtNotes}
+              openDtConfirm={openDtConfirm}
+              finalizeMutation={finalizeMutation}
             />
-          </TabsContent>
-          <TabsContent value="consolidated" className="mt-2">
-            <ConsolidatedTab
-              lines={lines}
-              payments={payments}
-              totals={totals}
-              getServiceRowClass={getServiceRowClass}
-            />
-          </TabsContent>
-        </Tabs>
-      </div>
-
-      <div className="border rounded-md p-2">
-        <div className="flex flex-row-reverse items-center gap-2">
-          <TotalsSummaryCard totals={totals} patientType={patientType} />
-          {isDraft && canDiscount && invoiceId && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-orange-500 text-orange-600 dark:border-orange-400 dark:text-orange-400 shrink-0"
-              onClick={onOpenDiscountDialog}
-              data-testid="button-header-discount"
-            >
-              خصم الفاتورة
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {status === "finalized" && invoiceId && (
-        <div className="border rounded-md p-2 space-y-2" data-testid="section-doctor-transfer">
-          <div className="flex flex-row-reverse items-center gap-2">
-            <Stethoscope className="h-4 w-4 text-blue-600" />
-            <h3 className="text-sm font-semibold">تحويل مستحقات الطبيب</h3>
-            <div className="flex-1" />
-            {dtTransfers.length > 0 && (
-              <span className="text-xs text-muted-foreground">
-                محوّل: {formatCurrency(dtAlreadyTransferred)} | متبقي: {formatCurrency(dtRemaining)}
-              </span>
-            )}
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-blue-500 text-blue-600 dark:border-blue-400 dark:text-blue-400"
-              onClick={() => { setDtOpen(o => !o); if (!dtOpen) setDtAmount(dtRemaining.toFixed(2)); }}
-              data-testid="button-dt-open"
-            >
-              <ArrowLeftRight className="h-3 w-3 ml-1" />
-              {dtOpen ? "إلغاء" : "تحويل للطبيب"}
-            </Button>
           </div>
-
-          {dtTransfers.length > 0 && (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-right">الطبيب</TableHead>
-                  <TableHead className="text-right">المبلغ</TableHead>
-                  <TableHead className="text-right">التاريخ</TableHead>
-                  <TableHead className="text-right">ملاحظات</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {dtTransfers.map(t => (
-                  <TableRow key={t.id} data-testid={`row-dt-${t.id}`}>
-                    <TableCell className="text-xs">{t.doctorName}</TableCell>
-                    <TableCell className="text-xs font-medium">{formatCurrency(parseFloat(t.amount))}</TableCell>
-                    <TableCell className="text-xs">{formatDateShort(t.transferredAt as any)}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{t.notes || "—"}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-
-          {dtOpen && (
-            <div className="flex flex-row-reverse items-end gap-2 flex-wrap border-t pt-2">
-              <div className="flex flex-row-reverse items-center gap-1">
-                <Label className="text-xs whitespace-nowrap">الطبيب *</Label>
-                <div className="w-44">
-                  <DoctorLookup
-                    value={localDtDoctorId}
-                    displayValue={dtDoctorName}
-                    onChange={(item) => {
-                      setLocalDtDoctorId(item?.id || "");
-                      setDtDoctorName(item?.name || "");
-                    }}
-                    data-testid="lookup-dt-doctor"
-                  />
-                </div>
-              </div>
-              <div className="flex flex-row-reverse items-center gap-1">
-                <Label className="text-xs whitespace-nowrap">المبلغ *</Label>
-                <Input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={dtAmount}
-                  onChange={e => setDtAmount(e.target.value)}
-                  placeholder="0.00"
-                  className="h-7 text-xs w-28"
-                  data-testid="input-dt-amount"
-                />
-              </div>
-              <div className="flex flex-row-reverse items-center gap-1">
-                <Label className="text-xs whitespace-nowrap">ملاحظات</Label>
-                <Input
-                  value={dtNotes}
-                  onChange={e => setDtNotes(e.target.value)}
-                  placeholder="اختياري"
-                  className="h-7 text-xs w-40"
-                  data-testid="input-dt-notes"
-                />
-              </div>
-              <Button
-                size="sm"
-                className="bg-blue-600 text-white hover:bg-blue-700"
-                onClick={openDtConfirm}
-                data-testid="button-dt-confirm-open"
-              >
-                <ArrowLeftRight className="h-3 w-3 ml-1" />
-                تأكيد التحويل
-              </Button>
-            </div>
-          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
