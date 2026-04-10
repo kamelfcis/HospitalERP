@@ -1,5 +1,9 @@
 import { useState, useCallback, memo } from "react";
-import { Loader2, ArrowRight, User, FileText, BookOpen, LayoutGrid, Banknote, PieChart, Lock, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import {
+  Loader2, ArrowRight, User, FileText, BookOpen, LayoutGrid, Banknote, PieChart,
+  Lock, LockOpen, PanelLeftClose, PanelLeftOpen,
+  Stethoscope, Building2, CalendarDays, Clock,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useLocation } from "wouter";
@@ -8,10 +12,10 @@ import { useConsolidatedView } from "./hooks/useConsolidatedView";
 import { OverviewTab } from "./tabs/OverviewTab";
 import { HistoryTab } from "./tabs/HistoryTab";
 import { InvoicesTab } from "./tabs/InvoicesTab";
-import { ConsolidatedInvoiceTab } from "./tabs/ConsolidatedInvoiceTab";
+import { ConsolidatedInvoiceTab, type VisitHeaderInfo } from "./tabs/ConsolidatedInvoiceTab";
 import { PaymentsTab } from "./tabs/PaymentsTab";
 import { StatementTab } from "./tabs/StatementTab";
-import { fmtMoney } from "./shared/formatters";
+import { fmtMoney, fmtDateTime } from "./shared/formatters";
 
 type TabId = "overview" | "history" | "invoices" | "consolidated" | "payments" | "statement";
 
@@ -123,22 +127,25 @@ export const PatientFileWorkspace = memo(function PatientFileWorkspace({ patient
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [sidebarEl, setSidebarEl] = useState<HTMLDivElement | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [visitHeader, setVisitHeader] = useState<VisitHeaderInfo | null>(null);
 
   const { data: patient,   isLoading: loadingPatient   } = usePatientData(patientId);
   const { data: financial, isLoading: loadingFinancial } = usePatientFinancialSummary(patientId);
   const { data: aggregated, isLoading: loadingAggregated } = useConsolidatedView(patientId);
 
   const handleTabChange = useCallback((tab: TabId) => setActiveTab(tab), []);
+  const handleVisitHeaderChange = useCallback((info: VisitHeaderInfo | null) => setVisitHeader(info), []);
 
   const patientName = patient?.fullName ?? "جار التحميل…";
   const patientCode = patient?.patientCode ?? "";
   const remaining = financial?.totalOutstanding ?? 0;
+  const showVisitInfo = activeTab === "consolidated" && visitHeader;
 
   return (
     <div className="flex h-screen overflow-hidden bg-background" dir="rtl">
       <div className={`flex flex-col min-w-0 transition-all duration-200 ${sidebarOpen ? "flex-1" : "w-full"}`}>
         <div className="border-b bg-background/95 backdrop-blur shrink-0 z-10 print:hidden">
-          <div className="flex items-center gap-3 px-4 py-3">
+          <div className="flex items-center gap-3 px-4 py-2">
             <Button
               variant="ghost"
               size="sm"
@@ -150,21 +157,101 @@ export const PatientFileWorkspace = memo(function PatientFileWorkspace({ patient
               المرضى
             </Button>
 
-            <div className="h-4 w-px bg-border" />
+            <div className="h-6 w-px bg-border shrink-0" />
 
-            <div className="flex items-center gap-2 flex-1 min-w-0">
+            <div className="flex items-center gap-3 flex-1 min-w-0 flex-wrap">
               {loadingPatient ? (
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               ) : (
                 <>
-                  <span className="font-semibold text-base truncate">{patientName}</span>
-                  {patient?.patientCode && (
-                    <Badge variant="outline" className="text-xs font-mono shrink-0">{patient.patientCode}</Badge>
-                  )}
-                  {remaining > 0.01 && (
-                    <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200 shrink-0">
-                      متبقي: {remaining.toLocaleString("ar-EG", { maximumFractionDigits: 2 })}
-                    </Badge>
+                  <div className="flex flex-col gap-0 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-sm truncate" data-testid="text-patient-name">{patientName}</span>
+                      {patient?.patientCode && (
+                        <Badge variant="outline" className="text-[10px] font-mono shrink-0 py-0">{patient.patientCode}</Badge>
+                      )}
+                    </div>
+                    {showVisitInfo && visitHeader.doctorName && (
+                      <div className="flex items-center gap-1.5" data-testid="text-doctor-name">
+                        <Stethoscope className="h-3 w-3 text-teal-600 shrink-0" />
+                        <span className="text-xs font-semibold text-teal-700">{visitHeader.doctorName}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {showVisitInfo ? (
+                    <>
+                      <div className="h-6 w-px bg-border shrink-0" />
+                      <div className="flex flex-col gap-0">
+                        {visitHeader.invoiceNumber && (
+                          <div className="flex items-center gap-1.5">
+                            <FileText className="h-3 w-3 text-slate-400 shrink-0" />
+                            <span className="font-mono text-xs font-semibold">{visitHeader.invoiceNumber}</span>
+                          </div>
+                        )}
+                        {visitHeader.visitNumber && (
+                          <div className="flex items-center gap-1.5">
+                            <Badge variant="outline" className={`text-[10px] px-1 py-0 ${visitHeader.visitType === "inpatient" ? "border-indigo-400 text-indigo-700 bg-indigo-50" : "border-teal-400 text-teal-700 bg-teal-50"}`}>
+                              {visitHeader.visitType === "inpatient" ? "داخلي" : "خارجي"}
+                            </Badge>
+                            <span className="font-mono text-[10px]">{visitHeader.visitNumber}</span>
+                            {visitHeader.departmentName && (
+                              <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                                <Building2 className="h-2.5 w-2.5" /> {visitHeader.departmentName}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {visitHeader.admissionDate && (
+                        <>
+                          <div className="h-6 w-px bg-border shrink-0" />
+                          <div className="flex flex-col gap-0">
+                            <div className="flex items-center gap-1" data-testid="text-admission-datetime">
+                              <CalendarDays className="h-3 w-3 text-green-500 shrink-0" />
+                              <span className="text-[11px]">
+                                دخول: <span className="font-medium">{fmtDateTime(visitHeader.admissionCreatedAt || visitHeader.admissionDate)}</span>
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1" data-testid="text-discharge-datetime">
+                              <Clock className="h-3 w-3 shrink-0" style={{ color: visitHeader.dischargeDate ? "#16a34a" : "#d97706" }} />
+                              {visitHeader.dischargeDate ? (
+                                <span className="text-[11px]">
+                                  خروج: <span className="font-medium text-green-700">{fmtDateTime(visitHeader.admissionUpdatedAt || visitHeader.dischargeDate)}</span>
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-amber-600 font-medium">لم يخرج بعد</span>
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      )}
+
+                      <div className="mr-auto flex items-center gap-2">
+                        {remaining > 0.01 && (
+                          <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200 shrink-0 py-0">
+                            متبقي: {fmtMoney(remaining)}
+                          </Badge>
+                        )}
+                        <div className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-semibold ${
+                          visitHeader.isFinalClosed
+                            ? "border-green-300 bg-green-50 text-green-700"
+                            : (!visitHeader.invoiceStatus || visitHeader.invoiceStatus === "draft")
+                              ? "border-amber-300 bg-amber-50 text-amber-700"
+                              : "border-blue-300 bg-blue-50 text-blue-700"
+                        }`} data-testid="badge-invoice-status">
+                          {visitHeader.isFinalClosed ? <Lock className="h-3 w-3" /> : (!visitHeader.invoiceStatus || visitHeader.invoiceStatus === "draft") ? <LockOpen className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
+                          {visitHeader.isFinalClosed ? "مغلق نهائياً" : (!visitHeader.invoiceStatus || visitHeader.invoiceStatus === "draft") ? "مسودة" : visitHeader.invoiceStatus === "finalized" ? "معتمد" : "جارٍ..."}
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    remaining > 0.01 && (
+                      <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200 shrink-0">
+                        متبقي: {fmtMoney(remaining)}
+                      </Badge>
+                    )
                   )}
                 </>
               )}
@@ -200,6 +287,7 @@ export const PatientFileWorkspace = memo(function PatientFileWorkspace({ patient
               patientName={patientName}
               patientCode={patientCode}
               sidebarContainer={sidebarOpen ? sidebarEl : null}
+              onVisitHeaderChange={handleVisitHeaderChange}
             />
           </div>
         )}

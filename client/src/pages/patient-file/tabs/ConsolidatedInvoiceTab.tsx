@@ -26,7 +26,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { DoctorLookup } from "@/components/lookups";
-import { fmtDate, fmtDateTime, fmtMoney, fmtQty, PAYMENT_METHOD_LABELS, LINE_TYPE_LABELS } from "../shared/formatters";
+import { fmtDate, fmtMoney, fmtQty, PAYMENT_METHOD_LABELS, LINE_TYPE_LABELS } from "../shared/formatters";
 import { useInvoiceLines, usePaymentsList } from "../hooks/useInvoiceLines";
 import type {
   AggregatedInvoice, AggregatedViewData, InvoiceLine, VisitGroup,
@@ -49,6 +49,20 @@ interface PatientVisit {
   admission_updated_at: string | null;
 }
 
+export interface VisitHeaderInfo {
+  doctorName: string | null;
+  departmentName: string | null;
+  admissionDate: string | null;
+  dischargeDate: string | null;
+  admissionCreatedAt: string | null;
+  admissionUpdatedAt: string | null;
+  visitNumber: string | null;
+  visitType: "inpatient" | "outpatient" | null;
+  invoiceNumber: string | null;
+  invoiceStatus: string | null;
+  isFinalClosed: boolean;
+}
+
 interface Props {
   data: AggregatedViewData | undefined;
   isLoading: boolean;
@@ -56,6 +70,7 @@ interface Props {
   patientName: string;
   patientCode: string;
   sidebarContainer?: HTMLDivElement | null;
+  onVisitHeaderChange?: (info: VisitHeaderInfo | null) => void;
 }
 
 const ENCOUNTER_TYPE_LABELS: Record<string, string> = {
@@ -591,130 +606,6 @@ const InvoicePaymentsTab = memo(function InvoicePaymentsTab({
   );
 });
 
-const InvoiceHeaderCard = memo(function InvoiceHeaderCard({
-  patientName, patientCode, visit, invoiceNumber, isFinalClosed, invoiceStatus,
-}: {
-  patientName: string;
-  patientCode: string;
-  visit: PatientVisit | null;
-  invoiceNumber?: string;
-  isFinalClosed: boolean;
-  invoiceStatus?: string;
-}) {
-  const isDraft = !invoiceStatus || invoiceStatus === "draft";
-  return (
-    <div className="rounded-xl border bg-gradient-to-l from-slate-50 to-white px-4 py-3">
-      <div className="flex items-center gap-4 flex-wrap">
-        {/* Lock icon - prominent */}
-        <div
-          className={`flex items-center justify-center w-10 h-10 rounded-xl shrink-0 ${
-            isFinalClosed
-              ? "bg-gradient-to-br from-green-500 to-green-700 text-white shadow"
-              : isDraft
-                ? "bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow"
-                : "bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow"
-          }`}
-          data-testid={isFinalClosed ? "badge-lock-closed" : "badge-lock-open"}
-          title={isFinalClosed ? "مغلق نهائياً" : isDraft ? "مسودة" : "معتمد"}
-        >
-          {isFinalClosed
-            ? <Lock className="h-5 w-5" />
-            : isDraft
-              ? <LockOpen className="h-5 w-5" />
-              : <Lock className="h-5 w-5 opacity-80" />}
-        </div>
-
-        {/* Patient info */}
-        <div className="flex flex-col gap-0.5 min-w-0">
-          <div className="flex items-center gap-2">
-            <User className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-            <p className="font-bold text-sm leading-tight">{patientName}</p>
-            {patientCode && <span className="font-mono text-xs text-muted-foreground">{patientCode}</span>}
-          </div>
-          {visit?.doctor_name && (
-            <div className="flex items-center gap-1.5" data-testid="text-doctor-name">
-              <Stethoscope className="h-3.5 w-3.5 text-teal-600 shrink-0" />
-              <span className="text-sm font-semibold text-teal-700">{visit.doctor_name}</span>
-            </div>
-          )}
-          {visit?.department_name && (
-            <div className="flex items-center gap-1.5">
-              <Building2 className="h-3 w-3 text-indigo-400 shrink-0" />
-              <span className="text-xs text-muted-foreground">{visit.department_name}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Divider */}
-        <div className="hidden sm:block w-px h-10 bg-border shrink-0" />
-
-        {/* Invoice & visit info */}
-        <div className="flex flex-col gap-0.5">
-          {invoiceNumber && (
-            <div className="flex items-center gap-1.5">
-              <FileText className="h-3 w-3 text-slate-400 shrink-0" />
-              <span className="font-mono text-sm font-semibold">{invoiceNumber}</span>
-            </div>
-          )}
-          {visit?.visit_number && (
-            <div className="flex items-center gap-1.5">
-              <Badge variant="outline" className={`text-[10px] px-1 py-0 ${visit.visit_type === "inpatient" ? "border-indigo-400 text-indigo-700 bg-indigo-50" : "border-teal-400 text-teal-700 bg-teal-50"}`}>
-                {visit.visit_type === "inpatient" ? "داخلي" : "خارجي"}
-              </Badge>
-              <span className="font-mono text-xs">{visit.visit_number}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Admission / Discharge timestamps */}
-        {visit?.admission_date && (
-          <>
-            <div className="hidden sm:block w-px h-10 bg-border shrink-0" />
-            <div className="flex flex-col gap-0.5">
-              <div className="flex items-center gap-1.5" data-testid="text-admission-datetime">
-                <CalendarDays className="h-3 w-3 text-green-500 shrink-0" />
-                <span className="text-xs">
-                  دخول: <span className="font-medium">{fmtDateTime(visit.admission_created_at || visit.admission_date)}</span>
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5" data-testid="text-discharge-datetime">
-                <Clock className="h-3 w-3 shrink-0" style={{ color: visit.discharge_date ? "#16a34a" : "#d97706" }} />
-                {visit.discharge_date ? (
-                  <span className="text-xs">
-                    خروج: <span className="font-medium text-green-700">{fmtDateTime(visit.admission_updated_at || visit.discharge_date)}</span>
-                  </span>
-                ) : (
-                  <span className="text-xs text-amber-600 font-medium">لم يخرج بعد</span>
-                )}
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* Status badge */}
-        <div className="mr-auto">
-          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold ${
-            isFinalClosed
-              ? "border-green-300 bg-green-50 text-green-700"
-              : isDraft
-                ? "border-amber-300 bg-amber-50 text-amber-700"
-                : "border-blue-300 bg-blue-50 text-blue-700"
-          }`}>
-            {isFinalClosed ? <Lock className="h-3.5 w-3.5" /> : isDraft ? <LockOpen className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-            {isFinalClosed ? "مغلق نهائياً" : isDraft ? "مسودة" : invoiceStatus === "finalized" ? "معتمد" : "جارٍ..."}
-          </div>
-        </div>
-      </div>
-
-      {visit?.admission_notes && (
-        <div className="mt-2 pt-2 border-t text-xs text-muted-foreground">
-          <span className="font-medium text-foreground/70">ملاحظات: </span>
-          {visit.admission_notes}
-        </div>
-      )}
-    </div>
-  );
-});
 
 interface EncounterLineSummary {
   id: string;
@@ -1706,6 +1597,7 @@ const InvoicePrintTab = memo(function InvoicePrintTab({
 // ──────────────────────────────────────────────────────────────────────────────
 export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
   data, isLoading, patientId, patientName, patientCode, sidebarContainer,
+  onVisitHeaderChange,
 }: Props) {
   const [selectedVisitKey, setSelectedVisitKey] = useState<string>("");
   const { toast } = useToast();
@@ -1809,8 +1701,6 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
     queryClient.invalidateQueries({ queryKey: ["/api/patients", patientId, "invoices-aggregated"] });
   }, [patientId, refetchFullInvoice]);
 
-  const [headerCollapsed, setHeaderCollapsed] = useState(false);
-
   if (isLoading) return (
     <div className="flex justify-center items-center py-16">
       <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -1828,6 +1718,25 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
 
   const invoiceStatus = primaryInvoice?.status;
   const invoiceNumber = visitSummary?.invoice?.invoiceNumber ?? primaryInvoice?.invoiceNumber;
+
+  useEffect(() => {
+    if (!onVisitHeaderChange) return;
+    if (!displayVisit && !invoiceNumber) { onVisitHeaderChange(null); return; }
+    onVisitHeaderChange({
+      doctorName: displayVisit?.doctor_name ?? null,
+      departmentName: displayVisit?.department_name ?? null,
+      admissionDate: displayVisit?.admission_date ?? null,
+      dischargeDate: displayVisit?.discharge_date ?? null,
+      admissionCreatedAt: displayVisit?.admission_created_at ?? null,
+      admissionUpdatedAt: displayVisit?.admission_updated_at ?? null,
+      visitNumber: displayVisit?.visit_number ?? null,
+      visitType: displayVisit?.visit_type ?? null,
+      invoiceNumber: invoiceNumber ?? null,
+      invoiceStatus: invoiceStatus ?? null,
+      isFinalClosed,
+    });
+  }, [displayVisit, invoiceNumber, invoiceStatus, isFinalClosed, onVisitHeaderChange]);
+
   const notes = fullInvoice?.notes ?? "";
   const headerDiscountPercent = parseFloat(String(fullInvoice?.headerDiscountPercent ?? primaryInvoice?.["headerDiscountPercent"] ?? "0"));
   const headerDiscountAmount = parseFloat(String(fullInvoice?.headerDiscountAmount ?? primaryInvoice?.["headerDiscountAmount"] ?? "0"));
@@ -1900,36 +1809,6 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
               <span className="text-[10px] text-amber-700 truncate max-w-[300px]" title={notes}>
                 {notes}
               </span>
-            </div>
-          )}
-        </div>
-
-        {/* Collapsible header card */}
-        <div className="shrink-0">
-          <button
-            type="button"
-            className="w-full text-start"
-            onClick={() => setHeaderCollapsed(p => !p)}
-            data-testid="btn-toggle-header"
-          >
-            <div className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors px-1 py-0.5">
-              <ChevronRight className={`h-3.5 w-3.5 transition-transform ${headerCollapsed ? "" : "rotate-90"}`} />
-              <span className="font-medium">{headerCollapsed ? "عرض بيانات الزيارة" : "إخفاء بيانات الزيارة"}</span>
-              {headerCollapsed && invoiceNumber && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0">PI-{invoiceNumber}</Badge>
-              )}
-            </div>
-          </button>
-          {!headerCollapsed && (
-            <div className="mt-1">
-              <InvoiceHeaderCard
-                patientName={patientName}
-                patientCode={patientCode}
-                visit={displayVisit}
-                invoiceNumber={invoiceNumber}
-                isFinalClosed={isFinalClosed}
-                invoiceStatus={invoiceStatus}
-              />
             </div>
           )}
         </div>
