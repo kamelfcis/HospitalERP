@@ -15,6 +15,7 @@ interface LineInput {
   encounterId?: string | null;
   businessClassification?: string | null;
   id?: string | null;
+  doctorCostManualOverride?: boolean | null;
   [key: string]: unknown;
 }
 
@@ -27,6 +28,16 @@ export async function injectDoctorCostLines<L extends LineInput>(
   lines: L[],
   opts?: DoctorCostOptions,
 ): Promise<L[]> {
+  const existingCostLines = lines.filter(l => l.lineType === "doctor_cost");
+  const overrideMap = new Map<string, L[]>();
+  for (const cl of existingCostLines) {
+    if (cl.serviceId && cl.doctorCostManualOverride) {
+      const arr = overrideMap.get(cl.serviceId) || [];
+      arr.push(cl);
+      overrideMap.set(cl.serviceId, arr);
+    }
+  }
+
   const serviceIds = [
     ...new Set(
       lines
@@ -34,7 +45,7 @@ export async function injectDoctorCostLines<L extends LineInput>(
         .map(l => l.serviceId!),
     ),
   ];
-  if (serviceIds.length === 0) return lines;
+  if (serviceIds.length === 0) return lines.filter(l => l.lineType !== "doctor_cost");
 
   const servicesData = await storage.getServicesByIds(serviceIds);
   const shareMap = new Map(
@@ -42,7 +53,7 @@ export async function injectDoctorCostLines<L extends LineInput>(
       .filter(s => s.doctorShareType !== "none" && parseFloat(String(s.doctorShareValue ?? "0")) > 0)
       .map(s => [s.id, { type: s.doctorShareType as "percentage" | "fixed", value: parseFloat(String(s.doctorShareValue)) }]),
   );
-  if (shareMap.size === 0) return lines;
+  if (shareMap.size === 0) return lines.filter(l => l.lineType !== "doctor_cost");
 
   const headerDoctorId = opts?.headerDoctorId || null;
   const headerDoctorName = opts?.headerDoctorName || null;
@@ -60,6 +71,13 @@ export async function injectDoctorCostLines<L extends LineInput>(
 
     const lineTotal = parseMoney(line.totalPrice ?? "0");
     if (lineTotal <= 0) continue;
+
+    const overrides = overrideMap.get(line.serviceId);
+    if (overrides && overrides.length > 0) {
+      const override = overrides.shift()!;
+      result.push({ ...override, sortOrder: sortIdx++ });
+      continue;
+    }
 
     const costAmount =
       share.type === "percentage"

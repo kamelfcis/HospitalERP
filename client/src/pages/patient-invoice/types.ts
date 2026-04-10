@@ -50,6 +50,7 @@ export interface LineLocal {
    * يُستخدم للكشف عن التعديل اليدوي: إذا تغيّر unitPrice عنه → priceSource = "manual_override"
    */
   resolvedUnitPrice?: number | null;
+  doctorCostManualOverride?: boolean;
 }
 
 export interface PaymentLocal {

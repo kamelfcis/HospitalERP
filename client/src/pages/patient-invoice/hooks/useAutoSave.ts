@@ -116,6 +116,7 @@ function buildAutoSavePayload(params: UseAutoSaveParams) {
       templateNameSnapshot: (l as any).templateNameSnapshot || null,
       appliedAt: (l as any).appliedAt || null,
       appliedBy: (l as any).appliedBy || null,
+      doctorCostManualOverride: l.doctorCostManualOverride || false,
     }));
 
   const payData = payments.map(p => ({

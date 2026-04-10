@@ -112,7 +112,7 @@ export function registerBedBoardRoutes(app: Express) {
 
   app.post("/api/beds/:id/admit", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_CREATE), async (req, res) => {
     try {
-      const { patientName, patientPhone, patientId, nationalId, dateOfBirth, age, departmentId, serviceId, doctorName, notes, paymentType, insuranceCompany, surgeryTypeId, contractMemberId } = req.body;
+      const { patientName, patientPhone, patientId, nationalId, dateOfBirth, age, departmentId, serviceId, doctorName, notes, paymentType, insuranceCompany, surgeryTypeId, contractMemberId, isPackage } = req.body;
       if (!patientName?.trim()) return res.status(400).json({ message: "اسم المريض مطلوب" });
       if (paymentType === "contract" && !contractMemberId) {
         return res.status(400).json({ message: "رقم كارنيه المنتسب مطلوب لمرضى التعاقد" });
@@ -147,6 +147,7 @@ export function registerBedBoardRoutes(app: Express) {
         insuranceCompany: insuranceCompany || undefined,
         surgeryTypeId: surgeryTypeId || undefined,
         contractMemberId: contractMemberId || undefined,
+        isPackage: isPackage ?? false,
       });
       broadcastBedBoardUpdate();
       runRefresh(REFRESH_KEYS.PATIENT_VISIT, () => storage.refreshPatientVisitSummary(), "event-driven").catch(() => {});

@@ -456,14 +456,31 @@ export function InvoiceLineRow({
 
       {/* سعر الوحدة */}
       <td className="text-center">
-        <span
-          className="flex items-center justify-center gap-0.5 peachtree-amount"
-          title="سعر النظام — يتحدد تلقائياً بناءً على الصنف أو القسم"
-          data-testid={`text-unit-price-unified-${i}`}
-        >
-          {isDraft && <Lock className="h-3 w-3 text-muted-foreground shrink-0" />}
-          {formatNumber(line.unitPrice)}
-        </span>
+        {isDraft && isCostLine ? (
+          <Input
+            type="number"
+            value={line.unitPrice}
+            min={0}
+            step="0.01"
+            onChange={(e) => {
+              const val = parseFloat(e.target.value) || 0;
+              updateLine(line.tempId, "unitPrice", val);
+              updateLine(line.tempId, "totalPrice", val);
+              updateLine(line.tempId, "doctorCostManualOverride", true);
+            }}
+            className="h-7 text-xs text-center"
+            data-testid={`input-doctor-cost-price-${i}`}
+          />
+        ) : (
+          <span
+            className="flex items-center justify-center gap-0.5 peachtree-amount"
+            title="سعر النظام — يتحدد تلقائياً بناءً على الصنف أو القسم"
+            data-testid={`text-unit-price-unified-${i}`}
+          >
+            {isDraft && <Lock className="h-3 w-3 text-muted-foreground shrink-0" />}
+            {formatNumber(line.unitPrice)}
+          </span>
+        )}
       </td>
 
       {/* خصم % */}

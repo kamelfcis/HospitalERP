@@ -2,6 +2,7 @@
  * SurgeryTypeBar — compact banner on the patient invoice.
  * Appears only when the invoice is linked to an admission.
  * Allows changing the surgery type → automatically updates the OR_ROOM line price.
+ * Supports isPackage toggle to switch between regular and package services.
  */
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -10,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Scissors, X } from "lucide-react";
+import { Scissors, X, Package } from "lucide-react";
 import type { SurgeryType, Admission } from "@shared/schema";
 import { surgeryCategoryLabels } from "@shared/schema";
 
@@ -18,6 +19,7 @@ interface SurgeryTypeBarProps {
   invoiceId: string;
   admissionId: string;
   isDraft: boolean;
+  isPackage?: boolean;
   onInvoiceReload?: () => void;
 }
 
@@ -29,13 +31,12 @@ const CATEGORY_COLOURS: Record<string, string> = {
   simple:  "bg-green-100 text-green-800 border-green-200",
 };
 
-export function SurgeryTypeBar({ invoiceId, admissionId, isDraft, onInvoiceReload }: SurgeryTypeBarProps) {
+export function SurgeryTypeBar({ invoiceId, admissionId, isDraft, isPackage = false, onInvoiceReload }: SurgeryTypeBarProps) {
   const { toast } = useToast();
   const [editing, setEditing] = useState(false);
   const [search, setSearch] = useState("");
   const [showResults, setShowResults] = useState(false);
 
-  // Fetch admission to get current surgery type
   const { data: admission } = useQuery<Admission>({
     queryKey: ["/api/admissions", admissionId],
     queryFn: () => fetch(`/api/admissions/${admissionId}`, { credentials: "include" })
@@ -43,7 +44,6 @@ export function SurgeryTypeBar({ invoiceId, admissionId, isDraft, onInvoiceReloa
     enabled: !!admissionId,
   });
 
-  // Fetch surgery type details if one is linked
   const { data: currentSurgery } = useQuery<SurgeryType | null>({
     queryKey: ["/api/surgery-types", admission?.surgeryTypeId],
     queryFn: () => fetch(`/api/surgery-types?search=`, { credentials: "include" })
@@ -52,7 +52,6 @@ export function SurgeryTypeBar({ invoiceId, admissionId, isDraft, onInvoiceReloa
     enabled: !!admission?.surgeryTypeId,
   });
 
-  // Search for surgery types
   const { data: searchResults = [] } = useQuery<SurgeryType[]>({
     queryKey: ["/api/surgery-types", "search", search],
     queryFn: () => apiRequest("GET", `/api/surgery-types?search=${encodeURIComponent(search)}`).then(r => r.json()),
@@ -60,20 +59,25 @@ export function SurgeryTypeBar({ invoiceId, admissionId, isDraft, onInvoiceReloa
   });
 
   const updateMutation = useMutation({
-    mutationFn: (surgeryTypeId: string | null) =>
-      apiRequest("PUT", `/api/patient-invoices/${invoiceId}/surgery-type`, { surgeryTypeId }).then(r => r.json()),
+    mutationFn: ({ surgeryTypeId, pkg }: { surgeryTypeId: string | null; pkg: boolean }) =>
+      apiRequest("PUT", `/api/patient-invoices/${invoiceId}/surgery-type`, { surgeryTypeId, isPackage: pkg }).then(r => r.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admissions", admissionId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices", invoiceId] });
       toast({ title: "تم تحديث نوع العملية" });
       setEditing(false);
       setSearch("");
-      // Reload the full invoice so OR_ROOM line updates in the grid immediately
       onInvoiceReload?.();
     },
     onError: (e: Error) => toast({ variant: "destructive", title: "خطأ", description: e.message }),
   });
 
   if (!admissionId) return null;
+
+  const handleTogglePackage = () => {
+    if (!admission?.surgeryTypeId) return;
+    updateMutation.mutate({ surgeryTypeId: admission.surgeryTypeId, pkg: !isPackage });
+  };
 
   return (
     <div className="mb-3 rounded-lg border bg-purple-50/60 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800 px-3 py-2.5">
@@ -103,7 +107,7 @@ export function SurgeryTypeBar({ invoiceId, admissionId, isDraft, onInvoiceReloa
                     className="w-full px-3 py-2 text-sm hover:bg-muted flex items-center justify-between border-b last:border-b-0"
                     onMouseDown={e => e.preventDefault()}
                     onClick={() => {
-                      updateMutation.mutate(s.id);
+                      updateMutation.mutate({ surgeryTypeId: s.id, pkg: isPackage });
                       setShowResults(false);
                     }}
                   >
@@ -127,6 +131,12 @@ export function SurgeryTypeBar({ invoiceId, admissionId, isDraft, onInvoiceReloa
             <Badge variant="outline" className={`text-xs ${CATEGORY_COLOURS[currentSurgery.category] ?? ""}`}>
               {surgeryCategoryLabels[currentSurgery.category as keyof typeof surgeryCategoryLabels]}
             </Badge>
+            {isPackage && (
+              <Badge className="text-[10px] px-1.5 py-0 bg-purple-600 text-white">
+                <Package className="h-3 w-3 ml-0.5" />
+                باكدج
+              </Badge>
+            )}
           </div>
         ) : (
           <span className="flex-1 text-sm text-muted-foreground italic">لم يُحدد نوع العملية</span>
@@ -134,6 +144,19 @@ export function SurgeryTypeBar({ invoiceId, admissionId, isDraft, onInvoiceReloa
 
         {isDraft && (
           <div className="flex items-center gap-1 shrink-0">
+            {currentSurgery && !editing && (
+              <Button
+                variant={isPackage ? "default" : "outline"}
+                size="sm"
+                className={`h-6 px-2 text-xs ${isPackage ? "bg-purple-600 hover:bg-purple-700" : "text-purple-700 border-purple-300"}`}
+                data-testid="button-toggle-package"
+                onClick={handleTogglePackage}
+                disabled={updateMutation.isPending}
+              >
+                <Package className="h-3 w-3 ml-0.5" />
+                باكدج
+              </Button>
+            )}
             {!editing && (
               <Button
                 variant="ghost" size="sm"
@@ -158,7 +181,7 @@ export function SurgeryTypeBar({ invoiceId, admissionId, isDraft, onInvoiceReloa
                 variant="ghost" size="sm"
                 className="h-6 px-2 text-xs text-muted-foreground"
                 data-testid="button-clear-surgery-type"
-                onClick={() => updateMutation.mutate(null)}
+                onClick={() => updateMutation.mutate({ surgeryTypeId: null, pkg: false })}
                 disabled={updateMutation.isPending}
               >
                 حذف

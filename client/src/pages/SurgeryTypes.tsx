@@ -2,6 +2,7 @@
  * Surgery Types Management Page
  * - CRUD for surgery types (name + category)
  * - Category price configuration (price per category = OR room opening fee)
+ * - Service linkage per category (regular + package services)
  * - Clean split layout: price config on top, types table below
  */
 import { useState } from "react";
@@ -22,9 +23,10 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Pencil, Trash2, AlertCircle } from "lucide-react";
+import { Plus, Pencil, Trash2, AlertCircle, Link2 } from "lucide-react";
 import type { SurgeryType, SurgeryCategoryPrice } from "@shared/schema";
 import { SURGERY_CATEGORIES, surgeryCategoryLabels } from "@shared/schema";
+import { useServicesLookup } from "@/hooks/lookups/useServicesLookup";
 
 // ─── Category Badge Colours ──────────────────────────────────────────────────
 
@@ -82,6 +84,88 @@ function CategoryPriceCard({
           {parseFloat(price || "0").toLocaleString("ar-EG")} ج.م
         </button>
       )}
+    </div>
+  );
+}
+
+// ─── Category Service Linkage ────────────────────────────────────────────────
+
+function CategoryServiceLinkSection({
+  prices,
+  onSave,
+}: {
+  prices: SurgeryCategoryPrice[];
+  onSave: (cat: string, serviceId: string | null, packageServiceId: string | null) => void;
+}) {
+  const { items: allServices } = useServicesLookup({ active: true, enabled: true });
+  const priceMap = Object.fromEntries(prices.map(p => [p.category, p]));
+
+  return (
+    <div className="rounded-xl border bg-card p-4 space-y-3">
+      <p className="text-sm font-semibold flex items-center gap-2">
+        <Link2 className="h-4 w-4 text-primary" />
+        ربط خدمات فتح الغرفة والباكدج لكل تصنيف
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b">
+              <th className="py-2 px-2 text-right font-semibold">التصنيف</th>
+              <th className="py-2 px-2 text-right font-semibold">خدمة فتح الغرفة (عادية)</th>
+              <th className="py-2 px-2 text-right font-semibold">خدمة الباكدج</th>
+            </tr>
+          </thead>
+          <tbody>
+            {SURGERY_CATEGORIES.map(cat => {
+              const rec = priceMap[cat];
+              return (
+                <tr key={cat} className="border-b last:border-b-0">
+                  <td className="py-2 px-2">
+                    <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${CATEGORY_COLOURS[cat]}`}>
+                      {surgeryCategoryLabels[cat as keyof typeof surgeryCategoryLabels]}
+                    </Badge>
+                  </td>
+                  <td className="py-2 px-2">
+                    <Select
+                      value={rec?.serviceId ?? "__none__"}
+                      onValueChange={v => onSave(cat, v === "__none__" ? null : v, rec?.packageServiceId ?? null)}
+                    >
+                      <SelectTrigger className="h-7 text-xs w-60" data-testid={`select-service-${cat}`}>
+                        <SelectValue placeholder="اختر خدمة..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">بدون</SelectItem>
+                        {allServices.map(s => (
+                          <SelectItem key={s.id} value={s.id}>{s.code ? `${s.code} - ` : ""}{s.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </td>
+                  <td className="py-2 px-2">
+                    <Select
+                      value={rec?.packageServiceId ?? "__none__"}
+                      onValueChange={v => onSave(cat, rec?.serviceId ?? null, v === "__none__" ? null : v)}
+                    >
+                      <SelectTrigger className="h-7 text-xs w-60" data-testid={`select-package-service-${cat}`}>
+                        <SelectValue placeholder="اختر خدمة..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">بدون</SelectItem>
+                        {allServices.map(s => (
+                          <SelectItem key={s.id} value={s.id}>{s.code ? `${s.code} - ` : ""}{s.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        اختر الخدمة العادية وخدمة الباكدج لكل تصنيف — عند إدخال مريض ستُضاف الخدمة المناسبة تلقائياً
+      </p>
     </div>
   );
 }
@@ -208,11 +292,11 @@ export default function SurgeryTypesPage() {
   const priceMap = Object.fromEntries(prices.map(p => [p.category, p.price]));
 
   const savePriceMutation = useMutation({
-    mutationFn: ({ cat, price }: { cat: string; price: string }) =>
-      apiRequest("PUT", `/api/surgery-category-prices/${cat}`, { price }).then(r => r.json()),
+    mutationFn: ({ cat, price, serviceId, packageServiceId }: { cat: string; price: string; serviceId?: string | null; packageServiceId?: string | null }) =>
+      apiRequest("PUT", `/api/surgery-category-prices/${cat}`, { price, serviceId, packageServiceId }).then(r => r.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/surgery-category-prices"] });
-      toast({ title: "تم حفظ السعر" });
+      toast({ title: "تم الحفظ" });
     },
     onError: (e: Error) => toast({ variant: "destructive", title: "خطأ", description: e.message }),
   });
@@ -278,6 +362,15 @@ export default function SurgeryTypesPage() {
           اضغط على السعر لتعديله — يسري على جميع العمليات من نفس التصنيف
         </p>
       </div>
+
+      {/* Service Linkage */}
+      <CategoryServiceLinkSection
+        prices={prices}
+        onSave={(cat, serviceId, packageServiceId) => {
+          const currentPrice = priceMap[cat] ?? "0";
+          savePriceMutation.mutate({ cat, price: currentPrice, serviceId, packageServiceId });
+        }}
+      />
 
       {/* Filters */}
       <div className="flex gap-3 items-center">

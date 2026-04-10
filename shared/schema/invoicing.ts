@@ -363,6 +363,7 @@ export const patientInvoiceHeaders = pgTable("patient_invoice_headers", {
   // snapshot دائم يُحفظ عند الاعتماد — يظل مرجعاً حتى لو تغيّر master data
   finalizedSnapshotJson: text("finalized_snapshot_json"),
   // ── الإغلاق النهائي للفاتورة المجمعة (audit trail كامل) ─────────────────────
+  isPackage:        boolean("is_package").notNull().default(false),
   isFinalClosed:    boolean("is_final_closed").notNull().default(false),
   finalClosedAt:    timestamp("final_closed_at"),
   finalClosedBy:    varchar("final_closed_by").references(() => users.id),
@@ -450,6 +451,7 @@ export const patientInvoiceLines = pgTable("patient_invoice_lines", {
   encounterId: varchar("encounter_id"),
   linkedLineId: varchar("linked_line_id"),
   doctorCostAmount: decimal("doctor_cost_amount", { precision: 18, scale: 2 }),
+  doctorCostManualOverride: boolean("doctor_cost_manual_override").default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   headerIdx:         index("idx_pat_line_header").on(table.headerId),

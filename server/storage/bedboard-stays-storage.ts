@@ -337,15 +337,21 @@ const methods = {
     return db.select().from(surgeryCategoryPrices).orderBy(asc(surgeryCategoryPrices.category));
   },
 
-  async upsertSurgeryCategoryPrice(this: DatabaseStorage, category: string, price: string): Promise<SurgeryCategoryPrice> {
+  async upsertSurgeryCategoryPrice(this: DatabaseStorage, category: string, price: string, serviceId?: string | null, packageServiceId?: string | null): Promise<SurgeryCategoryPrice> {
+    const set: Record<string, unknown> = { price };
+    if (serviceId !== undefined) set.serviceId = serviceId;
+    if (packageServiceId !== undefined) set.packageServiceId = packageServiceId;
+    const vals: any = { category, price };
+    if (serviceId !== undefined) vals.serviceId = serviceId;
+    if (packageServiceId !== undefined) vals.packageServiceId = packageServiceId;
     const [row] = await db.insert(surgeryCategoryPrices)
-      .values({ category, price })
-      .onConflictDoUpdate({ target: surgeryCategoryPrices.category, set: { price } })
+      .values(vals)
+      .onConflictDoUpdate({ target: surgeryCategoryPrices.category, set })
       .returning();
     return row;
   },
 
-  async updateInvoiceSurgeryType(this: DatabaseStorage, invoiceId: string, surgeryTypeId: string | null): Promise<void> {
+  async updateInvoiceSurgeryType(this: DatabaseStorage, invoiceId: string, surgeryTypeId: string | null, isPackage: boolean = false): Promise<void> {
     await db.transaction(async (tx) => {
       const hdrRes = await tx.execute(
         sql`SELECT * FROM patient_invoice_headers WHERE id = ${invoiceId} FOR UPDATE`
@@ -358,9 +364,14 @@ const methods = {
         sql`DELETE FROM patient_invoice_lines WHERE header_id = ${invoiceId} AND source_type = 'OR_ROOM'`
       );
 
+      await tx.execute(
+        sql`UPDATE patient_invoice_headers SET is_package = ${isPackage} WHERE id = ${invoiceId}`
+      );
+
       if (surgeryTypeId) {
         const stRes = await tx.execute(
-          sql`SELECT st.id, st.name_ar, st.category, scp.price
+          sql`SELECT st.id, st.name_ar, st.category, scp.price,
+                     scp.service_id, scp.package_service_id
               FROM surgery_types st
               LEFT JOIN surgery_category_prices scp ON scp.category = st.category
               WHERE st.id = ${surgeryTypeId} AND st.is_active = true
@@ -369,14 +380,31 @@ const methods = {
         const st = stRes.rows[0] as Record<string, unknown>;
         if (!st) throw new Error("نوع العملية غير موجود أو غير نشط");
 
-        const price = parseFloat((st.price as string | null) || "0");
-        const desc = `فتح غرفة عمليات — ${st.name_ar}`;
+        const linkedServiceId = isPackage
+          ? (st.package_service_id as string | null)
+          : (st.service_id as string | null);
+
+        let price = parseFloat((st.price as string | null) || "0");
+        let desc = isPackage
+          ? `باكدج عملية — ${st.name_ar}`
+          : `فتح غرفة عمليات — ${st.name_ar}`;
+
+        if (linkedServiceId) {
+          const svcRes = await tx.execute(
+            sql`SELECT base_price, name_ar FROM services WHERE id = ${linkedServiceId} LIMIT 1`
+          );
+          const svc = svcRes.rows[0] as Record<string, unknown> | undefined;
+          if (svc) {
+            price = parseFloat((svc.base_price as string | null) || String(price));
+            desc = `${svc.name_ar} — ${st.name_ar}`;
+          }
+        }
 
         await tx.execute(
           sql`INSERT INTO patient_invoice_lines
-              (header_id, line_type, description, quantity, unit_price, discount_percent, discount_amount, total_price, unit_level, sort_order, source_type, source_id)
+              (header_id, line_type, service_id, description, quantity, unit_price, discount_percent, discount_amount, total_price, unit_level, sort_order, source_type, source_id, business_classification)
               VALUES
-              (${invoiceId}, 'service', ${desc}, '1', ${String(price)}, '0', '0', ${String(price)}, 'minor', 5, 'OR_ROOM', ${`or_room:${invoiceId}:${surgeryTypeId}`})`
+              (${invoiceId}, 'service', ${linkedServiceId}, ${desc}, '1', ${String(price)}, '0', '0', ${String(price)}, 'minor', 5, 'OR_ROOM', ${`or_room:${invoiceId}:${surgeryTypeId}`}, 'medical_service')`
         );
 
         await tx.execute(

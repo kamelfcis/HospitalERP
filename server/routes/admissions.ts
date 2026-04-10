@@ -62,18 +62,23 @@ export function registerAdmissionsRoutes(app: Express) {
 
   app.put("/api/surgery-category-prices/:category", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.SURGERY_TYPES_MANAGE), async (req, res) => {
     try {
-      const { price } = req.body;
+      const { price, serviceId, packageServiceId } = req.body;
       if (price === undefined || isNaN(parseFloat(price)))
         return res.status(400).json({ message: "السعر غير صالح" });
-      const row = await storage.upsertSurgeryCategoryPrice(req.params.category as string, String(parseFloat(price)));
+      const row = await storage.upsertSurgeryCategoryPrice(
+        req.params.category as string,
+        String(parseFloat(price)),
+        serviceId ?? null,
+        packageServiceId ?? null,
+      );
       res.json(row);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });
 
   app.put("/api/patient-invoices/:id/surgery-type", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.ADMISSIONS_MANAGE), async (req, res) => {
     try {
-      const { surgeryTypeId } = req.body;
-      await storage.updateInvoiceSurgeryType(req.params.id as string, surgeryTypeId || null);
+      const { surgeryTypeId, isPackage } = req.body;
+      await storage.updateInvoiceSurgeryType(req.params.id as string, surgeryTypeId || null, isPackage ?? false);
       res.json({ success: true });
     } catch (e: any) {
       const code = e.message.includes("غير موجود") ? 404

@@ -386,6 +386,7 @@ export default function PatientInvoice() {
       form.setCompanyCoveragePct(parseFloat(data.companyCoveragePct) || 100);
       form.setNotes(data.notes || "");
       form.setAdmissionId(data.admissionId || "");
+      form.setIsPackage(data.isPackage ?? false);
       form.setStatus(data.status);
       form.setHeaderDiscountPercent(parseFloat(data.headerDiscountPercent) || 0);
       form.setHeaderDiscountAmount(parseFloat(data.headerDiscountAmount) || 0);
@@ -440,6 +441,7 @@ export default function PatientInvoice() {
               invoiceId={form.invoiceId}
               admissionId={form.admissionId}
               isDraft={form.isDraft}
+              isPackage={form.isPackage}
               onInvoiceReload={() => loadInvoice(form.invoiceId!)}
             />
           )}

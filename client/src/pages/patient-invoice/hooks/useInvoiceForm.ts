@@ -83,6 +83,7 @@ export function useInvoiceForm(
   const [notes, setNotes]                 = useState("");
   const [status, setStatus]               = useState("draft");
   const [admissionId, setAdmissionId]     = useState("");
+  const [isPackage, setIsPackage]         = useState(false);
   const [visitId, setVisitId]             = useState("");
   const [warehouseId, setWarehouseId]     = useState("");
   const [headerDiscountPercent, setHeaderDiscountPercent] = useState(0);
@@ -109,6 +110,7 @@ export function useInvoiceForm(
     setCompanyCoveragePct(100);
     setNotes("");
     setAdmissionId("");
+    setIsPackage(false);
     setVisitId("");
     setStatus("draft");
     setHeaderDiscountPercent(0);
@@ -136,6 +138,7 @@ export function useInvoiceForm(
     notes, setNotes,
     status, setStatus,
     admissionId, setAdmissionId,
+    isPackage, setIsPackage,
     visitId, setVisitId,
     warehouseId, setWarehouseId,
     headerDiscountPercent, setHeaderDiscountPercent,

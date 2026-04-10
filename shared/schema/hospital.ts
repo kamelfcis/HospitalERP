@@ -211,6 +211,8 @@ export const surgeryTypes = pgTable("surgery_types", {
 export const surgeryCategoryPrices = pgTable("surgery_category_prices", {
   category: varchar("category", { length: 20 }).primaryKey(),
   price:    decimal("price", { precision: 12, scale: 2 }).notNull().default("0"),
+  serviceId: varchar("service_id"),
+  packageServiceId: varchar("package_service_id"),
 });
 
 // ─── قبول المرضى ──────────────────────────────────────────────────────────

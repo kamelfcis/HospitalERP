@@ -77,4 +77,5 @@ export interface RawInvoiceLine {
   } | null;
   requiresDoctor?: boolean | null;
   requiresNurse?: boolean | null;
+  doctorCostManualOverride?: boolean | null;
 }

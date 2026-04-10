@@ -139,7 +139,7 @@ const methods = {
     bedId: string; patientName: string; patientPhone?: string; patientId?: string;
     departmentId?: string; serviceId?: string; doctorName?: string; notes?: string;
     paymentType?: string; insuranceCompany?: string; surgeryTypeId?: string;
-    contractMemberId?: string;
+    contractMemberId?: string; isPackage?: boolean;
   }) {
     const result = await db.transaction(async (tx) => {
       const bedRes = await tx.execute(sql`SELECT * FROM beds WHERE id = ${params.bedId} FOR UPDATE`);
@@ -277,6 +277,7 @@ const methods = {
         companyId: resolvedCompanyId,
         contractId: resolvedContractId,
         contractMemberId: params.contractMemberId || null,
+        isPackage: params.isPackage ?? false,
         status: "draft" as "draft",
         invoiceDate: new Date().toISOString().split("T")[0] as unknown as Date,
         totalAmount: "0",
@@ -331,8 +332,10 @@ const methods = {
       }
 
       if (params.surgeryTypeId) {
+        const isPackage = params.isPackage ?? false;
         const stRes = await tx.execute(
-          sql`SELECT st.name_ar, st.category, COALESCE(scp.price, 0) AS price
+          sql`SELECT st.name_ar, st.category, COALESCE(scp.price, 0) AS price,
+                     scp.service_id, scp.package_service_id
               FROM surgery_types st
               LEFT JOIN surgery_category_prices scp ON scp.category = st.category
               WHERE st.id = ${params.surgeryTypeId} AND st.is_active = true
@@ -340,15 +343,33 @@ const methods = {
         );
         const st = stRes.rows[0] as Record<string, unknown>;
         if (st) {
-          const orPrice = String(parseFloat((st.price as string | null) || "0"));
-          const orDesc = `فتح غرفة عمليات — ${st.name_ar}`;
+          const linkedServiceId = isPackage
+            ? (st.package_service_id as string | null)
+            : (st.service_id as string | null);
+
+          let orPrice = String(parseFloat((st.price as string | null) || "0"));
+          let orDesc = isPackage
+            ? `باكدج عملية — ${st.name_ar}`
+            : `فتح غرفة عمليات — ${st.name_ar}`;
+
+          if (linkedServiceId) {
+            const svcRes = await tx.execute(
+              sql`SELECT base_price, name_ar FROM services WHERE id = ${linkedServiceId} LIMIT 1`
+            );
+            const svc = svcRes.rows[0] as Record<string, unknown> | undefined;
+            if (svc) {
+              orPrice = String(parseFloat((svc.base_price as string | null) || orPrice));
+              orDesc = `${svc.name_ar} — ${st.name_ar}`;
+            }
+          }
+
           const orSourceId = `or_room:${invoice.id}:${params.surgeryTypeId}`;
           await tx.execute(sql`
             INSERT INTO patient_invoice_lines
-              (header_id, line_type, description, quantity, unit_price, discount_percent, discount_amount,
+              (header_id, line_type, service_id, description, quantity, unit_price, discount_percent, discount_amount,
                total_price, unit_level, sort_order, source_type, source_id, business_classification)
             VALUES
-              (${invoice.id}, 'service', ${orDesc}, '1', ${orPrice}, '0', '0',
+              (${invoice.id}, 'service', ${linkedServiceId}, ${orDesc}, '1', ${orPrice}, '0', '0',
                ${orPrice}, 'minor', 5, 'OR_ROOM', ${orSourceId}, 'medical_service')
             ON CONFLICT (source_type, source_id)
               WHERE is_void = false AND source_type IS NOT NULL AND source_id IS NOT NULL

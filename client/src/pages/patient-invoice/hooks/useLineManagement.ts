@@ -94,8 +94,8 @@ export function useLineManagement({
       templateNameSnapshot: (l as any).templateNameSnapshot ?? (l as any).template_name_snapshot ?? null,
       appliedAt:            (l as any).appliedAt            ?? (l as any).applied_at              ?? null,
       appliedBy:            (l as any).appliedBy            ?? (l as any).applied_by              ?? null,
-      // للبنود المحملة من DB: نستخدم unitPrice الحالي كـ baseline للكشف عن التعديل اللاحق
       resolvedUnitPrice:    parseFloat(l.unitPrice || "0") || 0,
+      doctorCostManualOverride: l.doctorCostManualOverride ?? false,
     }));
     setLines(loaded);
     return loaded;

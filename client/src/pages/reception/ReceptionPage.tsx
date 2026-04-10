@@ -230,6 +230,7 @@ export default function ReceptionPage() {
   const [admDoctor, setAdmDoctor] = useState<LookupItem | null>(null);
   const [surgerySearch, setSurgerySearch] = useState("");
   const [selectedSurgery, setSelectedSurgery] = useState<SurgeryType | null>(null);
+  const [isPackage, setIsPackage] = useState(false);
   const [showSurgeryDrop, setShowSurgeryDrop] = useState(false);
   const [highlightedSurgery, setHighlightedSurgery] = useState(0);
 
@@ -515,6 +516,7 @@ export default function ReceptionPage() {
           age: age !== "" ? parseInt(age, 10) : undefined,
           doctorName: admDoctor?.name || undefined,
           surgeryTypeId: selectedSurgery?.id || undefined,
+          isPackage: selectedSurgery ? isPackage : undefined,
           paymentType: admPaymentType,
           insuranceCompany: paymentType !== "CASH" ? (resolved?.companyName ?? (insuranceCo || undefined)) : undefined,
           contractMemberId: resolved?.memberId || undefined,
@@ -1069,7 +1071,21 @@ export default function ReceptionPage() {
                           </div>
                         )}
                       </div>
-                      {selectedSurgery && <Badge variant="secondary" className="text-xs">{selectedSurgery.nameAr}</Badge>}
+                      {selectedSurgery && (
+                        <div className="flex items-center gap-2 mt-1">
+                          <Badge variant="secondary" className="text-xs">{selectedSurgery.nameAr}</Badge>
+                          <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isPackage}
+                              onChange={e => setIsPackage(e.target.checked)}
+                              className="rounded border-primary"
+                              data-testid="checkbox-is-package"
+                            />
+                            <span className="text-xs font-medium text-purple-700">باكدج</span>
+                          </label>
+                        </div>
+                      )}
                     </div>
                   </section>
                 )}
