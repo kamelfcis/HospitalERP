@@ -220,6 +220,29 @@ const methods = {
       const invSeq = parseInt((invCntRes.rows[0] as Record<string, unknown>)?.cnt as string | undefined ?? "0") + 1;
       const invoiceNumber = `PI-${String(invSeq).padStart(6, "0")}`;
 
+      let resolvedCompanyId: string | null = null;
+      let resolvedContractId: string | null = null;
+      let resolvedContractName: string | null = params.paymentType === "contract" ? (params.insuranceCompany || null) : null;
+
+      if (params.paymentType === "contract" && params.insuranceCompany) {
+        const compRes = await tx.execute(
+          sql`SELECT id FROM companies WHERE name_ar = ${params.insuranceCompany} AND is_active = true LIMIT 1`
+        );
+        if (compRes.rows.length > 0) {
+          resolvedCompanyId = (compRes.rows[0] as Record<string, unknown>).id as string;
+          const contrRes = await tx.execute(
+            sql`SELECT id, contract_name FROM contracts
+                WHERE company_id = ${resolvedCompanyId} AND is_active = true
+                ORDER BY created_at DESC LIMIT 1`
+          );
+          if (contrRes.rows.length > 0) {
+            const cr = contrRes.rows[0] as Record<string, unknown>;
+            resolvedContractId = cr.id as string;
+            resolvedContractName = (cr.contract_name as string) || resolvedContractName;
+          }
+        }
+      }
+
       const [invoice] = await tx.insert(patientInvoiceHeaders).values({
         invoiceNumber,
         patientName: params.patientName,
@@ -231,7 +254,9 @@ const methods = {
         doctorName: admission.doctorName || null,
         patientId: resolvedPatientId,
         patientType: (params.paymentType === "contract" ? "contract" : "cash") as "contract" | "cash",
-        contractName: params.paymentType === "contract" ? (params.insuranceCompany || null) : null,
+        contractName: resolvedContractName,
+        companyId: resolvedCompanyId,
+        contractId: resolvedContractId,
         status: "draft" as "draft",
         invoiceDate: new Date().toISOString().split("T")[0] as unknown as Date,
         totalAmount: "0",
