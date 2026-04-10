@@ -149,6 +149,7 @@ function FinRow({ label, value, highlight, muted, border }: {
 
 const FinancialSidebar = memo(function FinancialSidebar({
   totals, isFinalClosed, canFinalClose, onFinalClose, isPending, finalClosedAt, invoiceNumber,
+  contractName, companyShareAmount, patientShareAmount,
 }: {
   totals: { totalAmount: number; discountAmount: number; netAmount: number; paidAmount: number; remaining: number };
   isFinalClosed: boolean;
@@ -157,7 +158,11 @@ const FinancialSidebar = memo(function FinancialSidebar({
   isPending: boolean;
   finalClosedAt?: string | null;
   invoiceNumber?: string;
+  contractName?: string | null;
+  companyShareAmount?: number | null;
+  patientShareAmount?: number | null;
 }) {
+  const hasContractSplit = (companyShareAmount != null && companyShareAmount > 0) || (patientShareAmount != null && patientShareAmount > 0);
   return (
     <div className="flex flex-col gap-1 min-w-[160px]">
       <div className="bg-slate-50 border rounded-xl p-4 flex flex-col gap-0.5">
@@ -172,6 +177,34 @@ const FinancialSidebar = memo(function FinancialSidebar({
         <FinRow label="المدفوع" value={totals.paidAmount} />
         <FinRow label="الباقي" value={totals.remaining} />
       </div>
+
+      {hasContractSplit && (
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 flex flex-col gap-0.5" data-testid="section-contract-split">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Building2 className="h-3.5 w-3.5 text-indigo-600" />
+            <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">توزيع التعاقد</p>
+          </div>
+          {contractName && (
+            <div className="text-[10px] text-indigo-600 mb-1.5 font-medium">{contractName}</div>
+          )}
+          <div className="flex justify-between items-center py-1">
+            <span className="text-xs text-indigo-700/80">نصيب الشركة</span>
+            <span className="font-mono text-sm font-semibold text-indigo-700">{fmtMoney(companyShareAmount ?? 0)}</span>
+          </div>
+          <div className="flex justify-between items-center py-1">
+            <span className="text-xs text-indigo-700/80">نصيب المريض</span>
+            <span className="font-mono text-sm font-semibold text-amber-700">{fmtMoney(patientShareAmount ?? 0)}</span>
+          </div>
+          {companyShareAmount != null && patientShareAmount != null && (companyShareAmount + patientShareAmount) > 0 && (
+            <div className="flex justify-between items-center py-0.5 mt-1 border-t border-indigo-200 pt-1.5">
+              <span className="text-[10px] text-indigo-600">نسبة الشركة</span>
+              <span className="text-[10px] font-mono font-semibold text-indigo-600">
+                {Math.round((companyShareAmount / (companyShareAmount + patientShareAmount)) * 100)}%
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       {isFinalClosed ? (
         <div className="flex flex-col items-center gap-1 mt-3 p-3 rounded-xl border border-green-200 bg-green-50">
@@ -1875,6 +1908,9 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
               isPending={finalCloseMutation.isPending}
               finalClosedAt={primaryInvoice?.finalClosedAt}
               invoiceNumber={invoiceNumber}
+              contractName={primaryInvoice?.contractName}
+              companyShareAmount={data?.totals.companyShareAmount}
+              patientShareAmount={data?.totals.patientShareAmount}
             />
 
             <div className="bg-white border rounded-xl overflow-hidden">
