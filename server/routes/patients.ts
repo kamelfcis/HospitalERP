@@ -1213,7 +1213,9 @@ export function registerPatientsRoutes(app: Express) {
           a.admission_date,
           a.discharge_date,
           a.admission_number,
-          a.patient_name AS admission_patient_name
+          a.patient_name AS admission_patient_name,
+          a.created_at  AS admission_created_at,
+          a.updated_at  AS admission_updated_at
         FROM patient_visits pv
         LEFT JOIN departments d ON d.id = pv.department_id
         LEFT JOIN admissions  a ON a.id = pv.admission_id

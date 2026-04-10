@@ -7,6 +7,19 @@ export function fmtDate(d?: string | null, opts?: Intl.DateTimeFormatOptions): s
   }
 }
 
+export function fmtDateTime(d?: string | null): string {
+  if (!d) return "—";
+  try {
+    const dt = new Date(d);
+    if (Number.isNaN(dt.getTime())) return d;
+    const datePart = dt.toLocaleDateString("ar-EG", { year: "numeric", month: "short", day: "numeric" });
+    const timePart = dt.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" });
+    return `${datePart} ${timePart}`;
+  } catch {
+    return d;
+  }
+}
+
 export function fmtMoney(v?: string | number | null): string {
   const n = parseFloat(String(v ?? 0));
   if (isNaN(n)) return "0.00";

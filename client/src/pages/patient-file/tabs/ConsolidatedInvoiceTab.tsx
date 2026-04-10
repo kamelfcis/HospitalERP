@@ -25,7 +25,8 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { fmtDate, fmtMoney, fmtQty, PAYMENT_METHOD_LABELS, LINE_TYPE_LABELS } from "../shared/formatters";
+import { DoctorLookup } from "@/components/lookups";
+import { fmtDate, fmtDateTime, fmtMoney, fmtQty, PAYMENT_METHOD_LABELS, LINE_TYPE_LABELS } from "../shared/formatters";
 import { useInvoiceLines, usePaymentsList } from "../hooks/useInvoiceLines";
 import type {
   AggregatedInvoice, AggregatedViewData, InvoiceLine, VisitGroup,
@@ -44,6 +45,8 @@ interface PatientVisit {
   admission_date: string | null;
   discharge_date: string | null;
   admission_number: string | null;
+  admission_created_at: string | null;
+  admission_updated_at: string | null;
 }
 
 interface Props {
@@ -645,22 +648,12 @@ const InvoiceHeaderCard = memo(function InvoiceHeaderCard({
         {/* Divider */}
         <div className="hidden sm:block w-px h-10 bg-border shrink-0" />
 
-        {/* Invoice info */}
+        {/* Invoice & visit info */}
         <div className="flex flex-col gap-0.5">
           {invoiceNumber && (
             <div className="flex items-center gap-1.5">
               <FileText className="h-3 w-3 text-slate-400 shrink-0" />
               <span className="font-mono text-sm font-semibold">{invoiceNumber}</span>
-            </div>
-          )}
-          {visit?.admission_date && (
-            <div className="flex items-center gap-1.5">
-              <CalendarDays className="h-3 w-3 text-slate-400 shrink-0" />
-              <span className="text-xs">
-                دخول: <span className="font-medium">{fmtDate(visit.admission_date)}</span>
-                {visit.discharge_date && <> — خروج: <span className="font-medium">{fmtDate(visit.discharge_date)}</span></>}
-                {!visit.discharge_date && <span className="text-amber-600 text-xs mr-1">لم يخرج بعد</span>}
-              </span>
             </div>
           )}
           {visit?.visit_number && (
@@ -672,6 +665,31 @@ const InvoiceHeaderCard = memo(function InvoiceHeaderCard({
             </div>
           )}
         </div>
+
+        {/* Admission / Discharge timestamps */}
+        {visit?.admission_date && (
+          <>
+            <div className="hidden sm:block w-px h-10 bg-border shrink-0" />
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-1.5" data-testid="text-admission-datetime">
+                <CalendarDays className="h-3 w-3 text-green-500 shrink-0" />
+                <span className="text-xs">
+                  دخول: <span className="font-medium">{fmtDateTime(visit.admission_created_at || visit.admission_date)}</span>
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5" data-testid="text-discharge-datetime">
+                <Clock className="h-3 w-3 shrink-0" style={{ color: visit.discharge_date ? "#16a34a" : "#d97706" }} />
+                {visit.discharge_date ? (
+                  <span className="text-xs">
+                    خروج: <span className="font-medium text-green-700">{fmtDateTime(visit.admission_updated_at || visit.discharge_date)}</span>
+                  </span>
+                ) : (
+                  <span className="text-xs text-amber-600 font-medium">لم يخرج بعد</span>
+                )}
+              </div>
+            </div>
+          </>
+        )}
 
         {/* Status badge */}
         <div className="mr-auto">
@@ -1343,20 +1361,20 @@ const DoctorTransferPanel = memo(function DoctorTransferPanel({
 }) {
   const { toast } = useToast();
   const [selectedDoctorId, setSelectedDoctorId] = useState("");
+  const [selectedDoctorName, setSelectedDoctorName] = useState("");
   const [amount, setAmount] = useState("");
   const [transferNotes, setTransferNotes] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const canTransfer = !isFinalClosed;
 
-  const { data: doctors = [] } = useQuery<any[]>({
-    queryKey: ["/api/doctors"],
-    queryFn: async () => {
-      const r = await fetch("/api/doctors", { credentials: "include" });
-      if (!r.ok) return [];
-      return r.json();
-    },
-  });
+  useEffect(() => {
+    setSelectedDoctorId("");
+    setSelectedDoctorName("");
+    setAmount("");
+    setTransferNotes("");
+    setConfirmOpen(false);
+  }, [invoiceId]);
 
   const { data: transfers = [], refetch: refetchTransfers } = useQuery<any[]>({
     queryKey: ["/api/patient-invoices", invoiceId, "transfers"],
@@ -1371,14 +1389,13 @@ const DoctorTransferPanel = memo(function DoctorTransferPanel({
   const alreadyTransferred = transfers.reduce((s: number, t: any) => s + parseFloat(t.amount || "0"), 0);
   const remaining = Math.max(0, netAmount - alreadyTransferred);
 
-  const selectedDoctor = doctors.find((d: any) => d.id === selectedDoctorId);
   const showDoctorSelect = !!amount && parseFloat(amount) > 0;
 
   const transferMutation = useMutation({
     mutationFn: () => {
       const clientRequestId = crypto.randomUUID();
       return apiRequest("POST", `/api/patient-invoices/${invoiceId}/transfer-to-doctor`, {
-        doctorName: selectedDoctor?.name ?? "",
+        doctorName: selectedDoctorName,
         amount: parseFloat(amount),
         notes: transferNotes.trim() || undefined,
         clientRequestId,
@@ -1387,6 +1404,7 @@ const DoctorTransferPanel = memo(function DoctorTransferPanel({
     onSuccess: () => {
       toast({ title: "تم التحويل", description: "تم تحويل المستحقات للطبيب بنجاح" });
       setSelectedDoctorId("");
+      setSelectedDoctorName("");
       setAmount("");
       setTransferNotes("");
       setConfirmOpen(false);
@@ -1450,19 +1468,15 @@ const DoctorTransferPanel = memo(function DoctorTransferPanel({
           )}
 
           {showDoctorSelect && (
-            <Select value={selectedDoctorId || "__none__"} onValueChange={v => setSelectedDoctorId(v === "__none__" ? "" : v)}>
-              <SelectTrigger className="h-8 text-xs" data-testid="select-transfer-doctor">
-                <SelectValue placeholder="اختر الطبيب *" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__" disabled>اختر الطبيب</SelectItem>
-                {doctors.map((d: any) => (
-                  <SelectItem key={d.id} value={d.id}>
-                    {d.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <DoctorLookup
+              value={selectedDoctorId}
+              onChange={(item) => {
+                setSelectedDoctorId(item?.id ?? "");
+                setSelectedDoctorName(item?.name ?? "");
+              }}
+              placeholder="ابحث عن طبيب..."
+              data-testid="select-transfer-doctor"
+            />
           )}
 
           {showDoctorSelect && selectedDoctorId && (
@@ -1484,13 +1498,13 @@ const DoctorTransferPanel = memo(function DoctorTransferPanel({
                   data-testid="button-transfer-doctor"
                 >
                   {transferMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <DoctorIcon className="h-3 w-3" />}
-                  تحويل {fmtMoney(parseFloat(amount) || 0)} لـ {selectedDoctor?.name ?? ""}
+                  تحويل {fmtMoney(parseFloat(amount) || 0)} لـ {selectedDoctorName}
                 </Button>
                 <AlertDialogContent dir="rtl">
                   <AlertDialogHeader>
                     <AlertDialogTitle>تأكيد التحويل</AlertDialogTitle>
                     <AlertDialogDescription>
-                      تحويل <strong>{fmtMoney(parseFloat(amount) || 0)}</strong> للطبيب <strong>{selectedDoctor?.name ?? ""}</strong>
+                      تحويل <strong>{fmtMoney(parseFloat(amount) || 0)}</strong> للطبيب <strong>{selectedDoctorName}</strong>
                       {parseFloat(amount) >= remaining - 0.001 && (
                         <span className="block mt-2 text-amber-600 font-semibold">
                           هذا كامل المبلغ المتبقي — سيصبح رصيد الفاتورة صفر
