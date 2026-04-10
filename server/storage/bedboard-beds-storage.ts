@@ -301,10 +301,10 @@ const methods = {
           await tx.execute(sql`
             INSERT INTO patient_invoice_lines
               (header_id, line_type, description, quantity, unit_price, discount_percent, discount_amount,
-               total_price, unit_level, sort_order, source_type, source_id)
+               total_price, unit_level, sort_order, source_type, source_id, business_classification)
             VALUES
               (${invoice.id}, 'service', ${orDesc}, '1', ${orPrice}, '0', '0',
-               ${orPrice}, 'minor', 5, 'OR_ROOM', ${orSourceId})
+               ${orPrice}, 'minor', 5, 'OR_ROOM', ${orSourceId}, 'medical_service')
             ON CONFLICT (source_type, source_id)
               WHERE is_void = false AND source_type IS NOT NULL AND source_id IS NOT NULL
             DO NOTHING
