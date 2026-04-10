@@ -632,9 +632,9 @@ const InvoiceHeaderCard = memo(function InvoiceHeaderCard({
             {patientCode && <span className="font-mono text-xs text-muted-foreground">{patientCode}</span>}
           </div>
           {visit?.doctor_name && (
-            <div className="flex items-center gap-1.5">
-              <Stethoscope className="h-3 w-3 text-teal-500 shrink-0" />
-              <span className="text-xs text-muted-foreground">{visit.doctor_name}</span>
+            <div className="flex items-center gap-1.5" data-testid="text-doctor-name">
+              <Stethoscope className="h-3.5 w-3.5 text-teal-600 shrink-0" />
+              <span className="text-sm font-semibold text-teal-700">{visit.doctor_name}</span>
             </div>
           )}
           {visit?.department_name && (
@@ -1725,6 +1725,11 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
     [patientVisits, selectedVisitKey],
   );
 
+  const displayVisit = useMemo(
+    () => selectedVisit ?? patientVisits[0] ?? null,
+    [selectedVisit, patientVisits],
+  );
+
   const selectedVisitId = useMemo(() => {
     if (!selectedVisit) return null;
     return selectedVisit.id;
@@ -1804,11 +1809,7 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
     queryClient.invalidateQueries({ queryKey: ["/api/patients", patientId, "invoices-aggregated"] });
   }, [patientId, refetchFullInvoice]);
 
-  const [headerCollapsed, setHeaderCollapsed] = useState(true);
-
-  useEffect(() => {
-    if (primaryInvoice) setHeaderCollapsed(true);
-  }, [primaryInvoice?.id]);
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
 
   if (isLoading) return (
     <div className="flex justify-center items-center py-16">
@@ -1924,7 +1925,7 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
               <InvoiceHeaderCard
                 patientName={patientName}
                 patientCode={patientCode}
-                visit={selectedVisit}
+                visit={displayVisit}
                 invoiceNumber={invoiceNumber}
                 isFinalClosed={isFinalClosed}
                 invoiceStatus={invoiceStatus}
