@@ -334,15 +334,6 @@ export function registerPatientInvoicesRoutes(app: Express) {
         return res.status(409).json({ message: "لا يمكن اعتماد فاتورة ملغاة", code: "INVALID_STATUS" });
       }
 
-      const paidAmount = parseFloat(String(existing.paidAmount || "0"));
-      const netAmount = parseFloat(String(existing.netAmount || "0"));
-      if (netAmount > 0 && paidAmount < netAmount) {
-        return res.status(400).json({
-          message: `لا يمكن اعتماد الفاتورة قبل السداد الكامل. المدفوع: ${paidAmount.toLocaleString("ar-EG")} ج.م من أصل ${netAmount.toLocaleString("ar-EG")} ج.م`,
-          code: "UNPAID",
-        });
-      }
-
       // ── Hard validation: doctor financial accounts ──────────────────────
       const existingLines = (existing as any).lines ?? [];
       const hasDoctorCostLines = existingLines.some((l: any) => l.lineType === "doctor_cost" && !l.isVoid);
