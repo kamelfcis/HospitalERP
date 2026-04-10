@@ -1871,9 +1871,10 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
   }));
 
   return (
-    <div className="h-full flex flex-col xl:flex-row gap-3">
+    <div className="h-full overflow-y-auto">
+      <div className="flex flex-col xl:flex-row gap-3 min-h-full">
       {/* ── Main 2/3 ── */}
-      <div className="flex-1 min-w-0 overflow-hidden flex flex-col gap-3 min-h-0 order-2 xl:order-1">
+      <div className="flex-1 min-w-0 flex flex-col gap-3 order-2 xl:order-1">
         {/* Visit selector */}
         <div className="shrink-0 flex items-center gap-2 flex-wrap">
           <History className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -2004,7 +2005,7 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
 
       {/* ── Sidebar toggle + panel ── */}
       {!hasEncounterView && (
-        <div className={`shrink-0 flex flex-col order-1 xl:order-2 transition-all duration-200 ${sidebarVisible ? "w-full xl:w-1/3" : "w-8"}`}>
+        <div className={`shrink-0 flex flex-col order-1 xl:order-2 xl:sticky xl:top-0 xl:self-start xl:max-h-[calc(100vh-7rem)] transition-all duration-200 ${sidebarVisible ? "w-full xl:w-1/3" : "w-8"}`}>
           <button
             type="button"
             onClick={() => setSidebarVisible(v => !v)}
@@ -2085,6 +2086,7 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
           )}
         </div>
       )}
+      </div>
     </div>
   );
 });
