@@ -25,7 +25,7 @@ export function DoctorLookup({
   "data-testid": testId = "lookup-doctor",
 }: DoctorLookupProps) {
   const [search, setSearch] = useState("");
-  const { items, isLoading, resolveById } = useDoctorsLookup({ search, enabled: !disabled });
+  const { items, isLoading, resolveById } = useDoctorsLookup({ search, enabled: !disabled, selectedId: value || undefined });
 
   const displayValue = displayValueOverride ?? resolveById(value)?.name;
 

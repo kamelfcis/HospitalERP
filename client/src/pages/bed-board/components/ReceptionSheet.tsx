@@ -510,6 +510,7 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
                 <Label>الطبيب <span className="text-destructive">*</span></Label>
                 <DoctorLookup
                   value={selectedDoctor?.id ?? ""}
+                  displayValue={selectedDoctor?.name}
                   onChange={setSelectedDoctor}
                   data-testid="lookup-doctor"
                 />

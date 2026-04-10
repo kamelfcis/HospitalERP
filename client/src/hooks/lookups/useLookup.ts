@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDebounce } from "@/hooks/useDebounce";
 import type { LookupItem } from "@/lib/lookupTypes";
@@ -15,6 +15,7 @@ export interface UseLookupOptions<TRaw> {
   staleTime?: number;
   enabled?: boolean;
   resolveByIdFetcher?: (id: string) => Promise<TRaw>;
+  selectedId?: string;
 }
 
 export interface UseLookupResult {
@@ -34,6 +35,7 @@ export function useLookup<TRaw>(options: UseLookupOptions<TRaw>): UseLookupResul
     staleTime = 0,
     enabled = true,
     resolveByIdFetcher,
+    selectedId,
   } = options;
 
   const debouncedSearch = useDebounce(search, 300);
@@ -54,6 +56,14 @@ export function useLookup<TRaw>(options: UseLookupOptions<TRaw>): UseLookupResul
     enabled: enabled && isSearchReady,
   });
 
+  const singleResolveKey = selectedId ? [...baseQueryKey, "__resolve__", selectedId] : [];
+  const { data: resolvedSingle } = useQuery<TRaw>({
+    queryKey: singleResolveKey,
+    queryFn: () => resolveByIdFetcher!(selectedId!),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!selectedId && !!resolveByIdFetcher && mode === "server-search",
+  });
+
   const items = useMemo(() => rawItems.map(adapter), [rawItems, adapter]);
 
   const filteredItems = useMemo(() => {
@@ -67,7 +77,7 @@ export function useLookup<TRaw>(options: UseLookupOptions<TRaw>): UseLookupResul
     return items;
   }, [items, mode, search]);
 
-  function resolveById(id: string): LookupItem | undefined {
+  const resolveById = useCallback((id: string): LookupItem | undefined => {
     if (!id) return undefined;
 
     const fromCurrent = filteredItems.find(i => i.id === id);
@@ -78,20 +88,17 @@ export function useLookup<TRaw>(options: UseLookupOptions<TRaw>): UseLookupResul
       return fullCache?.map(adapter).find(i => i.id === id);
     }
 
-    if (mode === "server-search" && resolveByIdFetcher) {
+    if (mode === "server-search") {
+      if (resolvedSingle && id === selectedId) {
+        return adapter(resolvedSingle);
+      }
       const singleKey = [...baseQueryKey, "__resolve__", id];
       const cached = queryClient.getQueryData<TRaw>(singleKey);
       if (cached) return adapter(cached);
-
-      queryClient.fetchQuery({
-        queryKey: singleKey,
-        queryFn: () => resolveByIdFetcher(id),
-        staleTime: 5 * 60 * 1000,
-      });
     }
 
     return undefined;
-  }
+  }, [filteredItems, mode, queryClient, baseQueryKey, adapter, resolvedSingle, selectedId]);
 
   return { items: filteredItems, isLoading, resolveById };
 }

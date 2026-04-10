@@ -32,10 +32,11 @@ async function fetchDoctorById(id: string): Promise<Doctor> {
 export interface UseDoctorsLookupOptions {
   search?: string;
   enabled?: boolean;
+  selectedId?: string;
 }
 
 export function useDoctorsLookup(options: UseDoctorsLookupOptions = {}): UseLookupResult {
-  const { search = "", enabled = true } = options;
+  const { search = "", enabled = true, selectedId } = options;
   return useLookup<Doctor>({
     baseQueryKey: QUERY_KEYS.doctors(),
     fetcher: fetchDoctors,
@@ -46,5 +47,6 @@ export function useDoctorsLookup(options: UseDoctorsLookupOptions = {}): UseLook
     staleTime: 0,
     enabled,
     resolveByIdFetcher: fetchDoctorById,
+    selectedId,
   });
 }
