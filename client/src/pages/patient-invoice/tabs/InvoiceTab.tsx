@@ -249,6 +249,7 @@ export function InvoiceTab({
         lines={lines}
         resetForm={resetForm}
         saveMutation={saveMutation}
+        finalizeMutation={finalizeMutation}
         autoSaveStatus={autoSaveStatus}
         getStatusBadgeClass={getStatusBadgeClass}
       />

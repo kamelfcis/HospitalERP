@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
-  Save, Plus, Loader2, CreditCard,
+  Save, Plus, Loader2, CreditCard, ShieldCheck,
   Search, XCircle, CheckCircle2, ChevronDown, ChevronUp, BookmarkPlus, Cloud, CloudOff, AlertTriangle,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -85,6 +85,7 @@ interface InvoiceHeaderBarProps {
   lines: LineLocal[];
   resetForm: () => void;
   saveMutation: { mutate: () => void; isPending: boolean };
+  finalizeMutation?: { mutate: () => void; isPending: boolean };
 
   autoSaveStatus: AutoSaveStatus;
   getStatusBadgeClass: (status: string) => string;
@@ -107,7 +108,7 @@ export function InvoiceHeaderBar({
   contractMemberId, onMemberResolved, onMemberCleared,
   notes, setNotes,
   lines,
-  resetForm, saveMutation,
+  resetForm, saveMutation, finalizeMutation,
   autoSaveStatus,
   getStatusBadgeClass,
 }: InvoiceHeaderBarProps) {
@@ -240,6 +241,17 @@ export function InvoiceHeaderBar({
             {saveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
             حفظ كمسودة
           </Button>
+          {invoiceId && finalizeMutation && (
+            <Button size="sm"
+              className="h-6 text-xs px-2 gap-0.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+              onClick={() => finalizeMutation.mutate()}
+              disabled={finalizeMutation.isPending}
+              data-testid="button-finalize"
+            >
+              {finalizeMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <ShieldCheck className="h-3 w-3" />}
+              اعتماد الفاتورة
+            </Button>
+          )}
           {lines.length > 0 && (
             <Button size="sm" variant="outline"
               className="h-6 text-xs px-2 gap-0.5 border-amber-400 text-amber-700 hover:bg-amber-50 dark:border-amber-500 dark:text-amber-400"
