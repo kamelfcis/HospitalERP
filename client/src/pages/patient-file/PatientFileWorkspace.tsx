@@ -1,5 +1,5 @@
 import { useState, useCallback, memo } from "react";
-import { Loader2, ArrowRight, User, FileText, BookOpen, LayoutGrid, Banknote, PieChart, Lock } from "lucide-react";
+import { Loader2, ArrowRight, User, FileText, BookOpen, LayoutGrid, Banknote, PieChart, Lock, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useLocation } from "wouter";
@@ -122,6 +122,7 @@ export const PatientFileWorkspace = memo(function PatientFileWorkspace({ patient
   const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [sidebarEl, setSidebarEl] = useState<HTMLDivElement | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const { data: patient,   isLoading: loadingPatient   } = usePatientData(patientId);
   const { data: financial, isLoading: loadingFinancial } = usePatientFinancialSummary(patientId);
@@ -134,45 +135,43 @@ export const PatientFileWorkspace = memo(function PatientFileWorkspace({ patient
   const remaining = financial?.totalOutstanding ?? 0;
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-background" dir="rtl">
-      <div className="border-b bg-background/95 backdrop-blur shrink-0 z-10 print:hidden">
-        <div className="flex items-center gap-3 px-4 py-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1 h-8 shrink-0"
-            onClick={() => navigate("/patients")}
-            data-testid="btn-back-patients"
-          >
-            <ArrowRight className="h-4 w-4" />
-            المرضى
-          </Button>
+    <div className="flex h-screen overflow-hidden bg-background" dir="rtl">
+      <div className={`flex flex-col min-w-0 transition-all duration-200 ${sidebarOpen ? "flex-1" : "w-full"}`}>
+        <div className="border-b bg-background/95 backdrop-blur shrink-0 z-10 print:hidden">
+          <div className="flex items-center gap-3 px-4 py-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1 h-8 shrink-0"
+              onClick={() => navigate("/patients")}
+              data-testid="btn-back-patients"
+            >
+              <ArrowRight className="h-4 w-4" />
+              المرضى
+            </Button>
 
-          <div className="h-4 w-px bg-border" />
+            <div className="h-4 w-px bg-border" />
 
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            {loadingPatient ? (
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-            ) : (
-              <>
-                <span className="font-semibold text-base truncate">{patientName}</span>
-                {patient?.patientCode && (
-                  <Badge variant="outline" className="text-xs font-mono shrink-0">{patient.patientCode}</Badge>
-                )}
-                {remaining > 0.01 && (
-                  <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200 shrink-0">
-                    متبقي: {remaining.toLocaleString("ar-EG", { maximumFractionDigits: 2 })}
-                  </Badge>
-                )}
-              </>
-            )}
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              {loadingPatient ? (
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              ) : (
+                <>
+                  <span className="font-semibold text-base truncate">{patientName}</span>
+                  {patient?.patientCode && (
+                    <Badge variant="outline" className="text-xs font-mono shrink-0">{patient.patientCode}</Badge>
+                  )}
+                  {remaining > 0.01 && (
+                    <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200 shrink-0">
+                      متبقي: {remaining.toLocaleString("ar-EG", { maximumFractionDigits: 2 })}
+                    </Badge>
+                  )}
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      </div>
 
-      <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-          <div className="flex gap-0 border-b overflow-x-auto px-4 shrink-0 print:hidden">
+          <div className="flex gap-0 border-t overflow-x-auto px-4">
             {TABS.map(tab => (
               <button
                 key={tab.id}
@@ -190,72 +189,93 @@ export const PatientFileWorkspace = memo(function PatientFileWorkspace({ patient
               </button>
             ))}
           </div>
-
-          {activeTab === "consolidated" && (
-            <div className="flex-1 overflow-hidden p-3">
-              <ConsolidatedInvoiceTab
-                data={aggregated}
-                isLoading={loadingAggregated}
-                patientId={patientId}
-                patientName={patientName}
-                patientCode={patientCode}
-                sidebarContainer={sidebarEl}
-              />
-            </div>
-          )}
-
-          {activeTab !== "consolidated" && (
-            <div className="flex-1 overflow-y-auto">
-              <div className="p-4 max-w-6xl mx-auto w-full">
-                {activeTab === "overview" && (
-                  <OverviewTab
-                    patient={patient}
-                    financial={financial}
-                    isLoading={loadingPatient || loadingFinancial}
-                  />
-                )}
-
-                {activeTab === "history" && (
-                  <HistoryTab patientId={patientId} />
-                )}
-
-                {activeTab === "invoices" && (
-                  <InvoicesTab
-                    invoices={aggregated?.invoices ?? []}
-                    isLoading={loadingAggregated}
-                  />
-                )}
-
-                {activeTab === "payments" && (
-                  <PaymentsTab patientId={patientId} active={activeTab === "payments"} />
-                )}
-
-                {activeTab === "statement" && (
-                  <StatementTab
-                    aggregated={aggregated}
-                    financial={financial}
-                    isLoading={loadingAggregated || loadingFinancial}
-                    patientName={patientName}
-                  />
-                )}
-              </div>
-            </div>
-          )}
         </div>
 
-        <div
-          ref={setSidebarEl}
-          className="hidden xl:flex w-1/3 max-w-[400px] border-r flex-col overflow-y-auto p-3 shrink-0 bg-muted/30"
-          data-testid="workspace-sidebar"
-        >
-          {activeTab !== "consolidated" && (
-            <DefaultSidebar
-              aggregated={aggregated}
-              financial={financial}
+        {activeTab === "consolidated" && (
+          <div className="flex-1 overflow-hidden p-3">
+            <ConsolidatedInvoiceTab
+              data={aggregated}
               isLoading={loadingAggregated}
+              patientId={patientId}
+              patientName={patientName}
+              patientCode={patientCode}
+              sidebarContainer={sidebarOpen ? sidebarEl : null}
             />
+          </div>
+        )}
+
+        {activeTab !== "consolidated" && (
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-4 max-w-6xl mx-auto w-full">
+              {activeTab === "overview" && (
+                <OverviewTab
+                  patient={patient}
+                  financial={financial}
+                  isLoading={loadingPatient || loadingFinancial}
+                />
+              )}
+
+              {activeTab === "history" && (
+                <HistoryTab patientId={patientId} />
+              )}
+
+              {activeTab === "invoices" && (
+                <InvoicesTab
+                  invoices={aggregated?.invoices ?? []}
+                  isLoading={loadingAggregated}
+                />
+              )}
+
+              {activeTab === "payments" && (
+                <PaymentsTab patientId={patientId} active={activeTab === "payments"} />
+              )}
+
+              {activeTab === "statement" && (
+                <StatementTab
+                  aggregated={aggregated}
+                  financial={financial}
+                  isLoading={loadingAggregated || loadingFinancial}
+                  patientName={patientName}
+                />
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className={`hidden xl:flex flex-col border-r shrink-0 bg-muted/30 transition-all duration-200 ${sidebarOpen ? "w-1/3 max-w-[400px]" : "w-10"}`}>
+        <div className="shrink-0 flex items-center px-2 py-2 border-b bg-background/80">
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(v => !v)}
+            className="p-1.5 rounded-md border bg-background hover:bg-muted transition-colors"
+            title={sidebarOpen ? "إخفاء اللوحة الجانبية" : "إظهار اللوحة الجانبية"}
+            data-testid="btn-toggle-workspace-sidebar"
+          >
+            {sidebarOpen
+              ? <PanelLeftClose className="h-4 w-4 text-muted-foreground" />
+              : <PanelLeftOpen className="h-4 w-4 text-muted-foreground" />}
+          </button>
+          {sidebarOpen && (
+            <span className="text-xs font-semibold text-muted-foreground mr-2">اللوحة المالية</span>
           )}
         </div>
+
+        {sidebarOpen && (
+          <div
+            ref={setSidebarEl}
+            className="flex-1 overflow-y-auto p-3 flex flex-col"
+            data-testid="workspace-sidebar"
+          >
+            {activeTab !== "consolidated" && (
+              <DefaultSidebar
+                aggregated={aggregated}
+                financial={financial}
+                isLoading={loadingAggregated}
+              />
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
