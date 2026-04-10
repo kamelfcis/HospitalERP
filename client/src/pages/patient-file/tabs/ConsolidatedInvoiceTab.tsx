@@ -151,6 +151,7 @@ function FinRow({ label, value, highlight, muted, border }: {
 const FinancialSidebar = memo(function FinancialSidebar({
   totals, isFinalClosed, canFinalClose, onFinalClose, isPending, finalClosedAt, invoiceNumber,
   contractName, companyShareAmount, patientShareAmount,
+  invoiceStatus, onFinalize, isFinalizePending,
 }: {
   totals: { totalAmount: number; discountAmount: number; netAmount: number; paidAmount: number; remaining: number };
   isFinalClosed: boolean;
@@ -162,6 +163,9 @@ const FinancialSidebar = memo(function FinancialSidebar({
   contractName?: string | null;
   companyShareAmount?: number | null;
   patientShareAmount?: number | null;
+  invoiceStatus?: string;
+  onFinalize?: () => void;
+  isFinalizePending?: boolean;
 }) {
   const hasContractSplit = (companyShareAmount != null && companyShareAmount > 0) || (patientShareAmount != null && patientShareAmount > 0);
   return (
@@ -215,6 +219,47 @@ const FinancialSidebar = memo(function FinancialSidebar({
             <span className="text-[10px] text-green-600">{fmtDate(finalClosedAt)}</span>
           )}
         </div>
+      ) : invoiceStatus === "finalizing" ? (
+        <div className="flex flex-col items-center gap-1 mt-3 p-3 rounded-xl border border-amber-200 bg-amber-50">
+          <Loader2 className="h-5 w-5 text-amber-600 animate-spin" />
+          <span className="text-xs font-semibold text-amber-700">جاري الاعتماد...</span>
+        </div>
+      ) : invoiceStatus === "draft" && onFinalize ? (
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3 w-full border-blue-300 text-blue-700 hover:bg-blue-50 gap-1.5"
+              disabled={isFinalizePending}
+              data-testid="button-finalize-invoice"
+            >
+              {isFinalizePending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+              اعتماد الفاتورة
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent dir="rtl">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-blue-600" />
+                تأكيد اعتماد الفاتورة
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                سيتم اعتماد الفاتورة — بعد الاعتماد لن يمكن تعديل البنود.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>إلغاء</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={onFinalize}
+                className="bg-blue-600 hover:bg-blue-700"
+                data-testid="button-confirm-finalize"
+              >
+                تأكيد الاعتماد
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       ) : canFinalClose ? (
         <AlertDialog>
           <AlertDialogTrigger asChild>
@@ -254,6 +299,11 @@ const FinancialSidebar = memo(function FinancialSidebar({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+      ) : invoiceStatus === "finalized" ? (
+        <div className="flex flex-col items-center gap-1 mt-3 p-3 rounded-xl border border-blue-200 bg-blue-50">
+          <CheckCircle2 className="h-5 w-5 text-blue-600" />
+          <span className="text-xs font-semibold text-blue-700">معتمد</span>
+        </div>
       ) : null}
     </div>
   );
@@ -1915,6 +1965,9 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
               contractName={primaryInvoice?.contractName}
               companyShareAmount={data?.totals.companyShareAmount}
               patientShareAmount={data?.totals.patientShareAmount}
+              invoiceStatus={invoiceStatus}
+              onFinalize={selectedVisitId ? () => finalizeMutation.mutate(selectedVisitId) : undefined}
+              isFinalizePending={finalizeMutation.isPending}
             />
 
             <div className="bg-white border rounded-xl overflow-hidden">
