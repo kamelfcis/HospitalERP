@@ -1,0 +1,250 @@
+أنا عندي نظام ERP لمستشفى مبني بـ React + Node + PostgreSQL، وفيه أجزاء تم تنفيذها بالفعل تخص الأطباء والفواتير والقيود.
+أنا لا أريد بناء نظام جديد من الصفر إلا إذا ثبت بوضوح أن الجزء المطلوب غير موجود أصلاً.
+المطلوب منك أن تعمل **Discovery / Audit / Gap Analysis أولاً** ثم **تبني على الموجود** أو **تحسنه** أو **تعمل refactor محافظ**، وليس إنشاء بديل مكرر.
+
+========================
+القاعدة الأساسية
+================
+
+* اكتشف الموجود أولاً
+* ابنِ على الموجود ثانياً
+* حسّن أو اعمل refactor ثالثاً
+* لا تنشئ من الصفر إلا إذا كان المطلوب غير موجود فعلاً
+* ممنوع تكرار الجداول أو المنطق أو الشاشات أو الـ APIs أو الـ line types أو الـ mappings إذا كان هناك شيء قائم يمكن تطويره
+* أي إنشاء جديد يجب أن يكون مبرراً بوضوح: لماذا الموجود لا يكفي؟
+
+========================
+المطلوب منك في البداية (Mandatory Discovery)
+============================================
+
+قبل أي تنفيذ، افحص المشروع الحالي بالكامل وحدد بدقة ما هو موجود بالفعل في هذه المناطق:
+
+1. Database / Schema
+
+* doctors table
+* patient_invoice_headers
+* patient_invoice_lines
+* أي doctor_id / doctorName fields
+* billing_mode
+* line_type / cost_subtype
+* account mapping related tables
+* cost center fields
+* أي financial setup للأطباء (payable / receivable accounts)
+
+2. Backend
+
+* routes الخاصة بالفواتير
+* doctor cost engine أو أي logic شبيه
+* journal entry generation
+* account mapping resolution
+* dynamic overrides
+* finalize flow
+* validation الحالية
+* startup backfill الحالي
+
+3. Frontend
+
+* invoice header bar
+* doctor selector
+* billing mode selector
+* invoice line rendering
+* totals summary
+* doctors management page
+* service pricing dialog
+* shared hooks / forms / components
+
+4. Accounting / Financial Logic
+
+* كيف يتم توليد قيد doctor_cost حالياً
+* هل يوجد override على payable account للدكتور
+* هل doctor_collect / hospital_collect شغالين فعلياً
+* هل يتم منع finalize عند غياب الحسابات اللازمة
+* هل cost centers تنتقل بشكل صحيح
+
+5. Performance / Structure
+
+* هل توجد indexes حالية
+* هل يوجد N+1
+* هل هناك hooks أو components كبيرة تحتاج refactor
+* هل هناك duplicate logic بين create / update / finalize
+
+========================
+المخرج المطلوب في المرحلة الأولى
+================================
+
+أريد منك تقرير واضح ومنظم يقسم الوضع الحالي إلى 4 أقسام فقط:
+
+A) موجود وجاهز كما هو
+B) موجود لكن يحتاج تحسين بسيط
+C) موجود لكن يحتاج refactor أو hardening
+D) غير موجود فعلاً ويحتاج إنشاء جديد
+
+لا تبدأ في بناء أي شيء قبل إنتاج هذا التصنيف.
+
+========================
+قواعد التنفيذ بعد الاكتشاف
+==========================
+
+1. إذا كان الجزء موجوداً:
+
+* لا تعيد بناءه
+* استخدمه كما هو إن كان صالحاً
+* أو حسّنه بأقل تعديل ممكن
+* أو اعمل refactor محافظ بدون تغيير السلوك
+
+2. إذا كان الجزء موجوداً جزئياً:
+
+* أكمل عليه
+* لا تنشئ نسخة موازية
+* لا تعمل table جديدة أو route جديدة إذا كان يمكن توسيع الموجود
+
+3. إذا كان الجزء غير موجود فعلاً:
+
+* عندها فقط أنشئ جديد
+* لكن اجعله مندمجاً مع المعمارية الحالية
+* وليس subsystem منفصل أو بديل
+
+========================
+الأشياء التي يجب الحفاظ عليها وعدم كسرها
+========================================
+
+* Account Mapping الحالي
+* شاشة/منطق الفاتورة الحالي
+* الحفظ النهائي والقيود الأوتوماتيكية
+* مراكز التكلفة الحالية
+* doctor cost logic الموجود
+* doctors financial setup الموجود
+* billing mode الموجود
+* startup backfill الموجود (إلا إذا كان يحتاج تحسين آمن)
+* أي line types أو enums مستخدمة فعلياً
+* أي hooks أو components قائمة ويمكن إعادة استخدامها
+
+========================
+المطلوب المعماري
+================
+
+نفّذ بأسلوب enterprise محافظ:
+
+* Thin routes
+* Business logic داخل services / engines / domain helpers
+* Validation مركزية
+* عدم تكرار المنطق بين create / update / finalize
+* Reusable components
+* Reusable hooks
+* Shared types
+* فصل واضح بين:
+
+  * UI state
+  * server truth
+  * accounting logic
+  * persistence
+
+========================
+المطلوب في الواجهة (Frontend)
+=============================
+
+* لا تنشئ شاشة جديدة إذا كانت هناك شاشة حالية يمكن تطويرها
+* لا تكرر dialogs أو forms أو selectors
+* افصل الكمبوننتات الكبيرة إذا لزم
+* حافظ على نفس UX الحالي قدر الإمكان
+* أضف فقط ما هو ناقص
+* لو فيه form أو hook موجود، ابنِ عليه
+* اجعل أي doctor-related UI تعتمد على doctor_id وليس doctorName كنص، مع الحفاظ على fallback فقط عند الحاجة للـ migration
+
+========================
+المطلوب في الـ Backend
+======================
+
+* لا تنشئ engine جديد إذا كان doctor-cost-engine الحالي يمكن تطويره
+* لا تنشئ finalize flow جديد
+* لا تنشئ account mapping system جديد
+* طور الموجود فقط
+* اجعل أي doctor financial logic مبنياً على:
+
+  * doctor_id
+  * payable / receivable accounts
+  * billing_mode
+* حافظ على backward compatibility أثناء التحويل من doctorName إلى doctor_id
+
+========================
+المطلوب في الفهرسة والأداء
+==========================
+
+* افحص الاستعلامات الحالية أولاً
+* أضف indexes فقط عند الحاجة الفعلية
+* ركز على:
+
+  * doctor_id
+  * billing_mode
+  * linked_line_id
+  * joins الخاصة بالفواتير والقيود والتقارير
+* ممنوع إضافة indexes عشوائية
+* عالج أي N+1 إن وجد
+* استخدم batch fetch / batch updates إن كان المنطق الحالي محتاج ذلك
+
+========================
+المطلوب في الهاردنينج والكنترول
+===============================
+
+* راجع validations الموجودة أولاً
+* أضف الناقص فقط
+* خصوصاً:
+
+  * منع finalize إذا الحسابات المطلوبة غير موجودة
+  * منع doctor_collect بدون receivable account
+  * منع hospital_collect بدون payable account
+  * منع التكلفة بدون doctor_id في النظام الجديد
+* لا تكرر validation في أكثر من مكان بدون داعٍ
+
+========================
+المطلوب النهائي منك
+===================
+
+أريد منك تنفيذ العمل على مرحلتين:
+
+المرحلة 1:
+
+* Discovery / Audit / Gap Analysis
+* تحديد الموجود والناقص
+* تحديد ما الذي سيُعاد استخدامه
+* تحديد ما الذي سيُحسّن
+* تحديد ما الذي يحتاج refactor
+* تحديد ما الذي فقط يحتاج إنشاء جديد
+
+المرحلة 2:
+
+* تنفيذ الحد الأدنى الصحيح المبني على الموجود
+* بدون rebuild
+* بدون duplication
+* بدون كسر الحالي
+* مع refactor محافظ وcomponentization مناسبة
+* ومع الفهرسة اللازمة فقط
+
+========================
+صيغة الرد المطلوبة
+==================
+
+ابدأ بردك بهذا الترتيب:
+
+1. Current State Discovery
+2. Reuse Plan
+3. Gaps That Truly Need New Work
+4. Refactor Targets
+5. Required DB Changes (only if truly needed)
+6. Required Backend Changes
+7. Required Frontend Changes
+8. Required Indexes
+9. Safe Rollout Plan
+10. Done Looks Like
+
+========================
+مهم جداً
+========
+
+* لا تبدأ من الصفر
+* لا تقترح بديل كامل طالما يوجد أساس قائم
+* لا تهد الموجود
+* اكتشف أولاً ثم ابنِ على الموجود
+* أي شيء قائم وقابل للتطوير يجب إعادة استخدامه
+* أي شيء ناقص فقط هو الذي يُستكمل
+* أي شيء متضخم أو مكرر يتم عمل refactor له بشكل محافظ
