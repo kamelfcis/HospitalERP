@@ -16,8 +16,13 @@ interface LineInput {
   [key: string]: unknown;
 }
 
+interface DoctorCostOptions {
+  headerDoctorName?: string | null;
+}
+
 export async function injectDoctorCostLines<L extends LineInput>(
   lines: L[],
+  opts?: DoctorCostOptions,
 ): Promise<L[]> {
   const serviceIds = [
     ...new Set(
@@ -35,6 +40,8 @@ export async function injectDoctorCostLines<L extends LineInput>(
       .map(s => [s.id, { type: s.doctorShareType as "percentage" | "fixed", value: parseFloat(String(s.doctorShareValue)) }]),
   );
   if (shareMap.size === 0) return lines;
+
+  const headerDoctor = opts?.headerDoctorName || null;
 
   const result: L[] = [];
   let sortIdx = 0;
@@ -55,19 +62,21 @@ export async function injectDoctorCostLines<L extends LineInput>(
         ? lineTotal * (share.value / 100)
         : share.value;
 
+    const effectiveDoctorName = line.doctorName || headerDoctor;
+
     result.push({
       ...({} as L),
       lineType: "doctor_cost",
       serviceId: line.serviceId,
       itemId: null,
-      description: `أجر طبيب — ${line.description || ""}`.trim(),
+      description: `أجر طبيب${effectiveDoctorName ? " — " + effectiveDoctorName : ""} — ${line.description || ""}`.trim(),
       quantity: "1",
       unitPrice: roundMoney(costAmount),
       discountPercent: "0",
       discountAmount: "0",
       totalPrice: roundMoney(costAmount),
       unitLevel: "minor",
-      doctorName: line.doctorName || null,
+      doctorName: effectiveDoctorName,
       notes: `${share.type === "percentage" ? share.value + "%" : share.value + " ج.م"} من ${line.description || ""}`,
       sortOrder: sortIdx++,
       sourceType: "DOCTOR_COST",

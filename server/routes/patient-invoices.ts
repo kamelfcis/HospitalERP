@@ -135,7 +135,9 @@ export function registerPatientInvoicesRoutes(app: Express) {
       );
       auditContractPriceOverrides(linesParsed, (headerParsed as any).contractId, req.session.userId);
 
-      linesParsed = await injectDoctorCostLines(linesParsed);
+      linesParsed = await injectDoctorCostLines(linesParsed, {
+        headerDoctorName: (headerParsed as any).doctorName ?? null,
+      });
 
       // ── Scope guard: قسم + مخزن + تطابق قسم الخدمات ──────────────────────
       await assertInvoiceScopeGuard(
@@ -210,7 +212,9 @@ export function registerPatientInvoicesRoutes(app: Express) {
       );
       auditContractPriceOverrides(linesParsed, (headerParsed as any).contractId, req.session.userId);
 
-      linesParsed = await injectDoctorCostLines(linesParsed);
+      linesParsed = await injectDoctorCostLines(linesParsed, {
+        headerDoctorName: (headerParsed as any).doctorName ?? null,
+      });
 
       // ── Scope guard: قسم + مخزن + تطابق قسم الخدمات ──────────────────────
       await assertInvoiceScopeGuard(
