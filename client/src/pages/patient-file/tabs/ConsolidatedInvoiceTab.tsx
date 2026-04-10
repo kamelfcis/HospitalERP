@@ -6,6 +6,7 @@ import {
   Activity, ShieldCheck, XCircle, Clock, CircleDot,
   Printer, CreditCard, Percent, Save, Plus, Stethoscope as DoctorIcon,
   Scissors, FileCheck, Filter,
+  PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
@@ -1828,6 +1829,7 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
   }, [patientId, refetchFullInvoice]);
 
   const [headerCollapsed, setHeaderCollapsed] = useState(true);
+  const [sidebarVisible, setSidebarVisible] = useState(true);
 
   useEffect(() => {
     if (primaryInvoice) setHeaderCollapsed(true);
@@ -2000,70 +2002,86 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
         )}
       </div>
 
-      {/* ── Sidebar 1/3 — full height from top ── */}
+      {/* ── Sidebar toggle + panel ── */}
       {!hasEncounterView && (
-        <div className="w-full xl:w-1/3 shrink-0 overflow-y-auto flex flex-col gap-3 pb-2 order-1 xl:order-2">
-          <FinancialSidebar
-            totals={totalsForSidebar}
-            isFinalClosed={isFinalClosed}
-            canFinalClose={canFinalClose}
-            onFinalClose={() => primaryInvoice && finalCloseMutation.mutate(primaryInvoice.id)}
-            isPending={finalCloseMutation.isPending}
-            finalClosedAt={primaryInvoice?.finalClosedAt}
-            invoiceNumber={invoiceNumber}
-          />
+        <div className={`shrink-0 flex flex-col order-1 xl:order-2 transition-all duration-200 ${sidebarVisible ? "w-full xl:w-1/3" : "w-8"}`}>
+          <button
+            type="button"
+            onClick={() => setSidebarVisible(v => !v)}
+            className="self-start mb-1 p-1.5 rounded-md border bg-background hover:bg-muted transition-colors"
+            title={sidebarVisible ? "إخفاء اللوحة الجانبية" : "إظهار اللوحة الجانبية"}
+            data-testid="btn-toggle-sidebar"
+          >
+            {sidebarVisible
+              ? <PanelLeftClose className="h-4 w-4 text-muted-foreground" />
+              : <PanelLeftOpen className="h-4 w-4 text-muted-foreground" />}
+          </button>
 
-          <div className="bg-white border rounded-xl overflow-hidden">
-            <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border-b">
-              <Banknote className="h-3.5 w-3.5 text-green-600" />
-              <span className="text-xs font-semibold text-green-700">المدفوعات</span>
-            </div>
-            <div className="p-2">
-              <InvoicePaymentsTab
-                patientId={patientId}
-                admissionId={admissionId}
-                visitId={visitId}
+          {sidebarVisible && (
+            <div className="flex-1 overflow-y-auto flex flex-col gap-3 pb-2">
+              <FinancialSidebar
+                totals={totalsForSidebar}
                 isFinalClosed={isFinalClosed}
-                primaryInvoiceId={primaryInvoice?.id}
-                primaryInvoiceStatus={invoiceStatus}
-                onPaymentAdded={handlePaymentAdded}
+                canFinalClose={canFinalClose}
+                onFinalClose={() => primaryInvoice && finalCloseMutation.mutate(primaryInvoice.id)}
+                isPending={finalCloseMutation.isPending}
+                finalClosedAt={primaryInvoice?.finalClosedAt}
+                invoiceNumber={invoiceNumber}
               />
+
+              <div className="bg-white border rounded-xl overflow-hidden">
+                <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border-b">
+                  <Banknote className="h-3.5 w-3.5 text-green-600" />
+                  <span className="text-xs font-semibold text-green-700">المدفوعات</span>
+                </div>
+                <div className="p-2">
+                  <InvoicePaymentsTab
+                    patientId={patientId}
+                    admissionId={admissionId}
+                    visitId={visitId}
+                    isFinalClosed={isFinalClosed}
+                    primaryInvoiceId={primaryInvoice?.id}
+                    primaryInvoiceStatus={invoiceStatus}
+                    onPaymentAdded={handlePaymentAdded}
+                  />
+                </div>
+              </div>
+
+              {primaryInvoice && (
+                <>
+                  {!isFinalClosed && invoiceStatus === "draft" && (
+                    <HeaderDiscountPanel
+                      invoiceId={primaryInvoice.id}
+                      isFinalClosed={isFinalClosed}
+                      invoiceStatus={invoiceStatus ?? "draft"}
+                      currentDiscountPercent={headerDiscountPercent}
+                      currentDiscountAmount={headerDiscountAmount}
+                      netAmount={totalsForSidebar.netAmount}
+                      onUpdated={handleDiscountUpdated}
+                    />
+                  )}
+
+                  {invoiceStatus === "finalized" && (
+                    <DoctorTransferPanel
+                      invoiceId={primaryInvoice.id}
+                      isFinalClosed={isFinalClosed}
+                      invoiceStatus={invoiceStatus}
+                      netAmount={primaryInvoice.netAmount}
+                      patientId={patientId}
+                    />
+                  )}
+
+                  <ClinicalInfoPanel
+                    invoiceId={primaryInvoice.id}
+                    isFinalClosed={isFinalClosed}
+                    invoiceStatus={invoiceStatus ?? "draft"}
+                    initialDiagnosis={diagnosis}
+                    initialNotes={notes}
+                    onSaved={handleClinicalSaved}
+                  />
+                </>
+              )}
             </div>
-          </div>
-
-          {primaryInvoice && (
-            <>
-              {!isFinalClosed && invoiceStatus === "draft" && (
-                <HeaderDiscountPanel
-                  invoiceId={primaryInvoice.id}
-                  isFinalClosed={isFinalClosed}
-                  invoiceStatus={invoiceStatus ?? "draft"}
-                  currentDiscountPercent={headerDiscountPercent}
-                  currentDiscountAmount={headerDiscountAmount}
-                  netAmount={totalsForSidebar.netAmount}
-                  onUpdated={handleDiscountUpdated}
-                />
-              )}
-
-              {invoiceStatus === "finalized" && (
-                <DoctorTransferPanel
-                  invoiceId={primaryInvoice.id}
-                  isFinalClosed={isFinalClosed}
-                  invoiceStatus={invoiceStatus}
-                  netAmount={primaryInvoice.netAmount}
-                  patientId={patientId}
-                />
-              )}
-
-              <ClinicalInfoPanel
-                invoiceId={primaryInvoice.id}
-                isFinalClosed={isFinalClosed}
-                invoiceStatus={invoiceStatus ?? "draft"}
-                initialDiagnosis={diagnosis}
-                initialNotes={notes}
-                onSaved={handleClinicalSaved}
-              />
-            </>
           )}
         </div>
       )}
