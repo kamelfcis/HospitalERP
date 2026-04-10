@@ -1,0 +1,108 @@
+النظام الحالي مكتمل بنيوياً وتم تنفيذ جميع المكونات الأساسية الخاصة بالأطباء (Doctor Cost, GL Integration, Billing Mode, Profitability).
+
+المطلوب الآن ليس بناء أي شيء جديد، بل عمل **Final Hardening + Financial Controls + Edge Case Handling** فقط.
+
+⚠️ ممنوع إنشاء أي جداول أو APIs أو شاشات جديدة إلا إذا ثبت وجود نقص حقيقي.
+
+========================
+🎯 الهدف
+========
+
+تحويل النظام من:
+System يعمل
+
+إلى:
+System مالي محكم يمكن الاعتماد عليه في التقارير والمراجعة
+
+========================
+🔴 المطلوب (Critical Hardening)
+===============================
+
+1. COST CENTER FALLBACK
+
+إذا كان:
+
+doctor.costCenterId = NULL
+
+يجب استخدام fallback بالترتيب:
+
+1. service cost center (إن وجد)
+2. invoice / department cost center
+3. NULL فقط كآخر حل
+
+========================
+
+2. PROFITABILITY ACCURACY
+
+تأكد أن:
+
+Revenue المستخدم في التقارير = NET (بدون VAT)
+
+وليس gross revenue
+
+========================
+
+3. DOCTOR COLLECT ACCOUNTING
+
+في حالة:
+
+billing_mode = doctor_collect
+
+يجب التأكد من:
+
+Dr: Doctor Receivable Account
+Cr: Revenue Account
+
+❌ لا يتم إنشاء doctor_cost line
+
+========================
+
+4. FINALIZE PROTECTION
+
+بعد finalize:
+
+* منع تعديل doctorId
+* منع تعديل billingMode
+
+أو
+
+* تنفيذ automatic reversal + re-post
+
+========================
+
+5. BACKFILL HARDENING
+
+تحسين عملية الربط:
+
+* تسجيل أي doctorName غير مطابق في جدول أو log
+* عدم الربط العشوائي
+
+========================
+
+6. REPORT VALIDATION
+
+تأكد أن:
+
+* doctor profitability = صحيح محاسبياً
+* لا يوجد double counting
+* cost lines مرتبطة بـ linkedLineId
+
+========================
+
+⚠️ قواعد التنفيذ
+
+* لا تكسر النظام الحالي
+* لا تعيد بناء أي جزء
+* لا تنشئ جداول إلا للـ logging فقط
+* كل التعديلات minimal
+* كل التعديلات backward compatible
+
+========================
+✅ Done Looks Like
+=================
+
+* التقارير المالية صحيحة 100%
+* cost centers موزعة بشكل صحيح
+* لا يمكن إدخال بيانات خاطئة مالياً
+* لا يمكن تعديل فواتير بعد الترحيل بدون كنترول
+* النظام جاهز للمراجعة المالية (Audit Ready)
