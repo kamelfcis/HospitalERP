@@ -188,16 +188,25 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
     return null;
   }, [effectiveNationalId, nidIsValid]);
 
+  const phoneDigits = (effectivePhone || "").replace(/\D/g, "");
+  const phoneIsValid = phoneDigits.length === 11;
+  const phoneError = useMemo(() => {
+    if (!effectivePhone?.trim()) return "رقم الهاتف مطلوب للتسكين";
+    if (!phoneIsValid) return "رقم الهاتف يجب أن يكون 11 رقم";
+    return null;
+  }, [effectivePhone, phoneIsValid]);
+
   const canSubmit = useMemo(
     () =>
       effectiveName.trim().length > 0 &&
       nameIsQuad &&
       nidIsValid &&
+      phoneIsValid &&
       !!departmentId &&
       !!selectedDoctor &&
       (!surgeryRequired || !!selectedSurgery) &&
       !(paymentType === "contract" && !insuranceCompany.trim()),
-    [effectiveName, nameIsQuad, nidIsValid, departmentId, selectedDoctor, surgeryRequired, selectedSurgery, paymentType, insuranceCompany],
+    [effectiveName, nameIsQuad, nidIsValid, phoneIsValid, departmentId, selectedDoctor, surgeryRequired, selectedSurgery, paymentType, insuranceCompany],
   );
 
   // ===== Handlers =====
@@ -411,17 +420,24 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
               <>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <Label htmlFor="patient-phone-manual">رقم الهاتف</Label>
+                    <Label htmlFor="patient-phone-manual">رقم الهاتف <span className="text-destructive">*</span></Label>
                     <Input
                       id="patient-phone-manual"
                       ref={patientPhoneRef}
                       data-testid="input-patient-phone"
                       placeholder="01XXXXXXXXX"
                       autoComplete="tel"
+                      maxLength={11}
                       value={patientPhone}
-                      onChange={e => setPatientPhone(e.target.value)}
+                      onChange={e => setPatientPhone(e.target.value.replace(/\D/g, "").slice(0, 11))}
                       dir="ltr"
+                      className={phoneError && patientPhone ? "border-destructive" : ""}
                     />
+                    {phoneError && (
+                      <p className="text-[10px] text-amber-600 flex items-center gap-1">
+                        <span>⚠</span> {phoneError}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <NationalIdField
@@ -444,7 +460,7 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label htmlFor="patient-phone-override">
-                      رقم الهاتف
+                      رقم الهاتف <span className="text-destructive">*</span>
                       <span className="text-xs text-muted-foreground mr-1.5">
                         {selectedPatient.phone
                           ? `(المحفوظ: ${selectedPatient.phone})`
@@ -457,10 +473,17 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
                       data-testid="input-patient-phone-override"
                       placeholder={selectedPatient.phone ?? "01XXXXXXXXX"}
                       autoComplete="tel"
+                      maxLength={11}
                       value={patientPhone}
-                      onChange={e => setPatientPhone(e.target.value)}
+                      onChange={e => setPatientPhone(e.target.value.replace(/\D/g, "").slice(0, 11))}
                       dir="ltr"
+                      className={phoneError && patientPhone ? "border-destructive" : ""}
                     />
+                    {phoneError && (
+                      <p className="text-[10px] text-amber-600 flex items-center gap-1">
+                        <span>⚠</span> {phoneError}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <NationalIdField
