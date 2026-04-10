@@ -17,7 +17,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation }                              from "@tanstack/react-query";
 import { queryClient, apiRequest }                            from "@/lib/queryClient";
 import { useToast }                                           from "@/hooks/use-toast";
-import { NationalIdField } from "@/components/shared/NationalIdField";
+import { NationalIdField, isFullName } from "@/components/shared/NationalIdField";
 import { Button }                                             from "@/components/ui/button";
 import { Badge }                                              from "@/components/ui/badge";
 import { Input }                                              from "@/components/ui/input";
@@ -170,11 +170,28 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
 
   const hasRoomService = !!(bed?.roomServiceId);
 
+  const nameIsQuad = useMemo(() => isFullName(effectiveName), [effectiveName]);
+  const nidIsValid = useMemo(() => /^\d{14}$/.test(effectiveNationalId || ""), [effectiveNationalId]);
+
+  const nameError = useMemo(() => {
+    if (!effectiveName.trim()) return "اسم المريض مطلوب";
+    if (!nameIsQuad) return "الاسم الرباعي مطلوب (4 كلمات على الأقل)";
+    return null;
+  }, [effectiveName, nameIsQuad]);
+
+  const nidError = useMemo(() => {
+    if (!effectiveNationalId) return "الرقم القومي مطلوب للتسكين";
+    if (!nidIsValid) return "الرقم القومي يجب أن يكون 14 رقم";
+    return null;
+  }, [effectiveNationalId, nidIsValid]);
+
   const canSubmit = useMemo(
     () =>
       effectiveName.trim().length > 0 &&
+      nameIsQuad &&
+      nidIsValid &&
       !(paymentType === "contract" && !insuranceCompany.trim()),
-    [effectiveName, paymentType, insuranceCompany],
+    [effectiveName, nameIsQuad, nidIsValid, paymentType, insuranceCompany],
   );
 
   // ===== Handlers =====
@@ -355,7 +372,7 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
             {/* ── Unified patient search + manual entry ──────── */}
             <div className="space-y-1.5">
               <Label>
-                اسم المريض <span className="text-destructive" aria-hidden="true">*</span>
+                اسم المريض الرباعي <span className="text-destructive" aria-hidden="true">*</span>
               </Label>
               <PatientSearchCombobox
                 variant="full"
@@ -367,9 +384,19 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
                 onTypedNameChange={setTypedName}
                 allowManualEntry
                 autoFocus={open}
-                placeholder="اكتب اسم المريض — لو موجود هيظهر، لو جديد هيتسجّل تلقائياً..."
+                placeholder="الاسم الرباعي: الاسم الأول / الأب / الجد / العائلة"
                 data-testid="input-patient-search"
               />
+              {effectiveName.trim() && nameError && (
+                <p className="text-[10px] text-destructive flex items-center gap-1">
+                  <span>⚠</span> {nameError}
+                </p>
+              )}
+              {!effectiveName.trim() && (
+                <p className="text-[10px] text-muted-foreground">
+                  التسكين يتطلب الاسم الرباعي والرقم القومي
+                </p>
+              )}
             </div>
 
             {/* ── Phone + NID (when no patient selected — manual entry mode) ── */}
@@ -398,6 +425,8 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
                   age={age}
                   onAgeChange={setAge}
                   disabled={false}
+                  required
+                  requiredHint="الرقم القومي إجباري لتسكين المرضى الداخليين"
                 />
               </>
             )}
@@ -435,6 +464,8 @@ export function ReceptionSheet({ open, bed, onClose }: Props) {
                   age={age}
                   onAgeChange={setAge}
                   disabled={!!selectedPatient.nationalId}
+                  required
+                  requiredHint={!selectedPatient.nationalId ? "الرقم القومي إجباري لتسكين المرضى الداخليين" : undefined}
                 />
               </>
             )}

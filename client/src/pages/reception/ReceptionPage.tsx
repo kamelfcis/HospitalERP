@@ -22,7 +22,7 @@ import type { LookupItem } from "@/lib/lookupTypes";
 import { printReceptionTicket } from "@/components/printing/ReceptionTicketPrint";
 import { useContractResolution } from "@/pages/patients/hooks/useContractResolution";
 import { ContractMemberLookup } from "@/pages/patients/components/ContractMemberLookup";
-import { NationalIdField } from "@/components/shared/NationalIdField";
+import { NationalIdField, isFullName } from "@/components/shared/NationalIdField";
 
 type VisitReason = "" | "consultation" | "admission" | "lab" | "radiology";
 type PaymentKind = "CASH" | "INSURANCE" | "CONTRACT";
@@ -450,9 +450,20 @@ export default function ReceptionPage() {
     setPrintTicket(true);
   }
 
+  const requiresFullId = paymentType === "CONTRACT" || paymentType === "INSURANCE";
+  const isAdmission = visitReason === "admission";
+  const nidRequired = requiresFullId || isAdmission;
+  const quadNameRequired = requiresFullId || isAdmission;
+
   function validate(): boolean {
     if (!fullName.trim()) { toast({ title: "اسم المريض مطلوب", variant: "destructive" }); return false; }
+    if (quadNameRequired && !isFullName(fullName)) {
+      toast({ title: "الاسم الرباعي مطلوب", description: "يرجى كتابة الاسم من 4 كلمات على الأقل (الاسم / الأب / الجد / العائلة)", variant: "destructive" }); return false;
+    }
     if (phone && !/^\d{11}$/.test(phone)) { toast({ title: "التليفون يجب أن يكون 11 رقم", variant: "destructive" }); return false; }
+    if (nidRequired && (!nationalId || !/^\d{14}$/.test(nationalId))) {
+      toast({ title: "الرقم القومي مطلوب", description: requiresFullId ? "الرقم القومي إجباري لمرضى التعاقد والتأمين" : "الرقم القومي إجباري للتسكين", variant: "destructive" }); return false;
+    }
     if (nationalId && !/^\d{14}$/.test(nationalId)) { toast({ title: "الرقم القومي يجب أن يكون 14 رقم", variant: "destructive" }); return false; }
     if (!visitReason) { toast({ title: "يرجى اختيار سبب الزيارة", variant: "destructive" }); return false; }
     if (paymentType === "INSURANCE") {
@@ -690,7 +701,7 @@ export default function ReceptionPage() {
                   <SectionLabel>بيانات المريض</SectionLabel>
                   <div className="space-y-1">
                     <Label className="text-xs">
-                      الاسم الكامل *
+                      {quadNameRequired ? "الاسم الرباعي" : "الاسم"} <span className="text-destructive">*</span>
                       {existingPatient && (
                         <Badge variant="outline" className="mr-2 text-xs text-green-700 border-green-300 bg-green-50">
                           <UserCheck className="h-3 w-3 ml-1" />
@@ -726,7 +737,7 @@ export default function ReceptionPage() {
                           onFocus={() => setShowSuggestions(true)}
                           onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
                           onKeyDown={handleNameKeyDown}
-                          placeholder="اكتب اسم المريض أو ابحث عن موجود..."
+                          placeholder={quadNameRequired ? "الاسم الرباعي: الاسم / الأب / الجد / العائلة" : "اكتب اسم المريض أو ابحث عن موجود..."}
                           className="h-8 text-xs pr-7"
                           autoComplete="off"
                           autoFocus
@@ -775,6 +786,11 @@ export default function ReceptionPage() {
                         )}
                       </div>
                     )}
+                    {quadNameRequired && fullName.trim() && !isFullName(fullName) && (
+                      <p className="text-[10px] text-amber-600 flex items-center gap-1">
+                        <span>⚠</span> {requiresFullId ? "الاسم الرباعي مطلوب لمرضى التعاقد والتأمين" : "الاسم الرباعي مطلوب للتسكين"}
+                      </p>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
@@ -800,6 +816,8 @@ export default function ReceptionPage() {
                     onAgeChange={setAge}
                     disabled={false}
                     compact
+                    required={nidRequired}
+                    requiredHint={nidRequired && !nationalId ? (requiresFullId ? "الرقم القومي إجباري لمرضى التعاقد والتأمين" : "الرقم القومي إجباري للتسكين") : undefined}
                   />
                 </section>
 

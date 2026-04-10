@@ -62,6 +62,13 @@ interface NationalIdFieldProps {
   onGenderDetected?: (gender: string) => void;
   disabled?: boolean;
   compact?: boolean;
+  required?: boolean;
+  requiredHint?: string;
+}
+
+export function isFullName(name: string): boolean {
+  const parts = name.trim().split(/\s+/);
+  return parts.length >= 4 && parts.every(p => p.length >= 2);
 }
 
 export function NationalIdField({
@@ -74,6 +81,8 @@ export function NationalIdField({
   onGenderDetected,
   disabled = false,
   compact = false,
+  required = false,
+  requiredHint,
 }: NationalIdFieldProps) {
   const handleNationalIdChange = useCallback((value: string) => {
     const cleaned = value.replace(/\D/g, "").slice(0, 14);
@@ -108,27 +117,33 @@ export function NationalIdField({
 
   const h = compact ? "h-6 text-xs" : "h-8 text-sm";
 
+  const missingRequired = required && !nationalId;
+
   return (
-    <div className="flex items-center gap-1.5 flex-wrap">
-      <div className="flex items-center gap-0.5 shrink-0">
-        <span className={compact ? "text-[10px] text-muted-foreground" : "text-xs text-muted-foreground"}>الرقم القومي</span>
-        <div className="relative">
-          <Input
-            value={nationalId}
-            onChange={(e) => handleNationalIdChange(e.target.value)}
-            disabled={disabled}
-            className={`${h} ${compact ? "w-32" : "w-40"} px-1 font-mono`}
-            placeholder="14 رقم"
-            maxLength={14}
-            inputMode="numeric"
-            dir="ltr"
-            data-testid="input-national-id"
-          />
-          {nidError && (
-            <span className="absolute -bottom-4 right-0 text-[9px] text-destructive whitespace-nowrap">{nidError}</span>
-          )}
+    <div className="space-y-1">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex items-center gap-0.5 shrink-0">
+          <span className={compact ? "text-[10px] text-muted-foreground" : "text-xs text-muted-foreground"}>
+            الرقم القومي
+            {required && <span className="text-destructive mr-0.5">*</span>}
+          </span>
+          <div className="relative">
+            <Input
+              value={nationalId}
+              onChange={(e) => handleNationalIdChange(e.target.value)}
+              disabled={disabled}
+              className={`${h} ${compact ? "w-32" : "w-40"} px-1 font-mono ${missingRequired ? "border-destructive/50" : ""}`}
+              placeholder="14 رقم"
+              maxLength={14}
+              inputMode="numeric"
+              dir="ltr"
+              data-testid="input-national-id"
+            />
+            {nidError && (
+              <span className="absolute -bottom-4 right-0 text-[9px] text-destructive whitespace-nowrap">{nidError}</span>
+            )}
+          </div>
         </div>
-      </div>
       <div className="flex items-center gap-0.5 shrink-0">
         <span className={compact ? "text-[10px] text-muted-foreground" : "text-xs text-muted-foreground"}>تاريخ الميلاد</span>
         <Input
@@ -153,6 +168,11 @@ export function NationalIdField({
           data-testid="input-age"
         />
       </div>
+      {requiredHint && (
+        <p className="text-[10px] text-amber-600 flex items-center gap-1 mt-0.5">
+          <span>⚠</span> {requiredHint}
+        </p>
+      )}
     </div>
   );
 }

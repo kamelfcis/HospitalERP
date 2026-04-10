@@ -43,7 +43,7 @@ import type { PatientFormDialogProps, PrefilledPatient } from "./types";
 import { useDebounce }                from "./useDebounce";
 import { useContractResolution }      from "./hooks/useContractResolution";
 import { ContractMemberLookup }       from "./components/ContractMemberLookup";
-import { NationalIdField } from "@/components/shared/NationalIdField";
+import { NationalIdField, isFullName } from "@/components/shared/NationalIdField";
 
 // ===== Types =====
 
@@ -462,12 +462,23 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
 
   // ===== Validation =====
 
+  const pfdRequiresFullId = paymentType === "CONTRACT" || paymentType === "INSURANCE";
+  const pfdIsAdmission = visitReason === "admission";
+  const pfdNidRequired = pfdRequiresFullId || pfdIsAdmission;
+  const pfdQuadNameRequired = pfdRequiresFullId || pfdIsAdmission;
+
   function validate(): boolean {
     if (!fullName.trim()) {
       toast({ title: "اسم المريض مطلوب", variant: "destructive" }); return false;
     }
+    if (pfdQuadNameRequired && !isFullName(fullName)) {
+      toast({ title: "الاسم الرباعي مطلوب", description: pfdRequiresFullId ? "الاسم الرباعي إجباري لمرضى التعاقد والتأمين" : "الاسم الرباعي إجباري للتسكين", variant: "destructive" }); return false;
+    }
     if (phone && !/^\d{11}$/.test(phone)) {
       toast({ title: "التليفون يجب أن يكون 11 رقم", variant: "destructive" }); return false;
+    }
+    if (pfdNidRequired && (!nationalId || !/^\d{14}$/.test(nationalId))) {
+      toast({ title: "الرقم القومي مطلوب", description: pfdRequiresFullId ? "الرقم القومي إجباري لمرضى التعاقد والتأمين" : "الرقم القومي إجباري للتسكين", variant: "destructive" }); return false;
     }
     if (nationalId && !/^\d{14}$/.test(nationalId)) {
       toast({ title: "الرقم القومي يجب أن يكون 14 رقم", variant: "destructive" }); return false;
@@ -698,7 +709,7 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
               {/* ── Name field with patient search ─────────────────────────────── */}
               <div className="space-y-1">
                 <Label className="text-xs">
-                  الاسم الكامل *
+                  {pfdQuadNameRequired ? "الاسم الرباعي" : "الاسم الكامل"} <span className="text-destructive">*</span>
                   {existingPatient && (
                     <Badge variant="outline" className="mr-2 text-xs text-green-700 border-green-300 bg-green-50">
                       <UserCheck className="h-3 w-3 ml-1" />
@@ -738,7 +749,7 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
                       onFocus={() => setShowSuggestions(true)}
                       onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
                       onKeyDown={handleNameKeyDown}
-                      placeholder="اكتب اسم المريض أو ابحث عن موجود..."
+                      placeholder={pfdQuadNameRequired ? "الاسم الرباعي: الاسم / الأب / الجد / العائلة" : "اكتب اسم المريض أو ابحث عن موجود..."}
                       className="h-7 text-xs pr-7"
                       autoComplete="off"
                       autoFocus={!isEdit}
@@ -809,6 +820,11 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
                     )}
                   </div>
                 )}
+                {pfdQuadNameRequired && fullName.trim() && !isFullName(fullName) && (
+                  <p className="text-[10px] text-amber-600 flex items-center gap-1 mt-0.5">
+                    <span>⚠</span> {pfdRequiresFullId ? "الاسم الرباعي مطلوب لمرضى التعاقد والتأمين" : "الاسم الرباعي مطلوب للتسكين"}
+                  </p>
+                )}
               </div>
 
               {/* ── National ID · Age · Phone (3-col grid) ─────────────────────── */}
@@ -837,6 +853,8 @@ export default function PatientFormDialog({ open, onClose, editingPatient, prefi
                 onAgeChange={setAge}
                 disabled={false}
                 compact
+                required={pfdNidRequired}
+                requiredHint={pfdNidRequired && !nationalId ? (pfdRequiresFullId ? "الرقم القومي إجباري لمرضى التعاقد والتأمين" : "الرقم القومي إجباري للتسكين") : undefined}
               />
             </section>
 
