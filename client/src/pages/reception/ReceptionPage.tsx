@@ -471,8 +471,8 @@ export default function ReceptionPage() {
       if (cardEntered && !resolution.state.resolved) { toast({ title: "رقم بطاقة التأمين غير صالح", variant: "destructive" }); return false; }
       if (!resolution.state.resolved && !insuranceCo.trim()) { toast({ title: "الرجاء إدخال بطاقة التأمين أو اسم شركة التأمين", variant: "destructive" }); return false; }
     }
-    if (paymentType === "CONTRACT" && visitReason === "consultation" && !resolution.state.resolved) {
-      toast({ title: "يجب تحديد بطاقة المنتسب لحجوزات التعاقد", variant: "destructive" }); return false;
+    if (paymentType === "CONTRACT" && !resolution.state.resolved) {
+      toast({ title: "يجب تحديد بطاقة المنتسب لمرضى التعاقد", variant: "destructive" }); return false;
     }
     if (visitReason === "consultation" && !selectedClinic) { toast({ title: "الرجاء اختيار العيادة", variant: "destructive" }); return false; }
     if (visitReason === "consultation" && selectedClinic && !selectedDoctor) { toast({ title: "الرجاء اختيار الطبيب", variant: "destructive" }); return false; }
@@ -503,16 +503,21 @@ export default function ReceptionPage() {
 
     if (visitReason === "admission" && selectedBed) {
       const admPaymentType = paymentType === "CONTRACT" ? "contract" : paymentType === "INSURANCE" ? "insurance" : "CASH";
+      const resolved = resolution.state.resolved;
       admitMutation.mutate({
         bedId: selectedBed,
         body: {
           patientName: fullName.trim(),
           patientPhone: phone || undefined,
           patientId: existingPatient?.id || undefined,
+          nationalId: nationalId || undefined,
+          dateOfBirth: dateOfBirth || undefined,
+          age: age !== "" ? parseInt(age, 10) : undefined,
           doctorName: admDoctor?.name || undefined,
           surgeryTypeId: selectedSurgery?.id || undefined,
           paymentType: admPaymentType,
-          insuranceCompany: paymentType !== "CASH" ? ((resolution.state.resolved?.companyName) ?? (insuranceCo || undefined)) : undefined,
+          insuranceCompany: paymentType !== "CASH" ? (resolved?.companyName ?? (insuranceCo || undefined)) : undefined,
+          contractMemberId: resolved?.memberId || undefined,
         },
       }, {
         onSuccess: () => {
