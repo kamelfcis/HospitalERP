@@ -804,7 +804,7 @@ export function registerPatientsRoutes(app: Express) {
       }>;
 
       if (headers.length === 0) {
-        return res.json({ totals: { totalAmount: 0, discountAmount: 0, netAmount: 0, paidAmount: 0, remaining: 0, invoiceCount: 0, lineCount: 0 }, byVisit: [], byDepartment: [], byClassification: [], invoices: [] });
+        return res.json({ totals: { totalAmount: 0, discountAmount: 0, netAmount: 0, paidAmount: 0, remaining: 0, invoiceCount: 0, lineCount: 0, companyShareAmount: null, patientShareAmount: null }, byVisit: [], byDepartment: [], byClassification: [], invoices: [] });
       }
 
       const headerIds = headers.map(h => h.id);
@@ -817,7 +817,9 @@ export function registerPatientsRoutes(app: Express) {
           l.discount_amount, l.total_price,
           l.source_type, l.source_id,
           l.business_classification,
-          l.is_void
+          l.is_void,
+          l.company_share_amount,
+          l.patient_share_amount
         FROM patient_invoice_lines l
         WHERE l.header_id IN (${sql.join(headerIds.map(id => sql`${id}`), sql`, `)})
           AND COALESCE(l.is_void, false) = false
@@ -830,6 +832,7 @@ export function registerPatientsRoutes(app: Express) {
         discount_amount: string; total_price: string;
         source_type: string | null; source_id: string | null;
         business_classification: string | null; is_void: boolean;
+        company_share_amount: string | null; patient_share_amount: string | null;
       }>;
 
       // ── helpers ─────────────────────────────────────────────────────────
@@ -838,12 +841,18 @@ export function registerPatientsRoutes(app: Express) {
 
       // ── Totals — مستوى الفواتير ──────────────────────────────────────────
       let totTotalAmount = 0, totDiscount = 0, totNet = 0, totPaid = 0;
+      let totCompanyShare = 0, totPatientShare = 0;
       for (const h of headers) {
         totTotalAmount += n(h.total_amount);
         totDiscount    += n(h.discount_amount) + n(h.header_discount_amount);
         totNet         += n(h.net_amount);
         totPaid        += n(h.paid_amount);
       }
+      for (const l of allLines) {
+        totCompanyShare  += n(l.company_share_amount);
+        totPatientShare  += n(l.patient_share_amount);
+      }
+      const hasContractSplit = totCompanyShare > 0 || totPatientShare > 0;
 
       // ── byVisit ──────────────────────────────────────────────────────────
       const visitMap = new Map<string, {
@@ -993,6 +1002,8 @@ export function registerPatientsRoutes(app: Express) {
           remaining:     round2(totNet - totPaid),
           invoiceCount:  headers.length,
           lineCount:     allLines.length,
+          companyShareAmount:  hasContractSplit ? round2(totCompanyShare) : null,
+          patientShareAmount:  hasContractSplit ? round2(totPatientShare) : null,
         },
         byVisit,
         byDepartment,

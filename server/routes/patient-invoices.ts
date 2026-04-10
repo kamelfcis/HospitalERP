@@ -710,7 +710,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
 
   // ══════════════════════════════════════════════════════════════════════════
   //  PATCH /api/patient-invoices/:id/clinical-info
-  //  تحديث التشخيص والملاحظات على الفاتورة المسودة فقط
+  //  تحديث التشخيص والملاحظات — مسموح حتى بعد الاعتماد، ممنوع فقط بعد الإغلاق النهائي
   // ══════════════════════════════════════════════════════════════════════════
   app.patch("/api/patient-invoices/:id/clinical-info", requireAuth, checkPermission(PERMISSIONS.PATIENT_INVOICES_EDIT), async (req, res) => {
     try {

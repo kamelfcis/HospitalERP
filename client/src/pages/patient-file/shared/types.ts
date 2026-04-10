@@ -6,6 +6,8 @@ export interface PatientFileTotals {
   remaining: number;
   invoiceCount: number;
   lineCount: number;
+  companyShareAmount: number | null;
+  patientShareAmount: number | null;
 }
 
 export interface VisitGroup {
