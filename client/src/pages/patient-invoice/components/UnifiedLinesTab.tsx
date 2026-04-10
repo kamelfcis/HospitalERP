@@ -132,10 +132,8 @@ export function UnifiedLinesTab({
       majorToMinor:  item.majorToMinor  ? Number(item.majorToMinor)  : null,
       mediumToMinor: item.mediumToMinor ? Number(item.mediumToMinor) : null,
     };
-    // تحديد النوع تلقائياً من category الصنف (دواء / مستهلك / جهاز / غاز)
     const lineType = categoryToLineType(item.category, itemAddType);
     addItemLine(adapted as unknown as Item, lineType);
-    setFastSearchOpen(false);
   }, [addItemLine, itemAddType]);
   const [selectedServiceId, setSelectedServiceId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("__none__");
