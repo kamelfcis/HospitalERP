@@ -566,6 +566,10 @@ export default function PatientInvoice() {
             getServiceRowClass={getServiceRowClass}
             canDiscount={canDiscount}
             onOpenDiscountDialog={() => setShowDiscountDialog(true)}
+            onDiscountApplied={(pct, amt) => {
+              form.setHeaderDiscountPercent(pct);
+              form.setHeaderDiscountAmount(amt);
+            }}
             applyTemplate={lm.applyTemplate}
           />
         </TabsContent>
