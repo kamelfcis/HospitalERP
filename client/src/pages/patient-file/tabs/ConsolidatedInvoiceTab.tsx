@@ -1827,6 +1827,12 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
     queryClient.invalidateQueries({ queryKey: ["/api/patients", patientId, "invoices-aggregated"] });
   }, [patientId, refetchFullInvoice]);
 
+  const [headerCollapsed, setHeaderCollapsed] = useState(true);
+
+  useEffect(() => {
+    if (primaryInvoice) setHeaderCollapsed(true);
+  }, [primaryInvoice?.id]);
+
   if (isLoading) return (
     <div className="flex justify-center items-center py-16">
       <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -1863,150 +1869,99 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
   }));
 
   return (
-    <div className="h-full flex flex-col gap-3">
-      {/* Visit selector */}
-      <div className="shrink-0 flex items-center gap-2 flex-wrap">
-        <History className="h-4 w-4 text-muted-foreground shrink-0" />
-        {patientVisits.length > 0 ? (
-          <Select
-            value={selectedVisitKey || "__all__"}
-            onValueChange={val => setSelectedVisitKey(val === "__all__" ? "" : val)}
-          >
-            <SelectTrigger className="h-8 text-xs w-[280px]" data-testid="select-visit-filter">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">كل الزيارات ({patientVisits.length})</SelectItem>
-              {patientVisits.map(pv => (
-                <SelectItem key={pv.id} value={pvToVisitKey(pv)}>
-                  <span className="flex items-center gap-1.5">
-                    <Badge
-                      variant="outline"
-                      className={`text-[10px] px-1 py-0 ${pv.visit_type === "inpatient" ? "border-indigo-400 text-indigo-700" : "border-teal-400 text-teal-700"}`}
-                    >
-                      {pv.visit_type === "inpatient" ? "داخلي" : "خارجي"}
-                    </Badge>
-                    {pv.visit_number}
-                    {pv.department_name && <span className="text-muted-foreground text-[10px]">— {pv.department_name}</span>}
-                    {pv.admission_date && <span className="text-muted-foreground text-[10px]">({fmtDate(pv.admission_date)})</span>}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : (
-          <span className="text-xs text-muted-foreground">لا توجد زيارات مسجلة — عرض إجمالي المريض</span>
-        )}
+    <div className="h-full flex flex-col xl:flex-row gap-3">
+      {/* ── Main 2/3 ── */}
+      <div className="flex-1 min-w-0 overflow-hidden flex flex-col gap-3 min-h-0 order-2 xl:order-1">
+        {/* Visit selector */}
+        <div className="shrink-0 flex items-center gap-2 flex-wrap">
+          <History className="h-4 w-4 text-muted-foreground shrink-0" />
+          {patientVisits.length > 0 ? (
+            <Select
+              value={selectedVisitKey || "__all__"}
+              onValueChange={val => setSelectedVisitKey(val === "__all__" ? "" : val)}
+            >
+              <SelectTrigger className="h-8 text-xs w-[280px]" data-testid="select-visit-filter">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">كل الزيارات ({patientVisits.length})</SelectItem>
+                {patientVisits.map(pv => (
+                  <SelectItem key={pv.id} value={pvToVisitKey(pv)}>
+                    <span className="flex items-center gap-1.5">
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] px-1 py-0 ${pv.visit_type === "inpatient" ? "border-indigo-400 text-indigo-700" : "border-teal-400 text-teal-700"}`}
+                      >
+                        {pv.visit_type === "inpatient" ? "داخلي" : "خارجي"}
+                      </Badge>
+                      {pv.visit_number}
+                      {pv.department_name && <span className="text-muted-foreground text-[10px]">— {pv.department_name}</span>}
+                      {pv.admission_date && <span className="text-muted-foreground text-[10px]">({fmtDate(pv.admission_date)})</span>}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <span className="text-xs text-muted-foreground">لا توجد زيارات مسجلة — عرض إجمالي المريض</span>
+          )}
 
-        {selectedVisitKey && (
+          {selectedVisitKey && (
+            <button
+              type="button"
+              className="text-xs text-muted-foreground hover:text-foreground underline"
+              onClick={() => setSelectedVisitKey("")}
+            >مسح</button>
+          )}
+
+          {selectedVisitId && isSummaryLoading && (
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+          )}
+        </div>
+
+        {/* Collapsible header card */}
+        <div className="shrink-0">
           <button
             type="button"
-            className="text-xs text-muted-foreground hover:text-foreground underline"
-            onClick={() => setSelectedVisitKey("")}
-          >مسح</button>
-        )}
-
-        {selectedVisitId && isSummaryLoading && (
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-        )}
-      </div>
-
-      {/* Header card with lock state */}
-      <div className="shrink-0">
-        <InvoiceHeaderCard
-          patientName={patientName}
-          patientCode={patientCode}
-          visit={selectedVisit}
-          invoiceNumber={invoiceNumber}
-          isFinalClosed={isFinalClosed}
-          invoiceStatus={invoiceStatus}
-        />
-      </div>
-
-      {hasEncounterView ? (
-        <div className="flex-1 overflow-y-auto">
-          <EncounterBreakdownView
-            summary={visitSummary!}
-            visitId={selectedVisitId!}
-            patientId={patientId}
-            admissionId={admissionId}
-            onFinalize={() => finalizeMutation.mutate(selectedVisitId!)}
-            isFinalizePending={finalizeMutation.isPending}
-          />
-        </div>
-      ) : (
-        <div className="flex-1 overflow-hidden flex flex-col xl:flex-row gap-3 min-h-0">
-          {/* ── Sidebar 1/3 ── */}
-          <div className="w-full xl:w-1/3 shrink-0 overflow-y-auto flex flex-col gap-3 pb-2">
-
-            {/* Financial summary */}
-            <FinancialSidebar
-              totals={totalsForSidebar}
-              isFinalClosed={isFinalClosed}
-              canFinalClose={canFinalClose}
-              onFinalClose={() => primaryInvoice && finalCloseMutation.mutate(primaryInvoice.id)}
-              isPending={finalCloseMutation.isPending}
-              finalClosedAt={primaryInvoice?.finalClosedAt}
-              invoiceNumber={invoiceNumber}
-            />
-
-            {/* Payments section — always visible in sidebar */}
-            <div className="bg-white border rounded-xl overflow-hidden">
-              <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border-b">
-                <Banknote className="h-3.5 w-3.5 text-green-600" />
-                <span className="text-xs font-semibold text-green-700">المدفوعات</span>
-              </div>
-              <div className="p-2">
-                <InvoicePaymentsTab
-                  patientId={patientId}
-                  admissionId={admissionId}
-                  visitId={visitId}
-                  isFinalClosed={isFinalClosed}
-                  primaryInvoiceId={primaryInvoice?.id}
-                  primaryInvoiceStatus={invoiceStatus}
-                  onPaymentAdded={handlePaymentAdded}
-                />
-              </div>
+            className="w-full text-start"
+            onClick={() => setHeaderCollapsed(p => !p)}
+            data-testid="btn-toggle-header"
+          >
+            <div className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors px-1 py-0.5">
+              <ChevronRight className={`h-3.5 w-3.5 transition-transform ${headerCollapsed ? "" : "rotate-90"}`} />
+              <span className="font-medium">{headerCollapsed ? "عرض بيانات الزيارة" : "إخفاء بيانات الزيارة"}</span>
+              {headerCollapsed && invoiceNumber && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0">PI-{invoiceNumber}</Badge>
+              )}
             </div>
+          </button>
+          {!headerCollapsed && (
+            <div className="mt-1">
+              <InvoiceHeaderCard
+                patientName={patientName}
+                patientCode={patientCode}
+                visit={selectedVisit}
+                invoiceNumber={invoiceNumber}
+                isFinalClosed={isFinalClosed}
+                invoiceStatus={invoiceStatus}
+              />
+            </div>
+          )}
+        </div>
 
-            {primaryInvoice && (
-              <>
-                {!isFinalClosed && invoiceStatus === "draft" && (
-                  <HeaderDiscountPanel
-                    invoiceId={primaryInvoice.id}
-                    isFinalClosed={isFinalClosed}
-                    invoiceStatus={invoiceStatus ?? "draft"}
-                    currentDiscountPercent={headerDiscountPercent}
-                    currentDiscountAmount={headerDiscountAmount}
-                    netAmount={totalsForSidebar.netAmount}
-                    onUpdated={handleDiscountUpdated}
-                  />
-                )}
-
-                {invoiceStatus === "finalized" && (
-                  <DoctorTransferPanel
-                    invoiceId={primaryInvoice.id}
-                    isFinalClosed={isFinalClosed}
-                    invoiceStatus={invoiceStatus}
-                    netAmount={primaryInvoice.netAmount}
-                    patientId={patientId}
-                  />
-                )}
-
-                <ClinicalInfoPanel
-                  invoiceId={primaryInvoice.id}
-                  isFinalClosed={isFinalClosed}
-                  invoiceStatus={invoiceStatus ?? "draft"}
-                  initialDiagnosis={diagnosis}
-                  initialNotes={notes}
-                  onSaved={handleClinicalSaved}
-                />
-              </>
-            )}
+        {hasEncounterView ? (
+          <div className="flex-1 overflow-y-auto">
+            <EncounterBreakdownView
+              summary={visitSummary!}
+              visitId={selectedVisitId!}
+              patientId={patientId}
+              admissionId={admissionId}
+              onFinalize={() => finalizeMutation.mutate(selectedVisitId!)}
+              isFinalizePending={finalizeMutation.isPending}
+            />
           </div>
-
-          {/* ── Main 2/3 ── */}
-          <div className="flex-1 min-w-0 overflow-hidden flex flex-col min-h-0">
+        ) : (
+          <div className="flex-1 overflow-hidden flex flex-col min-h-0">
             <Tabs defaultValue="services" className="flex flex-col h-full">
               <TabsList className="h-8 shrink-0">
                 <TabsTrigger value="services" className="text-xs px-3" data-testid="tab-services">
@@ -2042,6 +1997,74 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
               </TabsContent>
             </Tabs>
           </div>
+        )}
+      </div>
+
+      {/* ── Sidebar 1/3 — full height from top ── */}
+      {!hasEncounterView && (
+        <div className="w-full xl:w-1/3 shrink-0 overflow-y-auto flex flex-col gap-3 pb-2 order-1 xl:order-2">
+          <FinancialSidebar
+            totals={totalsForSidebar}
+            isFinalClosed={isFinalClosed}
+            canFinalClose={canFinalClose}
+            onFinalClose={() => primaryInvoice && finalCloseMutation.mutate(primaryInvoice.id)}
+            isPending={finalCloseMutation.isPending}
+            finalClosedAt={primaryInvoice?.finalClosedAt}
+            invoiceNumber={invoiceNumber}
+          />
+
+          <div className="bg-white border rounded-xl overflow-hidden">
+            <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border-b">
+              <Banknote className="h-3.5 w-3.5 text-green-600" />
+              <span className="text-xs font-semibold text-green-700">المدفوعات</span>
+            </div>
+            <div className="p-2">
+              <InvoicePaymentsTab
+                patientId={patientId}
+                admissionId={admissionId}
+                visitId={visitId}
+                isFinalClosed={isFinalClosed}
+                primaryInvoiceId={primaryInvoice?.id}
+                primaryInvoiceStatus={invoiceStatus}
+                onPaymentAdded={handlePaymentAdded}
+              />
+            </div>
+          </div>
+
+          {primaryInvoice && (
+            <>
+              {!isFinalClosed && invoiceStatus === "draft" && (
+                <HeaderDiscountPanel
+                  invoiceId={primaryInvoice.id}
+                  isFinalClosed={isFinalClosed}
+                  invoiceStatus={invoiceStatus ?? "draft"}
+                  currentDiscountPercent={headerDiscountPercent}
+                  currentDiscountAmount={headerDiscountAmount}
+                  netAmount={totalsForSidebar.netAmount}
+                  onUpdated={handleDiscountUpdated}
+                />
+              )}
+
+              {invoiceStatus === "finalized" && (
+                <DoctorTransferPanel
+                  invoiceId={primaryInvoice.id}
+                  isFinalClosed={isFinalClosed}
+                  invoiceStatus={invoiceStatus}
+                  netAmount={primaryInvoice.netAmount}
+                  patientId={patientId}
+                />
+              )}
+
+              <ClinicalInfoPanel
+                invoiceId={primaryInvoice.id}
+                isFinalClosed={isFinalClosed}
+                invoiceStatus={invoiceStatus ?? "draft"}
+                initialDiagnosis={diagnosis}
+                initialNotes={notes}
+                onSaved={handleClinicalSaved}
+              />
+            </>
+          )}
         </div>
       )}
     </div>

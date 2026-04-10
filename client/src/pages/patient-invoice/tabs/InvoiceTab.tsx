@@ -133,7 +133,6 @@ interface InvoiceTabProps {
 
   canDiscount?: boolean;
   onOpenDiscountDialog?: () => void;
-  onDiscountApplied?: (pct: number, amt: number) => void;
   applyTemplate?: (templateId: string, opts?: { replaceExisting?: boolean }) => Promise<void>;
 
   warehouseIdForSearch?: string;
@@ -169,13 +168,12 @@ export function InvoiceTab({
   dtOpen, setDtOpen, dtAmount, setDtAmount,
   dtDoctorName, setDtDoctorName, dtNotes, setDtNotes, openDtConfirm,
   getStatusBadgeClass, getServiceRowClass,
-  canDiscount, onOpenDiscountDialog, onDiscountApplied,
+  canDiscount, onOpenDiscountDialog,
   applyTemplate,
 }: InvoiceTabProps) {
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 items-start">
-      <div className="lg:col-span-2 min-w-0 space-y-2">
-        <InvoiceHeaderBar
+    <div className="space-y-2">
+      <InvoiceHeaderBar
           invoiceId={invoiceId}
           invoiceNumber={invoiceNumber}
           setInvoiceNumber={setInvoiceNumber}
@@ -225,84 +223,87 @@ export function InvoiceTab({
           getStatusBadgeClass={getStatusBadgeClass}
         />
 
-        <div className="border rounded-md p-2">
-          <Tabs value={subTab} onValueChange={setSubTab}>
-            <TabsList className="w-full justify-start flex-wrap" data-testid="tabs-sub">
-              <TabsTrigger value="lines" data-testid="tab-lines">بنود الفاتورة</TabsTrigger>
-              <TabsTrigger value="consolidated" data-testid="tab-consolidated">فاتورة مجمعة</TabsTrigger>
-            </TabsList>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
+        <div className="lg:col-span-2 min-w-0">
+          <div className="border rounded-md p-2">
+            <Tabs value={subTab} onValueChange={setSubTab}>
+              <TabsList className="w-full justify-start flex-wrap" data-testid="tabs-sub">
+                <TabsTrigger value="lines" data-testid="tab-lines">بنود الفاتورة</TabsTrigger>
+                <TabsTrigger value="consolidated" data-testid="tab-consolidated">فاتورة مجمعة</TabsTrigger>
+              </TabsList>
 
-            <TabsContent value="lines" className="mt-2">
-              <UnifiedLinesTab
-                lines={lines}
-                isDraft={isDraft}
-                itemSearch={itemSearch}
-                setItemSearch={setItemSearch}
-                setItemResults={setItemResults}
-                itemResults={itemResults}
-                searchingItems={searchingItems}
-                fefoLoading={fefoLoading}
-                itemSearchRef={itemSearchRef}
-                itemDropdownRef={itemDropdownRef}
-                pendingQtyRef={pendingQtyRef}
-                addServiceLine={addServiceLine}
-                addItemLine={addItemLine}
-                updateLine={updateLine}
-                removeLine={removeLine}
-                handleQtyConfirm={handleQtyConfirm}
-                handleUnitLevelChange={handleUnitLevelChange}
-                openStatsPopup={openStatsPopup}
-                getServiceRowClass={getServiceRowClass}
-                applyTemplate={applyTemplate}
-                warehouseId={warehouseId}
-                invoiceDate={invoiceDate}
-                departmentId={departmentId}
-              />
-            </TabsContent>
+              <TabsContent value="lines" className="mt-2">
+                <UnifiedLinesTab
+                  lines={lines}
+                  isDraft={isDraft}
+                  itemSearch={itemSearch}
+                  setItemSearch={setItemSearch}
+                  setItemResults={setItemResults}
+                  itemResults={itemResults}
+                  searchingItems={searchingItems}
+                  fefoLoading={fefoLoading}
+                  itemSearchRef={itemSearchRef}
+                  itemDropdownRef={itemDropdownRef}
+                  pendingQtyRef={pendingQtyRef}
+                  addServiceLine={addServiceLine}
+                  addItemLine={addItemLine}
+                  updateLine={updateLine}
+                  removeLine={removeLine}
+                  handleQtyConfirm={handleQtyConfirm}
+                  handleUnitLevelChange={handleUnitLevelChange}
+                  openStatsPopup={openStatsPopup}
+                  getServiceRowClass={getServiceRowClass}
+                  applyTemplate={applyTemplate}
+                  warehouseId={warehouseId}
+                  invoiceDate={invoiceDate}
+                  departmentId={departmentId}
+                />
+              </TabsContent>
 
-            <TabsContent value="consolidated" className="mt-2">
-              <ConsolidatedTab
-                lines={lines}
-                payments={payments}
-                totals={totals}
-                getServiceRowClass={getServiceRowClass}
-              />
-            </TabsContent>
-          </Tabs>
+              <TabsContent value="consolidated" className="mt-2">
+                <ConsolidatedTab
+                  lines={lines}
+                  payments={payments}
+                  totals={totals}
+                  getServiceRowClass={getServiceRowClass}
+                />
+              </TabsContent>
+            </Tabs>
+          </div>
         </div>
-      </div>
 
-      <div className="lg:col-span-1">
-        <div className="border rounded-md p-3 lg:sticky lg:top-2 lg:max-h-[calc(100vh-4rem)] lg:overflow-y-auto">
-          <InvoiceSidebar
-            invoiceId={invoiceId}
-            invoiceNumber={invoiceNumber}
-            patientName={patientName}
-            patientCode={patientCode}
-            status={status}
-            isDraft={isDraft}
-            patientType={patientType}
-            totals={totals}
-            canDiscount={canDiscount}
-            onDiscountApplied={onDiscountApplied}
-            payments={payments}
-            addPayment={addPayment}
-            updatePayment={updatePayment}
-            removePayment={removePayment}
-            dtTransfers={dtTransfers}
-            dtAlreadyTransferred={dtAlreadyTransferred}
-            dtRemaining={dtRemaining}
-            dtOpen={dtOpen}
-            setDtOpen={setDtOpen}
-            dtAmount={dtAmount}
-            setDtAmount={setDtAmount}
-            dtDoctorName={dtDoctorName}
-            setDtDoctorName={setDtDoctorName}
-            dtNotes={dtNotes}
-            setDtNotes={setDtNotes}
-            openDtConfirm={openDtConfirm}
-            finalizeMutation={finalizeMutation}
-          />
+        <div className="lg:col-span-1">
+          <div className="border rounded-md p-3 lg:sticky lg:top-2 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
+            <InvoiceSidebar
+              invoiceId={invoiceId}
+              invoiceNumber={invoiceNumber}
+              patientName={patientName}
+              patientCode={patientCode}
+              status={status}
+              isDraft={isDraft}
+              patientType={patientType}
+              totals={totals}
+              canDiscount={canDiscount}
+              onOpenDiscountDialog={onOpenDiscountDialog}
+              payments={payments}
+              addPayment={addPayment}
+              updatePayment={updatePayment}
+              removePayment={removePayment}
+              dtTransfers={dtTransfers}
+              dtAlreadyTransferred={dtAlreadyTransferred}
+              dtRemaining={dtRemaining}
+              dtOpen={dtOpen}
+              setDtOpen={setDtOpen}
+              dtAmount={dtAmount}
+              setDtAmount={setDtAmount}
+              dtDoctorName={dtDoctorName}
+              setDtDoctorName={setDtDoctorName}
+              dtNotes={dtNotes}
+              setDtNotes={setDtNotes}
+              openDtConfirm={openDtConfirm}
+              finalizeMutation={finalizeMutation}
+            />
+          </div>
         </div>
       </div>
     </div>

@@ -6,11 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Loader2, ArrowLeftRight, Stethoscope, Plus, X,
-  Receipt, Wallet, Percent, Check, Trash2,
+  Receipt, Wallet, Percent,
 } from "lucide-react";
-import { useMutation } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatNumber, formatDateShort } from "@/lib/formatters";
 import { paymentMethodLabels, patientInvoiceStatusLabels } from "@shared/schema";
 import { useTreasuriesLookup } from "@/hooks/lookups/useTreasuriesLookup";
@@ -42,7 +39,7 @@ interface InvoiceSidebarProps {
   totals: Totals;
 
   canDiscount?: boolean;
-  onDiscountApplied?: (pct: number, amt: number) => void;
+  onOpenDiscountDialog?: () => void;
 
   payments: PaymentLocal[];
   addPayment: () => void;
@@ -67,70 +64,13 @@ interface InvoiceSidebarProps {
 
 export function InvoiceSidebar({
   invoiceId, invoiceNumber, patientName, patientCode, status, isDraft, patientType, totals,
-  canDiscount, onDiscountApplied,
+  canDiscount, onOpenDiscountDialog,
   payments, addPayment, updatePayment, removePayment,
   dtTransfers, dtAlreadyTransferred, dtRemaining,
   dtOpen, setDtOpen, dtAmount, setDtAmount, dtDoctorName, setDtDoctorName, dtNotes, setDtNotes, openDtConfirm,
   finalizeMutation,
 }: InvoiceSidebarProps) {
-  const { toast } = useToast();
   const [localDtDoctorId, setLocalDtDoctorId] = useState("");
-  const [discountOpen, setDiscountOpen] = useState(false);
-  const [discountType, setDiscountType] = useState<"percent" | "amount">("percent");
-  const [discountValue, setDiscountValue] = useState("");
-
-  useEffect(() => {
-    const hdp = totals.headerDiscountPercent ?? 0;
-    const hda = totals.headerDiscountAmount ?? 0;
-    if (hdp > 0) {
-      setDiscountType("percent");
-      setDiscountValue(String(hdp));
-    } else if (hda > 0) {
-      setDiscountType("amount");
-      setDiscountValue(String(hda));
-    } else {
-      setDiscountValue("");
-    }
-  }, [totals.headerDiscountPercent, totals.headerDiscountAmount]);
-
-  const applyDiscountMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/patient-invoices/${invoiceId}/header-discount`, {
-        discountType,
-        discountValue: parseFloat(discountValue) || 0,
-      });
-      return res.json();
-    },
-    onSuccess: (data: any) => {
-      const newPct = parseFloat(data.headerDiscountPercent) || 0;
-      const newAmt = parseFloat(data.headerDiscountAmount) || 0;
-      onDiscountApplied?.(newPct, newAmt);
-      toast({ title: "تم تطبيق الخصم بنجاح" });
-    },
-    onError: (err: Error) => {
-      toast({ title: err.message, variant: "destructive" });
-    },
-  });
-
-  const removeDiscountMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/patient-invoices/${invoiceId}/header-discount`, {
-        discountType: "amount",
-        discountValue: 0,
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      onDiscountApplied?.(0, 0);
-      setDiscountValue("");
-      toast({ title: "تم إزالة الخصم" });
-    },
-    onError: (err: Error) => {
-      toast({ title: err.message, variant: "destructive" });
-    },
-  });
-
-  const discountPending = applyDiscountMutation.isPending || removeDiscountMutation.isPending;
 
   const { items: allTreasuries } = useTreasuriesLookup();
   const activeTreasuries = allTreasuries.filter(t => t.isActive !== false);
@@ -218,93 +158,20 @@ export function InvoiceSidebar({
 
       {isDraft && canDiscount && invoiceId && (
         <div className="border-t pt-3">
-          <div className="flex items-center justify-between mb-2">
-            <h4 className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
-              <Percent className="h-3.5 w-3.5" />
-              خصم الإجمالي
-            </h4>
-            {!discountOpen && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 text-xs px-1.5 text-orange-600 dark:text-orange-400"
-                onClick={() => setDiscountOpen(true)}
-                data-testid="button-sidebar-discount-toggle"
-              >
-                {hda > 0 ? "تعديل" : "إضافة"}
-              </Button>
-            )}
-          </div>
-          {hda > 0 && !discountOpen && (
-            <p className="text-xs text-orange-600 dark:text-orange-400">
-              {hdp > 0 ? `${hdp}%` : ""} ({formatCurrency(hda)})
-            </p>
-          )}
-          {discountOpen && (
-            <div className="space-y-2 border rounded-md p-2 bg-orange-50/40 dark:bg-orange-950/20">
-              <div className="grid grid-cols-2 gap-1.5">
-                <div>
-                  <Label className="text-[10px] text-muted-foreground">النوع</Label>
-                  <Select value={discountType} onValueChange={(v) => setDiscountType(v as "percent" | "amount")}>
-                    <SelectTrigger className="h-6 text-[10px]" data-testid="select-sidebar-discount-type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="percent">نسبة %</SelectItem>
-                      <SelectItem value="amount">مبلغ ج.م</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-[10px] text-muted-foreground">
-                    {discountType === "percent" ? "النسبة %" : "المبلغ ج.م"}
-                  </Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={discountValue}
-                    onChange={(e) => setDiscountValue(e.target.value)}
-                    className="h-6 text-xs"
-                    dir="ltr"
-                    data-testid="input-sidebar-discount-value"
-                  />
-                </div>
-              </div>
-              <div className="flex gap-1">
-                <Button
-                  size="sm"
-                  className="flex-1 h-6 text-xs bg-orange-600 hover:bg-orange-700 text-white"
-                  onClick={() => applyDiscountMutation.mutate()}
-                  disabled={discountPending}
-                  data-testid="button-sidebar-discount-apply"
-                >
-                  {applyDiscountMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin ml-0.5" /> : <Check className="h-3 w-3 ml-0.5" />}
-                  تطبيق
-                </Button>
-                {hda > 0 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-6 text-xs px-2 text-destructive border-destructive/30"
-                    onClick={() => removeDiscountMutation.mutate()}
-                    disabled={discountPending}
-                    data-testid="button-sidebar-discount-remove"
-                  >
-                    {removeDiscountMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-6 text-xs px-2"
-                  onClick={() => setDiscountOpen(false)}
-                >
-                  <X className="h-3 w-3" />
-                </Button>
-              </div>
-            </div>
-          )}
+          <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
+            <Percent className="h-3.5 w-3.5" />
+            خصم الإجمالي
+          </h4>
+          <Button
+            size="sm"
+            variant="outline"
+            className="w-full border-orange-400 text-orange-600 hover:bg-orange-50 dark:border-orange-500 dark:text-orange-400"
+            onClick={onOpenDiscountDialog}
+            data-testid="button-sidebar-discount"
+          >
+            <Percent className="h-3 w-3 ml-1" />
+            {hda > 0 ? `تعديل الخصم (${formatCurrency(hda)})` : "إضافة خصم"}
+          </Button>
         </div>
       )}
 
