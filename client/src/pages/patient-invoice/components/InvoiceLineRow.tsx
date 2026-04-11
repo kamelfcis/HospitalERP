@@ -131,13 +131,14 @@ export function InvoiceLineRow({
         {getLineTypeLabel(line.lineType, isReadOnly, isCostLine)}
       </td>
 
-      <td className="py-1">
+      <td className="py-1 text-right" dir="rtl">
         {isDraft && !isReadOnly ? (
-          <div className="flex flex-row-reverse items-center gap-1">
+          <div className="flex items-center gap-1">
             <Input
               value={line.description}
               onChange={(e) => updateLine(line.tempId, "description", e.target.value)}
-              className="h-6 text-xs flex-1"
+              className="h-6 text-xs flex-1 text-right"
+              dir="rtl"
               data-testid={`input-desc-unified-${i}`}
             />
             {priceSourceBadge}
@@ -152,7 +153,7 @@ export function InvoiceLineRow({
             )}
           </div>
         ) : (
-          <div className="flex flex-row-reverse items-center gap-1 flex-wrap">
+          <div className="flex items-center gap-1 flex-wrap">
             <span className="text-xs">{line.description}</span>
             {hasStatsBtn && (
               <Button
