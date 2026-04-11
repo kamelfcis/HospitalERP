@@ -1,3 +1,7 @@
+// ACCOUNTING_PENDING: supplier payments create GL journal entries via generateJournalEntry()
+//   but depends on Account Mappings for 'supplier_payment' source_type being configured.
+//   If mappings are missing, no GL entry is generated.
+
 /*
  * ═══════════════════════════════════════════════════════════════════════════════
  *  Supplier Payments Routes — مسارات سداد الموردين

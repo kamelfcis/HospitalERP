@@ -1,3 +1,7 @@
+// ACCOUNTING_PENDING: Encounters create/transfer → no direct GL impact.
+//   Financial impact flows through patient invoice lines linked via encounter_id.
+//   GL entries are generated only at patient invoice finalization.
+
 import type { Express } from "express";
 import { requireAuth, checkPermission } from "./_shared";
 import { PERMISSIONS } from "@shared/permissions";

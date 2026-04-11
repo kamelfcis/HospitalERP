@@ -1,3 +1,27 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  users.ts — المستخدمون والصلاحيات
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ┌────────────────────────┬──────────────────────────────────────────────────┐
+ *  │ الجدول                 │ الغرض                                            │
+ *  ├────────────────────────┼──────────────────────────────────────────────────┤
+ *  │ permission_groups      │ مجموعات الصلاحيات — بديل الـ role enum الثابت    │
+ *  │ group_permissions      │ صلاحيات كل مجموعة (many-to-many)               │
+ *  │ users                  │ المستخدمون — مع ربط اختياري بمجموعة صلاحيات     │
+ *  │ role_permissions       │ (legacy) صلاحيات حسب الدور — fallback آمن       │
+ *  │ user_permissions       │ (legacy) صلاحيات مخصصة لمستخدم                  │
+ *  └────────────────────────┴──────────────────────────────────────────────────┘
+ *
+ *  العلاقات:
+ *    users.permissionGroupId → permission_groups.id
+ *    group_permissions.groupId → permission_groups.id
+ *    user_permissions.userId → users.id
+ *
+ *  يُستورد من: enums.ts
+ *  يُستورد بواسطة: finance.ts, inventory.ts, hospital.ts, system.ts, intake.ts
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
 import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, uniqueIndex, integer, decimal } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";

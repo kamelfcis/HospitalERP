@@ -1,3 +1,55 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  hospital.ts — المستشفى: مرضى، أطباء، كاشير، قبول، أسرّة، خزن
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ┌──────────────────────────────────┬──────────────────────────────────────────┐
+ *  │ الجدول                           │ الغرض                                    │
+ *  ├──────────────────────────────────┼──────────────────────────────────────────┤
+ *  │ handover_receipt_num_seq         │ تسلسل إيصالات تسليم الدرج               │
+ *  │ patients                         │ بيانات المرضى الرئيسية                   │
+ *  │ patient_merge_audit              │ سجل عمليات دمج المرضى                   │
+ *  │ patient_aliases                  │ أسماء/أكواد بديلة للمرضى                │
+ *  │ doctors                          │ الأطباء — مع حسابات مستحقات GL          │
+ *  │ cashier_shifts                   │ ورديات الكاشير                           │
+ *  │ cashier_transfer_log             │ سجل نقل فواتير بين ورديات               │
+ *  │ cashier_receipts                 │ إيصالات التحصيل                          │
+ *  │ cashier_refund_receipts          │ إيصالات المرتجعات                        │
+ *  │ cashier_audit_log                │ سجل تدقيق الكاشير                       │
+ *  │ surgery_types                    │ أنواع العمليات الجراحية                   │
+ *  │ surgery_category_prices          │ أسعار فئات العمليات                       │
+ *  │ admissions                       │ قبول المرضى (داخلي)                      │
+ *  │ patient_visits                   │ سجل الزيارات (استقبال)                   │
+ *  │ encounters                       │ المقابلات الطبية (جراحة/عناية/جناح/...) │
+ *  │ visit_aggregation_cache          │ cache تجميعي للزيارات                    │
+ *  │ stay_segments                    │ شرائح الإقامة (محرك الإقامة)             │
+ *  │ floors                           │ الطوابق                                  │
+ *  │ rooms                            │ الغرف                                    │
+ *  │ beds                             │ الأسرّة                                  │
+ *  │ doctor_transfers                 │ تحويلات مستحقات الطبيب                   │
+ *  │ doctor_settlements               │ تسويات مستحقات الأطباء                   │
+ *  │ doctor_settlement_allocations    │ توزيع التسوية على التحويلات              │
+ *  │ drawer_passwords                 │ كلمات سر أدراج الخزن                    │
+ *  │ treasuries                       │ الخزن المالية                             │
+ *  │ user_treasuries                  │ ربط المستخدمين بالخزن                    │
+ *  │ treasury_transactions            │ حركات الخزن                              │
+ *  └──────────────────────────────────┴──────────────────────────────────────────┘
+ *
+ *  العلاقات:
+ *    patients — مرجع رئيسي للمرضى عبر النظام
+ *    doctors → accounts (payable/receivable)
+ *    cashier_shifts → pharmacies, departments, accounts
+ *    admissions → patients, departments, companies, surgery_types
+ *    patient_visits → patients, departments, users
+ *    encounters → patient_visits, admissions, departments
+ *    stay_segments → admissions, services, patient_invoice_headers
+ *    beds → rooms → floors → departments
+ *    treasuries → accounts
+ *
+ *  يُستورد من: enums.ts, users.ts, finance.ts, inventory.ts, invoicing.ts, companies.ts
+ *  يُستورد بواسطة: clinic.ts, contracts.ts, intake.ts
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
 import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, integer, decimal, numeric, boolean, timestamp, date, index, uniqueIndex, pgSequence, jsonb } from "drizzle-orm/pg-core";
 

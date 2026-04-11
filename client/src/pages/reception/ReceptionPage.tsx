@@ -1,103 +1,27 @@
-import { useState, useEffect, useMemo, useRef, useCallback, memo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
-  Loader2, Search, UserCheck, UserPlus, X, ClipboardList,
-  Stethoscope, Bed, FlaskConical, Radiation,
-  Building2, CheckCircle2, Banknote, ShieldCheck, FileSignature,
-  AlertTriangle, Lock, Info, Printer, RefreshCw, Filter, Clock,
-  Users, Activity, ChevronDown,
+  Loader2, UserPlus, ClipboardList, RefreshCw, Printer,
 } from "lucide-react";
-import { ClinicLookup, DoctorLookup, DepartmentLookup } from "@/components/lookups";
 import type { LookupItem } from "@/lib/lookupTypes";
 import { printReceptionTicket } from "@/components/printing/ReceptionTicketPrint";
 import { useContractResolution } from "@/pages/patients/hooks/useContractResolution";
-import { ContractMemberLookup } from "@/pages/patients/components/ContractMemberLookup";
-import { NationalIdField, isFullName } from "@/components/shared/NationalIdField";
+import { isFullName } from "@/components/shared/NationalIdField";
 
-type VisitReason = "" | "consultation" | "admission" | "lab" | "radiology";
-type PaymentKind = "CASH" | "INSURANCE" | "CONTRACT";
-
-interface PatientSuggest {
-  id: string;
-  fullName: string;
-  patientCode?: string | null;
-  phone?: string | null;
-  age?: number | null;
-  nationalId?: string | null;
-  dateOfBirth?: string | null;
-}
-
-interface DuplicateCandidate {
-  patientId: string;
-  patientCode: string | null;
-  fullName: string;
-  phone: string | null;
-  nationalId: string | null;
-  age: number | null;
-  dateOfBirth?: string | null;
-  score: number;
-  reasons: string[];
-}
-
-interface DuplicateCheckResult {
-  duplicateStatus: "none" | "warning" | "block";
-  candidates: DuplicateCandidate[];
-  recommendedAction: string;
-}
-
-interface VisitRecord {
-  id: string;
-  visit_number: string;
-  patient_name: string;
-  patient_code: string;
-  patient_phone?: string;
-  visit_type: "inpatient" | "outpatient";
-  requested_service?: string | null;
-  department_name?: string | null;
-  status: string;
-  notes?: string | null;
-  created_at: string;
-}
-
-interface ScheduleOption { doctorId: string; doctorName: string; }
-interface FloorOption { id: string; nameAr: string; rooms: RoomOption[]; }
-interface RoomOption { id: string; nameAr: string; beds: BedOption[]; }
-interface BedOption { id: string; nameAr: string; status: string; }
-interface SurgeryType { id: string; nameAr: string; }
-
-const todayISO = new Date().toISOString().slice(0, 10);
-
-const VISIT_TYPES: { value: VisitReason; label: string; sub: string; Icon: any; color: string; bg: string; border: string; activeRing: string }[] = [
-  { value: "consultation", label: "كشف عيادة", sub: "حجز في طابور العيادة", Icon: Stethoscope, color: "text-blue-700", bg: "bg-blue-50", border: "border-blue-300", activeRing: "ring-blue-400" },
-  { value: "admission", label: "تسكين / إقامة", sub: "تسكين على سرير بالمستشفى", Icon: Bed, color: "text-green-700", bg: "bg-green-50", border: "border-green-300", activeRing: "ring-green-400" },
-  { value: "lab", label: "تحاليل", sub: "طلب تحاليل مختبر", Icon: FlaskConical, color: "text-purple-700", bg: "bg-purple-50", border: "border-purple-300", activeRing: "ring-purple-400" },
-  { value: "radiology", label: "أشعة", sub: "طلب أشعة تشخيصية", Icon: Radiation, color: "text-amber-700", bg: "bg-amber-50", border: "border-amber-300", activeRing: "ring-amber-400" },
-];
-
-const PAYMENT_TYPES: { value: PaymentKind; label: string; Icon: any }[] = [
-  { value: "CASH", label: "نقدي", Icon: Banknote },
-  { value: "INSURANCE", label: "تأمين", Icon: ShieldCheck },
-  { value: "CONTRACT", label: "تعاقد", Icon: FileSignature },
-];
-
-const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
-  open: { label: "مفتوح", cls: "bg-blue-50 text-blue-700 border-blue-200" },
-  in_progress: { label: "قيد التنفيذ", cls: "bg-amber-50 text-amber-700 border-amber-200" },
-  completed: { label: "مكتمل", cls: "bg-green-50 text-green-700 border-green-200" },
-  cancelled: { label: "ملغي", cls: "bg-red-50 text-red-700 border-red-200" },
-};
-
-const DEBOUNCE_MS = 280;
+import type {
+  VisitReason, PaymentKind, PatientSuggest,
+  DuplicateCheckResult, ScheduleOption, FloorOption, RoomOption, BedOption, SurgeryType, VisitRecord,
+} from "./components/types";
+import { todayISO } from "./components/types";
+import { PatientInfoSection } from "./components/PatientInfoSection";
+import { DuplicateCheckSection } from "./components/DuplicateCheckSection";
+import { PaymentTypeSection } from "./components/PaymentTypeSection";
+import { VisitDetailsSection } from "./components/VisitDetailsSection";
+import { VisitsListPanel, StatCard } from "./components/VisitsListPanel";
 
 function useDebounce(value: string, delay: number): string {
   const [debounced, setDebounced] = useState(value);
@@ -107,97 +31,6 @@ function useDebounce(value: string, delay: number): string {
   }, [value, delay]);
   return debounced;
 }
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest pt-1 pb-0.5 border-b select-none">
-      {children}
-    </p>
-  );
-}
-
-const CandidateList = memo(function CandidateList({ candidates, onSelect }: { candidates: DuplicateCandidate[]; onSelect: (p: PatientSuggest) => void }) {
-  return (
-    <div className="space-y-1 max-h-40 overflow-y-auto">
-      {candidates.map(c => (
-        <div key={c.patientId} className="flex items-center gap-2 p-2 rounded border bg-white text-xs">
-          <div className="flex-1 min-w-0">
-            <div className="font-medium truncate">{c.fullName}</div>
-            <div className="text-muted-foreground font-mono">{c.phone || "—"}</div>
-            <div className="flex gap-1 mt-0.5 flex-wrap">
-              {c.reasons.map((r, i) => (
-                <span key={i} className="px-1 py-0.5 rounded bg-muted text-muted-foreground">{r}</span>
-              ))}
-            </div>
-          </div>
-          {c.patientCode && (
-            <span className="font-mono text-xs text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded shrink-0">
-              {c.patientCode}
-            </span>
-          )}
-          <button
-            type="button"
-            onMouseDown={e => e.preventDefault()}
-            onClick={() => onSelect({ id: c.patientId, fullName: c.fullName, patientCode: c.patientCode, phone: c.phone, age: c.age, nationalId: c.nationalId })}
-            className="shrink-0 px-2 py-1 rounded border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 text-xs font-medium"
-            data-testid={`button-use-candidate-${c.patientId}`}
-          >
-            استخدام
-          </button>
-        </div>
-      ))}
-    </div>
-  );
-});
-
-const VisitRow = memo(function VisitRow({ visit, onComplete }: {
-  visit: VisitRecord;
-  onComplete: (id: string) => void;
-}) {
-  const s = STATUS_LABEL[visit.status] ?? { label: visit.status, cls: "" };
-  const time = new Date(visit.created_at).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" });
-  return (
-    <div className="flex items-center gap-2 px-3 py-2.5 border-b last:border-0 hover:bg-muted/20 transition-colors" data-testid={`row-visit-${visit.id}`}>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="font-medium text-sm truncate">{visit.patient_name}</span>
-          <Badge variant="outline" className={`text-[10px] px-1.5 ${visit.visit_type === "inpatient" ? "bg-indigo-50 text-indigo-700 border-indigo-200" : "bg-teal-50 text-teal-700 border-teal-200"}`}>
-            {visit.visit_type === "inpatient" ? "داخلي" : "خارجي"}
-          </Badge>
-          <Badge variant="outline" className={`text-[10px] px-1.5 ${s.cls}`}>{s.label}</Badge>
-        </div>
-        <div className="text-xs text-muted-foreground flex gap-2 mt-0.5 flex-wrap">
-          <span className="font-mono">{visit.visit_number}</span>
-          {visit.patient_code && <span>ملف: {visit.patient_code}</span>}
-          {visit.department_name && <span className="flex items-center gap-0.5"><Building2 className="h-3 w-3" />{visit.department_name}</span>}
-          {visit.requested_service && <span>• {visit.requested_service}</span>}
-          <span className="flex items-center gap-0.5"><Clock className="h-3 w-3" />{time}</span>
-        </div>
-      </div>
-      {visit.status === "open" && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-xs h-7 px-2 text-green-600 hover:text-green-700 hover:bg-green-50 shrink-0"
-          onClick={() => onComplete(visit.id)}
-          data-testid={`button-complete-visit-${visit.id}`}
-        >
-          <CheckCircle2 className="h-3.5 w-3.5 me-1" />
-          إتمام
-        </Button>
-      )}
-    </div>
-  );
-});
-
-const StatCard = memo(function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
-  return (
-    <div className={`flex flex-col items-center justify-center rounded-lg border px-3 py-2 ${color}`}>
-      <span className="text-lg font-bold">{value}</span>
-      <span className="text-[10px] font-medium">{label}</span>
-    </div>
-  );
-});
 
 export default function ReceptionPage() {
   const { toast } = useToast();
@@ -704,411 +537,70 @@ export default function ReceptionPage() {
             <ScrollArea className="flex-1">
               <div className="px-4 py-3 space-y-4">
 
-                <section className="space-y-2">
-                  <SectionLabel>بيانات المريض</SectionLabel>
-                  <div className="space-y-1">
-                    <Label className="text-xs">
-                      {quadNameRequired ? "الاسم الرباعي" : "الاسم"} <span className="text-destructive">*</span>
-                      {existingPatient && (
-                        <Badge variant="outline" className="mr-2 text-xs text-green-700 border-green-300 bg-green-50">
-                          <UserCheck className="h-3 w-3 ml-1" />
-                          مريض مسجل — {existingPatient.patientCode}
-                        </Badge>
-                      )}
-                    </Label>
+                <PatientInfoSection
+                  fullName={fullName} setFullName={setFullName}
+                  phone={phone} setPhone={setPhone}
+                  nationalId={nationalId} setNationalId={setNationalId}
+                  dateOfBirth={dateOfBirth} setDateOfBirth={setDateOfBirth}
+                  age={age} setAge={setAge}
+                  existingPatient={existingPatient}
+                  showSuggestList={showSuggestList}
+                  setShowSuggestions={setShowSuggestions}
+                  highlightedIdx={highlightedIdx}
+                  setHighlightedIdx={setHighlightedIdx}
+                  patientSuggestions={patientSuggestions}
+                  handleSelectExistingPatient={handleSelectExistingPatient}
+                  handleClearExistingPatient={handleClearExistingPatient}
+                  handleNameKeyDown={handleNameKeyDown}
+                  nameInputRef={nameInputRef}
+                  phoneInputRef={phoneInputRef}
+                  suggestItemsRef={suggestItemsRef}
+                  quadNameRequired={quadNameRequired}
+                  requiresFullId={requiresFullId}
+                  nidRequired={nidRequired}
+                />
 
-                    {existingPatient ? (
-                      <div className="flex items-center gap-2 px-2 py-1.5 bg-green-50 border border-green-300 rounded-md text-sm">
-                        <UserCheck className="h-4 w-4 text-green-600 shrink-0" />
-                        <span className="flex-1 font-medium truncate">{existingPatient.fullName}</span>
-                        {existingPatient.patientCode && (
-                          <span className="font-mono text-xs text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded shrink-0">
-                            {existingPatient.patientCode}
-                          </span>
-                        )}
-                        <button
-                          type="button" onClick={handleClearExistingPatient}
-                          className="text-muted-foreground hover:text-destructive focus:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded"
-                          data-testid="button-clear-patient"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="relative">
-                        <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                        <Input
-                          ref={nameInputRef}
-                          value={fullName}
-                          onChange={e => { setFullName(e.target.value); setShowSuggestions(true); }}
-                          onFocus={() => setShowSuggestions(true)}
-                          onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-                          onKeyDown={handleNameKeyDown}
-                          placeholder={quadNameRequired ? "الاسم الرباعي: الاسم / الأب / الجد / العائلة" : "اكتب اسم المريض أو ابحث عن موجود..."}
-                          className="h-8 text-xs pr-7"
-                          autoComplete="off"
-                          autoFocus
-                          data-testid="input-patient-name"
-                          aria-autocomplete="list"
-                          aria-expanded={showSuggestList}
-                        />
-                        {showSuggestList && (
-                          <div className="absolute z-50 w-full mt-0.5 border rounded-md bg-background shadow-lg max-h-44 overflow-y-auto">
-                            <div className="px-2 py-1 text-xs text-muted-foreground bg-muted/40 border-b select-none">
-                              مرضى مسجلون — اختر لربط الزيارة · ↑↓ تنقل · Enter اختيار
-                            </div>
-                            {patientSuggestions.map((p, idx) => {
-                              const isActive = highlightedIdx === idx;
-                              return (
-                                <button
-                                  key={p.id}
-                                  ref={el => { suggestItemsRef.current[idx] = el; }}
-                                  role="option" aria-selected={isActive} type="button"
-                                  onMouseDown={e => e.preventDefault()}
-                                  onMouseEnter={() => setHighlightedIdx(idx)}
-                                  onClick={() => handleSelectExistingPatient(p)}
-                                  className={`w-full text-right px-3 py-2 text-xs border-b last:border-0 flex items-center gap-2 transition-colors ${isActive ? "bg-primary/10 text-primary ring-inset ring-1 ring-primary/30" : "hover:bg-blue-50"}`}
-                                  data-testid={`patient-suggest-${p.id}`}
-                                >
-                                  <div className="flex-1 min-w-0">
-                                    <div className="font-medium truncate">{p.fullName}</div>
-                                    {p.phone && <div className="text-muted-foreground font-mono">{p.phone}</div>}
-                                  </div>
-                                  {p.patientCode && (
-                                    <span className="font-mono text-xs text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded shrink-0">
-                                      {p.patientCode}
-                                    </span>
-                                  )}
-                                </button>
-                              );
-                            })}
-                            <button
-                              type="button" onMouseDown={e => e.preventDefault()}
-                              onClick={() => setShowSuggestions(false)}
-                              className="w-full text-right px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/50 italic border-t"
-                            >
-                              إضافة "{fullName}" كمريض جديد
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {quadNameRequired && fullName.trim() && !isFullName(fullName) && (
-                      <p className="text-[10px] text-amber-600 flex items-center gap-1">
-                        <span>⚠</span> {requiresFullId ? "الاسم الرباعي مطلوب لمرضى التعاقد والتأمين" : "الاسم الرباعي مطلوب للتسكين"}
-                      </p>
-                    )}
-                  </div>
+                <DuplicateCheckSection
+                  shouldCheckDup={shouldCheckDup}
+                  dupChecking={dupChecking}
+                  dupResult={dupResult}
+                  dupDismissed={dupDismissed}
+                  setDupDismissed={setDupDismissed}
+                  overrideReason={overrideReason}
+                  setOverrideReason={setOverrideReason}
+                  handleSelectExistingPatient={handleSelectExistingPatient}
+                />
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <Label className="text-xs">التليفون</Label>
-                      <Input
-                        ref={phoneInputRef}
-                        value={phone}
-                        onChange={e => setPhone(e.target.value.replace(/\D/g, "").slice(0, 11))}
-                        placeholder="01xxxxxxxxx"
-                        maxLength={11}
-                        className="h-7 text-xs font-mono" dir="ltr"
-                        data-testid="input-patient-phone"
-                      />
-                    </div>
-                  </div>
-                  <NationalIdField
-                    nationalId={nationalId}
-                    onNationalIdChange={setNationalId}
-                    dateOfBirth={dateOfBirth}
-                    onDateOfBirthChange={setDateOfBirth}
-                    age={age}
-                    onAgeChange={setAge}
-                    disabled={false}
-                    compact
-                    required={nidRequired}
-                    requiredHint={nidRequired && !nationalId ? (requiresFullId ? "الرقم القومي إجباري لمرضى التعاقد والتأمين" : "الرقم القومي إجباري للتسكين") : undefined}
-                  />
-                </section>
+                <PaymentTypeSection
+                  paymentType={paymentType}
+                  handlePaymentTypeChange={handlePaymentTypeChange}
+                  insuranceCo={insuranceCo}
+                  setInsuranceCo={setInsuranceCo}
+                  resolution={resolution}
+                  consultDate={consultDate}
+                />
 
-                {shouldCheckDup && (
-                  <section className="space-y-1">
-                    {dupChecking && (
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                        <span>جاري البحث عن مرضى مشابهين...</span>
-                      </div>
-                    )}
-                    {!dupChecking && dupResult?.duplicateStatus === "block" && !dupDismissed && (
-                      <div className="p-3 rounded-md border border-red-300 bg-red-50 space-y-2">
-                        <div className="flex items-center gap-2 text-red-700">
-                          <Lock className="h-3.5 w-3.5" />
-                          <span className="text-xs font-semibold">مريض مكرر — الإضافة محظورة</span>
-                        </div>
-                        <p className="text-xs text-red-600">{dupResult.recommendedAction}</p>
-                        <CandidateList candidates={dupResult.candidates} onSelect={handleSelectExistingPatient} />
-                      </div>
-                    )}
-                    {!dupChecking && dupResult?.duplicateStatus === "warning" && !dupDismissed && (
-                      <div className="p-3 rounded-md border border-amber-300 bg-amber-50 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2 text-amber-700">
-                            <AlertTriangle className="h-3.5 w-3.5" />
-                            <span className="text-xs font-semibold">تنبيه: مرضى مشابهون</span>
-                          </div>
-                          <button type="button" onClick={() => setDupDismissed(true)} className="text-muted-foreground hover:text-foreground">
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                        <p className="text-xs text-amber-700">{dupResult.recommendedAction}</p>
-                        <CandidateList candidates={dupResult.candidates} onSelect={handleSelectExistingPatient} />
-                        <div className="space-y-1 pt-1">
-                          <Label className="text-xs text-amber-800">لإنشاء ملف جديد — اكتب السبب *</Label>
-                          <Input
-                            value={overrideReason} onChange={e => setOverrideReason(e.target.value)}
-                            placeholder="مثال: نفس الاسم لكن شخص مختلف"
-                            className="h-7 text-xs border-amber-400"
-                            data-testid="input-dup-override-reason"
-                          />
-                        </div>
-                      </div>
-                    )}
-                    {!dupChecking && dupResult?.duplicateStatus === "none" && dupResult.candidates.length > 0 && !dupDismissed && (
-                      <div className="p-2 rounded-md border border-blue-200 bg-blue-50 space-y-1">
-                        <div className="flex items-center gap-1.5 text-blue-700 text-xs">
-                          <Info className="h-3 w-3" />
-                          <span className="font-medium">مرضى قريبون — هل تقصد أحدهم؟</span>
-                        </div>
-                        <CandidateList candidates={dupResult.candidates.slice(0, 3)} onSelect={handleSelectExistingPatient} />
-                      </div>
-                    )}
-                  </section>
-                )}
-
-                <section className="space-y-2">
-                  <SectionLabel>نوع الدفع</SectionLabel>
-                  <div className="flex gap-2" role="group" aria-label="نوع الدفع">
-                    {PAYMENT_TYPES.map(({ value, label, Icon }) => (
-                      <button
-                        key={value} type="button" aria-pressed={paymentType === value}
-                        onClick={() => handlePaymentTypeChange(value)}
-                        className={`flex-1 flex items-center justify-center gap-1.5 h-8 rounded-md border text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 ${paymentType === value ? "bg-primary text-primary-foreground border-primary shadow-sm" : "bg-background border-input hover:bg-muted"}`}
-                        data-testid={`button-payment-${value.toLowerCase()}`}
-                      >
-                        <Icon className="h-3.5 w-3.5" />{label}
-                      </button>
-                    ))}
-                  </div>
-                  {paymentType === "INSURANCE" && (
-                    <div className="space-y-2">
-                      <ContractMemberLookup paymentType="INSURANCE" resolution={resolution} appointmentDate={consultDate} />
-                      {!resolution.state.resolved && (
-                        <div className="space-y-1">
-                          <Label className="text-xs">اسم شركة التأمين (بديل)</Label>
-                          <Input value={insuranceCo} onChange={e => setInsuranceCo(e.target.value)} placeholder="شركة التأمين" className="h-7 text-xs" data-testid="input-insurance-company" />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {paymentType === "CONTRACT" && (
-                    <ContractMemberLookup paymentType="CONTRACT" resolution={resolution} appointmentDate={consultDate} />
-                  )}
-                </section>
-
-                <section className="space-y-2">
-                  <SectionLabel>سبب الزيارة *</SectionLabel>
-                  <div className="grid grid-cols-2 gap-2">
-                    {VISIT_TYPES.map(vt => {
-                      const active = visitReason === vt.value;
-                      return (
-                        <button
-                          key={vt.value} type="button"
-                          onClick={() => { setVisitReason(vt.value as VisitReason); if (vt.value !== "consultation") { setSelectedClinic(null); setSelectedDoctor(null); } if (vt.value !== "admission") { setSelectedFloor(""); setSelectedRoom(""); setSelectedBed(""); setAdmDoctor(null); setSurgerySearch(""); setSelectedSurgery(null); } }}
-                          className={`flex items-center gap-2 p-2.5 rounded-lg border text-right transition-all focus:outline-none focus-visible:ring-2 ${active ? `${vt.bg} ${vt.border} ${vt.color} ring-2 ${vt.activeRing} shadow-sm` : "bg-background border-input hover:bg-muted/50 text-muted-foreground"}`}
-                          data-testid={`button-visit-${vt.value}`}
-                        >
-                          <vt.Icon className={`h-5 w-5 shrink-0 ${active ? vt.color : ""}`} />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-semibold">{vt.label}</div>
-                            <div className="text-[10px] opacity-70">{vt.sub}</div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-
-                {visitReason === "consultation" && (
-                  <section className="border border-blue-200 rounded-lg p-3 bg-blue-50/30 space-y-2">
-                    <p className="text-xs font-medium text-blue-800 flex items-center gap-1">
-                      <Stethoscope className="h-3.5 w-3.5" /> تفاصيل حجز الكشف
-                    </p>
-                    <div className="space-y-1">
-                      <Label className="text-xs">العيادة *</Label>
-                      <ClinicLookup
-                        value={selectedClinic?.id || ""}
-                        onChange={item => { setSelectedClinic(item); setSelectedDoctor(null); }}
-                        data-testid="lookup-clinic"
-                      />
-                    </div>
-                    {selectedClinic && (
-                      <div className="space-y-1">
-                        <Label className="text-xs">الطبيب *</Label>
-                        {schedules.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mb-1">
-                            <span className="text-xs text-muted-foreground self-center">أطباء العيادة:</span>
-                            {schedules.map(s => (
-                              <button
-                                key={s.doctorId} type="button"
-                                onClick={() => setSelectedDoctor({ id: s.doctorId, name: s.doctorName })}
-                                className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-800 border border-blue-300 rounded px-2 py-0.5 transition-colors"
-                                data-testid={`schedule-doctor-${s.doctorId}`}
-                              >
-                                د. {s.doctorName}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        <DoctorLookup value={selectedDoctor?.id || ""} displayValue={selectedDoctor?.name || ""} onChange={setSelectedDoctor} data-testid="lookup-consult-doctor" />
-                      </div>
-                    )}
-                    {selectedClinic && (
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="space-y-1">
-                          <Label className="text-xs">تاريخ الكشف</Label>
-                          <Input type="date" value={consultDate} onChange={e => setConsultDate(e.target.value)} className="h-7 text-xs" data-testid="input-consult-date" />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs">الوقت</Label>
-                          <Input type="time" value={consultTime} onChange={e => setConsultTime(e.target.value)} className="h-7 text-xs" data-testid="input-consult-time" />
-                        </div>
-                      </div>
-                    )}
-                    {selectedClinic && (() => {
-                      const fee = (selectedClinic.meta as any)?.consultationServiceBasePrice;
-                      if (!fee) return null;
-                      const feeNum = parseFloat(String(fee));
-                      if (isNaN(feeNum) || feeNum <= 0) return null;
-                      return (
-                        <div className="flex items-center justify-between bg-white/80 border border-blue-200 rounded px-2 py-1.5">
-                          <span className="text-xs text-blue-700 font-medium">رسوم الكشف</span>
-                          <span className="text-xs font-bold text-blue-900" data-testid="text-consult-fee">
-                            {feeNum.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} ج.م
-                          </span>
-                        </div>
-                      );
-                    })()}
-                  </section>
-                )}
-
-                {visitReason === "admission" && (
-                  <section className="border border-green-200 rounded-lg p-3 bg-green-50/30 space-y-2">
-                    <p className="text-xs font-medium text-green-800 flex items-center gap-1">
-                      <Bed className="h-3.5 w-3.5" /> تفاصيل التسكين
-                    </p>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="space-y-1">
-                        <Label className="text-xs">الدور</Label>
-                        <Select value={selectedFloor} onValueChange={setSelectedFloor}>
-                          <SelectTrigger className="h-7 text-xs" data-testid="select-floor"><SelectValue placeholder="اختر" /></SelectTrigger>
-                          <SelectContent>{floors.map(f => <SelectItem key={f.id} value={f.id}>{f.nameAr}</SelectItem>)}</SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">الغرفة</Label>
-                        <Select value={selectedRoom} onValueChange={setSelectedRoom} disabled={!selectedFloor}>
-                          <SelectTrigger className="h-7 text-xs" data-testid="select-room"><SelectValue placeholder="اختر" /></SelectTrigger>
-                          <SelectContent>{rooms.map(r => <SelectItem key={r.id} value={r.id}>{r.nameAr}</SelectItem>)}</SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1">
-                        <Label className={`text-xs ${selectedRoom && !selectedBed ? "text-red-600 font-medium" : ""}`}>
-                          السرير {selectedRoom && !selectedBed && <span className="text-red-500">*</span>}
-                        </Label>
-                        <Select value={selectedBed} onValueChange={setSelectedBed} disabled={!selectedRoom}>
-                          <SelectTrigger className={`h-7 text-xs ${selectedRoom && !selectedBed ? "border-red-400 ring-1 ring-red-400" : ""}`} data-testid="select-bed">
-                            <SelectValue placeholder={selectedRoom && !selectedBed ? "مطلوب ⚠" : "اختر"} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {beds.length === 0 && <SelectItem value="__none__" disabled>لا توجد أسرة فارغة</SelectItem>}
-                            {beds.map(b => <SelectItem key={b.id} value={b.id}>{b.nameAr}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">الطبيب المعالج</Label>
-                      <DoctorLookup value={admDoctor?.id || ""} displayValue={admDoctor?.name || ""} onChange={setAdmDoctor} data-testid="lookup-adm-doctor" />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">نوع العملية (اختياري)</Label>
-                      <div className="relative">
-                        <Input
-                          value={surgerySearch}
-                          onChange={e => { setSurgerySearch(e.target.value); setSelectedSurgery(null); setHighlightedSurgery(0); setShowSurgeryDrop(true); }}
-                          onFocus={() => setShowSurgeryDrop(true)}
-                          onBlur={() => setTimeout(() => setShowSurgeryDrop(false), 150)}
-                          onKeyDown={handleSurgeryKeyDown}
-                          placeholder="ابحث عن عملية..."
-                          autoComplete="off" className="h-7 text-xs"
-                          data-testid="input-surgery-search"
-                        />
-                        {showSurgeryDrop && surgerySearch.length >= 1 && surgeryTypesRaw.length > 0 && (
-                          <div className="absolute z-50 w-full mt-0.5 border rounded bg-background shadow-md max-h-28 overflow-y-auto">
-                            {surgeryTypesRaw.map((s, idx) => {
-                              const isActive = highlightedSurgery === idx;
-                              return (
-                                <button
-                                  key={s.id}
-                                  ref={el => { surgeryItemsRef.current[idx] = el; }}
-                                  role="option" aria-selected={isActive} type="button"
-                                  className={`w-full text-right px-2 py-1 text-xs transition-colors ${isActive ? "bg-primary/10 text-primary" : "hover:bg-muted"}`}
-                                  onMouseEnter={() => setHighlightedSurgery(idx)}
-                                  onMouseDown={e => e.preventDefault()}
-                                  onClick={() => { setSelectedSurgery(s); setSurgerySearch(s.nameAr); setShowSurgeryDrop(false); }}
-                                >
-                                  {s.nameAr}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                      {selectedSurgery && (
-                        <div className="flex items-center gap-2 mt-1">
-                          <Badge variant="secondary" className="text-xs">{selectedSurgery.nameAr}</Badge>
-                          <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={isPackage}
-                              onChange={e => setIsPackage(e.target.checked)}
-                              className="rounded border-primary"
-                              data-testid="checkbox-is-package"
-                            />
-                            <span className="text-xs font-medium text-purple-700">باكدج</span>
-                          </label>
-                        </div>
-                      )}
-                    </div>
-                  </section>
-                )}
-
-                {(visitReason === "lab" || visitReason === "radiology") && (
-                  <section className={`border rounded-lg p-3 space-y-2 ${visitReason === "lab" ? "border-purple-200 bg-purple-50/30" : "border-amber-200 bg-amber-50/30"}`}>
-                    <p className={`text-xs font-medium flex items-center gap-1 ${visitReason === "lab" ? "text-purple-800" : "text-amber-800"}`}>
-                      {visitReason === "lab"
-                        ? <><FlaskConical className="h-3.5 w-3.5" /> تفاصيل طلب التحاليل</>
-                        : <><Radiation className="h-3.5 w-3.5" /> تفاصيل طلب الأشعة</>}
-                    </p>
-                    <div className="space-y-1">
-                      <Label className="text-xs">{visitReason === "lab" ? "التحاليل المطلوبة" : "الأشعة المطلوبة"}</Label>
-                      <textarea
-                        value={serviceNotes} onChange={e => setServiceNotes(e.target.value)}
-                        placeholder={visitReason === "lab" ? "مثال: صورة دم كاملة، وظائف كبد..." : "مثال: أشعة صدر، سونار بطن..."}
-                        rows={3}
-                        className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-ring"
-                        data-testid="textarea-service-notes"
-                      />
-                    </div>
-                  </section>
-                )}
+                <VisitDetailsSection
+                  visitReason={visitReason} setVisitReason={setVisitReason}
+                  selectedClinic={selectedClinic} setSelectedClinic={setSelectedClinic}
+                  selectedDoctor={selectedDoctor} setSelectedDoctor={setSelectedDoctor}
+                  consultDate={consultDate} setConsultDate={setConsultDate}
+                  consultTime={consultTime} setConsultTime={setConsultTime}
+                  schedules={schedules}
+                  selectedFloor={selectedFloor} setSelectedFloor={setSelectedFloor}
+                  selectedRoom={selectedRoom} setSelectedRoom={setSelectedRoom}
+                  selectedBed={selectedBed} setSelectedBed={setSelectedBed}
+                  floors={floors} rooms={rooms} beds={beds}
+                  admDoctor={admDoctor} setAdmDoctor={setAdmDoctor}
+                  surgerySearch={surgerySearch} setSurgerySearch={setSurgerySearch}
+                  selectedSurgery={selectedSurgery} setSelectedSurgery={setSelectedSurgery}
+                  isPackage={isPackage} setIsPackage={setIsPackage}
+                  showSurgeryDrop={showSurgeryDrop} setShowSurgeryDrop={setShowSurgeryDrop}
+                  highlightedSurgery={highlightedSurgery} setHighlightedSurgery={setHighlightedSurgery}
+                  surgeryTypesRaw={surgeryTypesRaw} surgeryItemsRef={surgeryItemsRef}
+                  handleSurgeryKeyDown={handleSurgeryKeyDown}
+                  serviceNotes={serviceNotes} setServiceNotes={setServiceNotes}
+                />
 
                 <div className="flex items-center gap-2 pt-2 pb-1 border-t">
                   {visitReason && visitReason !== "admission" && (
@@ -1134,67 +626,15 @@ export default function ReceptionPage() {
           </div>
         </div>
 
-        <div className="lg:col-span-5 xl:col-span-5 flex flex-col min-h-0">
-          <div className="border rounded-xl bg-card shadow-sm flex flex-col flex-1 min-h-0">
-            <div className="px-4 py-3 border-b">
-              <div className="flex items-center gap-2 mb-2">
-                <Activity className="h-4 w-4 text-primary" />
-                <span className="text-sm font-bold">زيارات اليوم</span>
-                <Badge variant="outline" className="text-[10px]">{visits.length}</Badge>
-              </div>
-              <div className="flex flex-wrap gap-2 items-center">
-                <div className="relative flex-1 min-w-[120px]">
-                  <Search className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                  <Input
-                    value={listSearch} onChange={e => setListSearch(e.target.value)}
-                    placeholder="بحث..."
-                    className="h-7 text-xs pr-7"
-                    data-testid="input-visit-search"
-                  />
-                </div>
-                <Input type="date" value={listDate} onChange={e => setListDate(e.target.value)} className="h-7 text-xs w-[120px]" data-testid="input-visit-date" />
-                <Select value={listStatusFilter} onValueChange={setListStatusFilter}>
-                  <SelectTrigger className="h-7 text-xs w-[90px]" data-testid="select-visit-status">
-                    <SelectValue placeholder="الحالة" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__all__">الكل</SelectItem>
-                    <SelectItem value="open">مفتوح</SelectItem>
-                    <SelectItem value="in_progress">قيد التنفيذ</SelectItem>
-                    <SelectItem value="completed">مكتمل</SelectItem>
-                    <SelectItem value="cancelled">ملغي</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select value={listTypeFilter} onValueChange={setListTypeFilter}>
-                  <SelectTrigger className="h-7 text-xs w-[90px]" data-testid="select-visit-type">
-                    <SelectValue placeholder="النوع" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__all__">الكل</SelectItem>
-                    <SelectItem value="outpatient">خارجي</SelectItem>
-                    <SelectItem value="inpatient">داخلي</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <ScrollArea className="flex-1">
-              {visitsLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
-              ) : visits.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                  <Users className="h-8 w-8 mb-2 opacity-40" />
-                  <p className="text-sm">لا توجد زيارات</p>
-                </div>
-              ) : (
-                visits.map(v => (
-                  <VisitRow key={v.id} visit={v} onComplete={handleComplete} />
-                ))
-              )}
-            </ScrollArea>
-          </div>
-        </div>
+        <VisitsListPanel
+          visits={visits}
+          visitsLoading={visitsLoading}
+          listSearch={listSearch} setListSearch={setListSearch}
+          listDate={listDate} setListDate={setListDate}
+          listStatusFilter={listStatusFilter} setListStatusFilter={setListStatusFilter}
+          listTypeFilter={listTypeFilter} setListTypeFilter={setListTypeFilter}
+          handleComplete={handleComplete}
+        />
 
       </div>
     </div>

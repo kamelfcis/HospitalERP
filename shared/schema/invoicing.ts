@@ -1,3 +1,44 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  invoicing.ts — الفوترة: خدمات، قوائم أسعار، فواتير مبيعات، فواتير مرضى
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ┌────────────────────────────────┬────────────────────────────────────────────┐
+ *  │ الجدول                         │ الغرض                                      │
+ *  ├────────────────────────────────┼────────────────────────────────────────────┤
+ *  │ services                       │ الخدمات الطبية — مع حساب إيراد ومركز تكلفة│
+ *  │ price_lists                    │ قوائم الأسعار (خدمات / صيدلية)            │
+ *  │ price_list_items               │ بنود قوائم الأسعار                         │
+ *  │ price_adjustments_log          │ سجل تعديلات الأسعار الجماعية              │
+ *  │ service_consumables            │ مستهلكات الخدمة                            │
+ *  │ item_consumables               │ مستهلكات الصنف (أصناف فئة "خدمة")         │
+ *  │ pharmacy_credit_customers      │ عملاء الآجل بالصيدلية                      │
+ *  │ sales_invoice_headers          │ رؤوس فواتير المبيعات (صيدلية)             │
+ *  │ sales_invoice_lines            │ سطور فواتير المبيعات                       │
+ *  │ customer_receipts              │ إيصالات تحصيل الآجل                        │
+ *  │ customer_receipt_lines         │ سطور التحصيل — توزيع على الفواتير          │
+ *  │ delivery_receipts              │ إيصالات تحصيل التوصيل المنزلي              │
+ *  │ delivery_receipt_lines         │ سطور تحصيل التوصيل                         │
+ *  │ patient_invoice_headers        │ رؤوس فواتير المرضى (أقسام / عيادات)       │
+ *  │ patient_invoice_lines          │ سطور فواتير المرضى                         │
+ *  │ patient_invoice_payments       │ مدفوعات فواتير المرضى                      │
+ *  │ invoice_templates              │ نماذج فاتورة المريض                        │
+ *  │ invoice_template_lines         │ سطور نماذج الفاتورة                        │
+ *  └────────────────────────────────┴────────────────────────────────────────────┘
+ *
+ *  العلاقات:
+ *    services → departments, accounts (revenue), cost_centers
+ *    price_list_items → price_lists, services
+ *    sales_invoice_headers → warehouses, pharmacies, companies
+ *    sales_invoice_lines → sales_invoice_headers, items, services, companies
+ *    patient_invoice_headers → departments, warehouses, companies, users
+ *    patient_invoice_lines → patient_invoice_headers, services, items, companies
+ *    customer_receipts → pharmacy_credit_customers, accounts
+ *
+ *  يُستورد من: enums.ts, inventory.ts, finance.ts, users.ts, companies.ts
+ *  يُستورد بواسطة: hospital.ts, clinic.ts, contracts.ts
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
 import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, integer, decimal, boolean, timestamp, date, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";

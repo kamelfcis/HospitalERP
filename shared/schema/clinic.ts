@@ -1,3 +1,34 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  clinic.ts — العيادات الخارجية: عيادات، جداول، مواعيد، استشارات، أوامر
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ┌──────────────────────────────────┬──────────────────────────────────────────┐
+ *  │ الجدول                           │ الغرض                                    │
+ *  ├──────────────────────────────────┼──────────────────────────────────────────┤
+ *  │ clinic_clinics                   │ العيادات — مع إعدادات الخدمة والخزنة    │
+ *  │ clinic_doctor_schedules          │ جداول دوام الأطباء في العيادات           │
+ *  │ clinic_appointments              │ مواعيد المرضى — مع بيانات محاسبية OPD    │
+ *  │ clinic_user_clinic_assignments   │ ربط المستخدمين بالعيادات                │
+ *  │ clinic_user_doctor_assignments   │ ربط المستخدمين بالأطباء                 │
+ *  │ clinic_consultations             │ الاستشارات الطبية (SOAP)                │
+ *  │ clinic_consultation_drugs        │ الأدوية المصروفة بالاستشارة             │
+ *  │ clinic_doctor_favorite_drugs     │ الأدوية المفضلة للطبيب                  │
+ *  │ clinic_service_doctor_prices     │ أسعار خدمات مخصصة حسب الطبيب            │
+ *  │ clinic_orders                    │ أوامر الطبيب (فحوصات/أدوية/خدمات)       │
+ *  └──────────────────────────────────┴──────────────────────────────────────────┘
+ *
+ *  العلاقات:
+ *    clinic_doctor_schedules → clinic_clinics, doctors
+ *    clinic_appointments → clinic_clinics, doctors, patients, companies, contracts, contract_members
+ *    clinic_consultations → clinic_appointments
+ *    clinic_consultation_drugs → clinic_consultations, items
+ *    clinic_orders → clinic_consultations, clinic_appointments, doctors, services, items
+ *
+ *  يُستورد من: inventory.ts, invoicing.ts, hospital.ts, companies.ts, contracts.ts
+ *  يُستورد بواسطة: intake.ts
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
 import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, integer, decimal, boolean, timestamp, date, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";

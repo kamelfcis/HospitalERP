@@ -1,3 +1,36 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  purchasing.ts — المشتريات: موردون، استلام، فواتير شراء، مرتجعات، سداد
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ┌────────────────────────────────┬────────────────────────────────────────────┐
+ *  │ الجدول                         │ الغرض                                      │
+ *  ├────────────────────────────────┼────────────────────────────────────────────┤
+ *  │ suppliers                      │ الموردون — مع بيانات مالية وحسابات GL      │
+ *  │ receiving_headers              │ رؤوس أذون الاستلام                         │
+ *  │ receiving_lines                │ سطور الاستلام                              │
+ *  │ purchase_invoice_headers       │ رؤوس فواتير المشتريات                      │
+ *  │ purchase_invoice_lines         │ سطور فواتير المشتريات                      │
+ *  │ supplier_payments              │ رؤوس سداد الموردين                         │
+ *  │ supplier_payment_lines         │ سطور السداد — توزيع على الفواتير           │
+ *  │ purchase_return_headers        │ رؤوس مرتجعات المشتريات                     │
+ *  │ purchase_return_lines          │ سطور المرتجعات — مع ربط بالدفعات والفواتير │
+ *  └────────────────────────────────┴────────────────────────────────────────────┘
+ *
+ *  العلاقات:
+ *    receiving_headers → suppliers, warehouses
+ *    receiving_lines → receiving_headers, items
+ *    purchase_invoice_headers → suppliers, warehouses, receiving_headers
+ *    purchase_invoice_lines → purchase_invoice_headers, items
+ *    supplier_payments → suppliers
+ *    supplier_payment_lines → supplier_payments, purchase_invoice_headers
+ *    purchase_return_headers → purchase_invoice_headers, suppliers, warehouses
+ *    purchase_return_lines → purchase_return_headers, purchase_invoice_lines, items, inventory_lots
+ *
+ *  يُستورد من: enums.ts, inventory.ts
+ *  لا يُستورد بواسطة ملفات schema أخرى
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
 import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, integer, decimal, boolean, timestamp, date, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";

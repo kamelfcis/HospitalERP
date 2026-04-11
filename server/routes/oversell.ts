@@ -1,3 +1,7 @@
+// ACCOUNTING_PENDING: Oversell resolution → resolves deferred cost allocations by
+//   crediting stock accounts. GL impact handled via patient invoice journal on finalization.
+//   Resolution batches track cost but do NOT generate standalone GL entries.
+
 /**
  * oversell.ts — API routes for Deferred Cost Issue (الصرف بدون رصيد)
  *

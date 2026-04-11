@@ -1,3 +1,31 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  system.ts — إعدادات النظام، الرسائل، المهام، الإشعارات
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ┌──────────────────────────┬──────────────────────────────────────────────────┐
+ *  │ الجدول                   │ الغرض                                            │
+ *  ├──────────────────────────┼──────────────────────────────────────────────────┤
+ *  │ rpt_refresh_log_id_seq   │ تسلسل سجل تحديث التقارير (جدول خارجي)         │
+ *  │ system_settings          │ إعدادات النظام (key/value)                      │
+ *  │ chat_messages            │ رسائل الدردشة بين المستخدمين                    │
+ *  │ tasks                    │ نظام المهام                                     │
+ *  │ task_assignees           │ المكلّفون بالمهام                                │
+ *  │ task_comments            │ تعليقات المهام                                  │
+ *  │ task_notifications       │ إشعارات المهام                                  │
+ *  └──────────────────────────┴──────────────────────────────────────────────────┘
+ *
+ *  العلاقات:
+ *    chat_messages → users (sender/receiver)
+ *    tasks → users (createdBy)
+ *    task_assignees → tasks, users
+ *    task_comments → tasks, users
+ *    task_notifications → tasks, users
+ *
+ *  يُستورد من: users.ts
+ *  لا يُستورد بواسطة أي ملف schema آخر
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
 import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, timestamp, pgSequence, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";

@@ -1,3 +1,40 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  finance.ts — المالية والمحاسبة العامة
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ┌──────────────────────────┬────────────────────────────────────────────────┐
+ *  │ الجدول                   │ الغرض                                          │
+ *  ├──────────────────────────┼────────────────────────────────────────────────┤
+ *  │ journal_entry_number_seq │ تسلسل أرقام القيود — يمنع التكرار             │
+ *  │ fiscal_periods           │ الفترات المالية                                │
+ *  │ cost_centers             │ مراكز التكلفة (شجري)                          │
+ *  │ accounts                 │ دليل الحسابات (شجري)                          │
+ *  │ user_account_scopes      │ نطاق رؤية الحسابات لكل مستخدم                 │
+ *  │ journal_templates        │ نماذج القيود المحاسبية                         │
+ *  │ journal_entries          │ ⚠ Core Accounting — قيود اليومية العامة        │
+ *  │ journal_lines            │ ⚠ Core Accounting — سطور القيود               │
+ *  │ template_lines           │ سطور نماذج القيود                              │
+ *  │ audit_log                │ سجل التدقيق العام                              │
+ *  │ account_mappings         │ ⚠ Core Accounting — ربط أنواع العمليات بالحسابات│
+ *  │ accounting_event_log     │ سجل أحداث المحاسبة (نجاح/فشل/إعادة محاولة)    │
+ *  └──────────────────────────┴────────────────────────────────────────────────┘
+ *
+ *  ⚠ Core Accounting — DO NOT MODIFY without accounting review
+ *    journal_entries, journal_lines, account_mappings
+ *
+ *  العلاقات:
+ *    accounts.parentId → accounts.id (شجري)
+ *    cost_centers.parentId → cost_centers.id (شجري)
+ *    journal_entries → fiscal_periods, users
+ *    journal_lines → journal_entries, accounts, cost_centers
+ *    account_mappings → accounts (debit/credit)
+ *    user_account_scopes → users, accounts
+ *
+ *  يُستورد من: enums.ts, users.ts
+ *  يُستورد بواسطة: inventory.ts, invoicing.ts, hospital.ts, companies.ts
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
 import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, integer, decimal, boolean, timestamp, date, index, uniqueIndex, pgSequence } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";

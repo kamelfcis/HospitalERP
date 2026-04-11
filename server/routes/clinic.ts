@@ -1,3 +1,7 @@
+// ACCOUNTING_PENDING: Clinic orders executeClinicOrder → creates patient invoice lines
+//   but the invoice itself handles GL on finalization (see patient-invoices.ts).
+//   Appointment refund via cancelAndRefundAppointment → treasury refund only, no GL entry.
+
 import type { Express, Response } from "express";
 import { storage } from "../storage";
 import { db } from "../db";

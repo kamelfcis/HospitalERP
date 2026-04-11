@@ -1,3 +1,7 @@
+// ACCOUNTING_PENDING: Opening Stock post → creates inventory lots but no GL journal entry.
+//   GL impact (debit Inventory, credit Opening Balance Equity) must be handled manually or
+//   via future auto-journal binding for 'opening_stock' source_type.
+
 /*
  * ═══════════════════════════════════════════════════════════════════════════
  *  Opening Stock Routes — مسارات الرصيد الافتتاحي

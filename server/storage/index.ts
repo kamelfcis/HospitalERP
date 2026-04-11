@@ -186,7 +186,9 @@ export interface DeptServiceBatchInput {
 }
 
 export interface IStorage {
-  // Users & RBAC
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  المستخدمون والصلاحيات — Users & RBAC
+  // ═══════════════════════════════════════════════════════════════════════════
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
@@ -207,7 +209,9 @@ export interface IStorage {
   setGroupPermissions(groupId: string, permissions: string[]): Promise<void>;
   assignUserToGroup(userId: string, groupId: string | null): Promise<void>;
   
-  // Accounts
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  المحاسبة والمالية — Finance & Accounting
+  // ═══════════════════════════════════════════════════════════════════════════
   getAccounts(): Promise<Account[]>;
   getAccount(id: string): Promise<Account | undefined>;
   createAccount(account: InsertAccount): Promise<Account>;
@@ -273,7 +277,9 @@ export interface IStorage {
   getCostCenterReport(startDate: string, endDate: string, costCenterId?: string): Promise<Record<string, unknown>>;
   getAccountLedger(accountId: string, startDate: string, endDate: string): Promise<Record<string, unknown>>;
 
-  // Items
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  الأصناف والمخازن — Items & Inventory
+  // ═══════════════════════════════════════════════════════════════════════════
   getItems(params: { page?: number; limit?: number; search?: string; category?: string; isToxic?: boolean; formTypeId?: string; isActive?: boolean; minPrice?: number; maxPrice?: number }): Promise<{ items: Item[]; total: number }>;
   getItem(id: string): Promise<ItemWithFormType | undefined>;
   getItemsByIds(ids: string[]): Promise<Map<string, Item>>;
@@ -349,7 +355,9 @@ export interface IStorage {
   // نطاق الوحدات التشغيلية للمستخدم (يشمل الكاشير وغير الكاشير)
   getUserOperationalScope(userId: string): Promise<{ isFullAccess: boolean; allowedPharmacyIds: string[]; allowedDepartmentIds: string[]; allowedClinicIds: string[] }>;
 
-  // Store Transfers
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  التحويلات بين المخازن — Store Transfers
+  // ═══════════════════════════════════════════════════════════════════════════
   getTransfers(): Promise<StoreTransferWithDetails[]>;
   getTransfersFiltered(params: {
     fromDate?: string;
@@ -386,7 +394,9 @@ export interface IStorage {
 
   searchItemsByPattern(query: string, limit: number): Promise<Record<string, unknown>[]>;
 
-  // Suppliers
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  الموردون والمشتريات — Suppliers & Purchasing
+  // ═══════════════════════════════════════════════════════════════════════════
   getSuppliers(params: { search?: string; page: number; pageSize: number; supplierType?: string; isActive?: boolean | null; sortBy?: "nameAr" | "currentBalance"; sortDir?: "asc" | "desc" }): Promise<{ suppliers: (Supplier & { currentBalance: string })[]; total: number }>;
   searchSuppliers(q: string, limit?: number): Promise<Pick<Supplier, 'id' | 'code' | 'nameAr' | 'nameEn' | 'phone'>[]>;
   getSupplier(id: string): Promise<Supplier | undefined>;
@@ -417,7 +427,9 @@ export interface IStorage {
   getServiceConsumables(serviceId: string): Promise<ServiceConsumableWithItem[]>;
   replaceServiceConsumables(serviceId: string, lines: { itemId: string; quantity: string; unitLevel: string; notes?: string | null }[]): Promise<ServiceConsumable[]>;
 
-  // Sales Invoices
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  فواتير المبيعات — Sales Invoices
+  // ═══════════════════════════════════════════════════════════════════════════
   getNextSalesInvoiceNumber(): Promise<number>;
   getSalesInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; customerType?: string; claimStatus?: string; search?: string; pharmacistId?: string; warehouseId?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: Record<string, unknown>[]; total: number; totals: { subtotal: number; discountValue: number; netTotal: number }}>;
   getSalesInvoice(id: string): Promise<SalesInvoiceWithDetails | undefined>;
@@ -426,7 +438,9 @@ export interface IStorage {
   finalizeSalesInvoice(id: string): Promise<SalesInvoiceHeader>;
   deleteSalesInvoice(id: string, reason?: string): Promise<boolean>;
 
-  // Patient Invoices
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  فواتير المرضى — Patient Invoices
+  // ═══════════════════════════════════════════════════════════════════════════
   getNextPatientInvoiceNumber(): Promise<number>;
   getNextPaymentRefNumber(offset?: number): Promise<string>;
   getPatientInvoices(filters: { status?: string; dateFrom?: string; dateTo?: string; patientName?: string; doctorName?: string; page?: number; pageSize?: number; includeCancelled?: boolean }): Promise<{data: Record<string, unknown>[]; total: number}>;
@@ -461,7 +475,9 @@ export interface IStorage {
   removeDrawerPassword(glAccountId: string): Promise<boolean>;
   getDrawersWithPasswordStatus(): Promise<{ glAccountId: string; hasPassword: boolean; code: string; name: string }[]>;
 
-  // Cashier
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  الكاشير والأدراج — Cashier & Drawer Operations
+  // ═══════════════════════════════════════════════════════════════════════════
   openCashierShift(cashierId: string, cashierName: string, openingCash: string, unitType: string, pharmacyId?: string | null, departmentId?: string | null, glAccountId?: string | null): Promise<Record<string, unknown>>;
   getActiveShift(cashierId: string, unitType: string, unitId: string): Promise<Record<string, unknown>>;
   getMyOpenShift(cashierId: string): Promise<Record<string, unknown> | null>;
@@ -495,7 +511,9 @@ export interface IStorage {
     businessDate: string;
   }): Promise<{ journalId: string }>;
 
-  // Patients
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  المرضى والأطباء — Patients & Doctors
+  // ═══════════════════════════════════════════════════════════════════════════
   getPatients(limit?: number): Promise<Patient[]>;
   searchPatients(search: string): Promise<PatientSearchResult[]>;
   getPatientStats(filters?: { search?: string; dateFrom?: string; dateTo?: string; deptIds?: string[]; page?: number; pageSize?: number }): Promise<{ rows: Record<string, unknown>[]; total: number; page: number; pageSize: number }>;
@@ -546,7 +564,7 @@ export interface IStorage {
   getDoctorBalances(): Promise<{ id: string; name: string; specialty: string | null; totalTransferred: string; totalSettled: string; remaining: string }[]>;
   getDoctorStatement(params: { doctorName: string; dateFrom?: string; dateTo?: string }): Promise<Record<string, unknown>[]>;
 
-  // Admissions
+  // ── الإقامة والأسرة — Admissions & Bed Board ───────────────────────────
   getAdmissions(filters?: { status?: string; search?: string; dateFrom?: string; dateTo?: string; deptId?: string; page?: number; pageSize?: number }): Promise<any[] | { data: any[]; total: number; page: number; pageSize: number }>;
   getAdmission(id: string): Promise<Admission | undefined>;
   createAdmission(data: InsertAdmission): Promise<Admission>;
@@ -580,7 +598,9 @@ export interface IStorage {
   dischargeFromBed(bedId: string): Promise<{ bed: Bed }>;
   setBedStatus(bedId: string, status: string): Promise<Bed>;
 
-  // Doctor Payable Transfers
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  تحويلات وتسويات الأطباء والخزن — Treasuries & Doctor Settlements
+  // ═══════════════════════════════════════════════════════════════════════════
   getDoctorTransfers(invoiceId: string): Promise<DoctorTransfer[]>;
   transferToDoctorPayable(params: { invoiceId: string; doctorName: string; amount: string; clientRequestId: string; notes?: string }): Promise<DoctorTransfer>;
 
@@ -603,7 +623,7 @@ export interface IStorage {
   getTreasuryStatement(params: { treasuryId: string; dateFrom?: string; dateTo?: string; page?: number; pageSize?: number }): Promise<{ transactions: TreasuryTransaction[]; total: number; page: number; pageSize: number; totalIn: string; totalOut: string; balance: string; pageOpeningBalance: number }>;
   createTreasuryTransactionsForInvoice(invoiceId: string, finalizationDate: string): Promise<void>;
 
-  // Account Mappings
+  // ── ربط الحسابات وتوليد القيود — Account Mappings & Auto-Journal ──────
   getAccountMappings(transactionType?: string): Promise<AccountMapping[]>;
   getAccountMapping(id: string): Promise<AccountMapping | undefined>;
   upsertAccountMapping(data: InsertAccountMapping): Promise<AccountMapping>;
@@ -631,12 +651,14 @@ export interface IStorage {
   markChatRead(senderId: string, currentUserId: string): Promise<void>;
   getChatUnreadCount(userId: string): Promise<number>;
 
-  // Sales Returns
+  // ── المرتجعات — Sales Returns ────────────────────────────────────────────
   searchSaleInvoicesForReturn(params: { invoiceNumber?: string; receiptBarcode?: string; itemBarcode?: string; itemCode?: string; itemId?: string; dateFrom?: string; dateTo?: string; warehouseId?: string; allowedWarehouseIds?: string[] }): Promise<Record<string, unknown>[]>;
   getSaleInvoiceForReturn(invoiceId: string): Promise<Record<string, unknown> | null>;
   createSalesReturn(data: { originalInvoiceId: string; warehouseId: string; returnLines: { originalLineId: string; itemId: string; unitLevel: string; qty: string; qtyInMinor: string; salePrice: string; lineTotal: string; expiryMonth: number | null; expiryYear: number | null; lotId: string | null }[]; discountType: string; discountPercent: string; discountValue: string; notes: string; createdBy: string }): Promise<Record<string, unknown>>;
 
-  // ── موديول العيادات الخارجية ──────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  العيادات الخارجية — Clinic Module
+  // ═══════════════════════════════════════════════════════════════════════════
   // العيادات
   getClinics(userId: string, role: string): Promise<Record<string, unknown>[]>;
   getClinicById(id: string): Promise<Record<string, unknown> | null>;
@@ -791,7 +813,9 @@ export interface IStorage {
   lookupBarcodeForSession(barcode: string, warehouseId: string, sessionId: string): Promise<import("./stock-count-storage").LoadedItem[]>;
   postStockCountSession(sessionId: string, userId: string): Promise<import("@shared/schema").StockCountSession>;
 
-  // ── Companies (شركات التأمين والتعاقد) ───────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  شركات التأمين والعقود — Companies & Contracts
+  // ═══════════════════════════════════════════════════════════════════════════
   getCompanies(params?: import("./contracts-companies-storage").GetCompaniesParams): Promise<import("@shared/schema").Company[]>;
   getCompanyById(id: string): Promise<import("@shared/schema").Company | null>;
   createCompany(data: import("@shared/schema").InsertCompany): Promise<import("@shared/schema").Company>;

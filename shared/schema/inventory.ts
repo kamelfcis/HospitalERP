@@ -1,3 +1,51 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  inventory.ts — المخزون والأصناف والمخازن والتحويلات
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  ┌──────────────────────────────┬──────────────────────────────────────────────┐
+ *  │ الجدول                       │ الغرض                                        │
+ *  ├──────────────────────────────┼──────────────────────────────────────────────┤
+ *  │ patient_code_seq             │ تسلسل أكواد المرضى                          │
+ *  │ stock_count_session_number_seq│ تسلسل أرقام جلسات الجرد                    │
+ *  │ item_form_types              │ أشكال الأصناف الدوائية                      │
+ *  │ item_uoms                    │ وحدات القياس                                │
+ *  │ items                        │ بطاقة الأصناف الرئيسية                      │
+ *  │ purchase_transactions        │ حركات الشراء                                │
+ *  │ sales_transactions           │ حركات البيع                                 │
+ *  │ departments                  │ الأقسام                                     │
+ *  │ user_departments             │ ربط المستخدمين بالأقسام                     │
+ *  │ user_clinics                 │ ربط المستخدمين بالعيادات                    │
+ *  │ item_department_prices       │ أسعار الأصناف حسب القسم                     │
+ *  │ pharmacies                   │ الصيدليات                                   │
+ *  │ warehouses                   │ المخازن — مع ربط بحساب GL ومركز تكلفة       │
+ *  │ user_warehouses              │ ربط المستخدمين بالمخازن                     │
+ *  │ inventory_lots               │ دفعات المخزون (FEFO)                        │
+ *  │ inventory_lot_movements      │ حركات الدفعات (دخول/خروج/تسوية)            │
+ *  │ store_transfers              │ رؤوس التحويلات المخزنية                      │
+ *  │ transfer_lines               │ سطور التحويلات                              │
+ *  │ transfer_line_allocations    │ توزيعات سطور التحويل على الدفعات            │
+ *  │ item_barcodes                │ باركودات الأصناف                            │
+ *  │ stock_movement_headers       │ رؤوس حركات المخزون (posting)                │
+ *  │ stock_movement_allocations   │ توزيعات حركات المخزون على الدفعات            │
+ *  │ stock_count_sessions         │ جلسات جرد المخزون                           │
+ *  │ stock_count_lines            │ سطور الجرد                                  │
+ *  │ opening_stock_headers        │ رؤوس الرصيد الافتتاحي                       │
+ *  │ opening_stock_lines          │ سطور الرصيد الافتتاحي                       │
+ *  └──────────────────────────────┴──────────────────────────────────────────────┘
+ *
+ *  العلاقات:
+ *    items.formTypeId → item_form_types.id
+ *    warehouses → departments, pharmacies, accounts, cost_centers
+ *    inventory_lots → items, warehouses
+ *    store_transfers → warehouses (source/dest)
+ *    transfer_lines → store_transfers, items
+ *    stock_count_sessions → warehouses, journal_entries
+ *
+ *  يُستورد من: enums.ts, users.ts, finance.ts
+ *  يُستورد بواسطة: invoicing.ts, purchasing.ts, hospital.ts, clinic.ts
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
 import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, integer, decimal, boolean, timestamp, date, index, uniqueIndex, pgSequence } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
