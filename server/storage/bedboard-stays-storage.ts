@@ -188,7 +188,10 @@ const methods = {
              s.rate_per_day, COALESCE(srv.name_ar, 'إقامة') AS service_name_ar
       FROM stay_segments s
       LEFT JOIN services srv ON s.service_id = srv.id
+      JOIN patient_invoice_headers pih ON pih.id = s.invoice_id
       WHERE s.status = 'ACTIVE'
+        AND pih.status = 'draft'
+        AND COALESCE(pih.is_final_closed, false) = false
     `);
     const segments = activeResult.rows as unknown as Array<{
       id: string;
