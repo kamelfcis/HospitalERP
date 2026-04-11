@@ -228,6 +228,8 @@ const methods = {
         service_revenue, drug_revenue, consumable_revenue, stay_revenue,
         service_line_count, drug_line_count, consumable_line_count,
         or_room_total, transferred_total,
+        company_share_total, patient_share_total,
+        equipment_revenue, gas_revenue, is_any_final_closed,
         latest_invoice_id, latest_invoice_number,
         latest_invoice_status, latest_doctor_name,
         latest_invoice_created_at,
@@ -273,9 +275,13 @@ const methods = {
         COALESCE(line_agg.service_line_count, 0)                     AS service_line_count,
         COALESCE(line_agg.drug_line_count,    0)                     AS drug_line_count,
         COALESCE(line_agg.consumable_line_count, 0)                  AS consumable_line_count,
-        -- 6 حقول جديدة ─────────────────────────────────────────────────────────
         COALESCE(line_agg.or_room_total,          0)                 AS or_room_total,
         COALESCE(transfer_agg.transferred_total,  0)                 AS transferred_total,
+        COALESCE(line_agg.company_share_total,    0)                 AS company_share_total,
+        COALESCE(line_agg.patient_share_total,    0)                 AS patient_share_total,
+        COALESCE(line_agg.equipment_revenue,      0)                 AS equipment_revenue,
+        COALESCE(line_agg.gas_revenue,            0)                 AS gas_revenue,
+        COALESCE(hdr_agg.is_any_final_closed,  false)                AS is_any_final_closed,
         hdr_agg.latest_invoice_id                                     AS latest_invoice_id,
         hdr_agg.latest_invoice_number                                 AS latest_invoice_number,
         hdr_agg.latest_invoice_status                                 AS latest_invoice_status,
@@ -285,7 +291,6 @@ const methods = {
 
       FROM admissions a
 
-      -- ── تجميع رؤوس الفواتير منفصلاً (بدون بنود) لتجنب ضرب المبالغ ───────
       LEFT JOIN (
         SELECT
           pih.admission_id,
@@ -294,8 +299,8 @@ const methods = {
           SUM(pih.discount_amount::numeric)                                AS total_discount,
           SUM(pih.net_amount::numeric)                                     AS net_amount,
           SUM(pih.paid_amount::numeric)                                    AS total_paid,
+          BOOL_OR(COALESCE(pih.is_final_closed, false))                    AS is_any_final_closed,
           (ARRAY_AGG(pih.department_id  ORDER BY pih.created_at DESC))[1] AS latest_dept_id,
-          -- أحدث فاتورة (ORDER BY created_at DESC، pih.id كمفاتيح فصل متساوية)
           (ARRAY_AGG(pih.id             ORDER BY pih.created_at DESC, pih.id DESC))[1] AS latest_invoice_id,
           (ARRAY_AGG(pih.invoice_number ORDER BY pih.created_at DESC, pih.id DESC))[1] AS latest_invoice_number,
           (ARRAY_AGG(pih.status         ORDER BY pih.created_at DESC, pih.id DESC))[1] AS latest_invoice_status,
@@ -308,7 +313,6 @@ const methods = {
         GROUP BY pih.admission_id
       ) hdr_agg ON hdr_agg.admission_id = a.id
 
-      -- ── تجميع بنود الفواتير منفصلاً (للإيرادات حسب النوع + غرفة العمليات) ─
       LEFT JOIN (
         SELECT
           pih.admission_id,
@@ -329,11 +333,26 @@ const methods = {
             WHEN pil.source_type = 'STAY_ENGINE' AND pil.is_void = false
             THEN pil.total_price::numeric ELSE 0
           END)                                                        AS stay_revenue,
-          -- غرفة العمليات: بنود source_type = 'OR_ROOM'
           SUM(CASE
             WHEN pil.source_type = 'OR_ROOM' AND pil.is_void = false
             THEN pil.total_price::numeric ELSE 0
           END)                                                        AS or_room_total,
+          SUM(CASE
+            WHEN pil.line_type = 'equipment' AND pil.is_void = false
+            THEN pil.total_price::numeric ELSE 0
+          END)                                                        AS equipment_revenue,
+          SUM(CASE
+            WHEN pil.business_classification = 'gas' AND pil.is_void = false
+            THEN pil.total_price::numeric ELSE 0
+          END)                                                        AS gas_revenue,
+          SUM(CASE
+            WHEN pil.is_void = false
+            THEN COALESCE(pil.company_share_amount::numeric, 0) ELSE 0
+          END)                                                        AS company_share_total,
+          SUM(CASE
+            WHEN pil.is_void = false
+            THEN COALESCE(pil.patient_share_amount::numeric, 0) ELSE 0
+          END)                                                        AS patient_share_total,
           COUNT(CASE
             WHEN pil.source_type IS NULL AND pil.line_type = 'service'
                  AND pil.is_void = false THEN 1
@@ -402,6 +421,11 @@ const methods = {
         consumable_line_count  = EXCLUDED.consumable_line_count,
         or_room_total          = EXCLUDED.or_room_total,
         transferred_total      = EXCLUDED.transferred_total,
+        company_share_total    = EXCLUDED.company_share_total,
+        patient_share_total    = EXCLUDED.patient_share_total,
+        equipment_revenue      = EXCLUDED.equipment_revenue,
+        gas_revenue            = EXCLUDED.gas_revenue,
+        is_any_final_closed    = EXCLUDED.is_any_final_closed,
         latest_invoice_id      = EXCLUDED.latest_invoice_id,
         latest_invoice_number  = EXCLUDED.latest_invoice_number,
         latest_invoice_status  = EXCLUDED.latest_invoice_status,
@@ -431,6 +455,8 @@ const methods = {
         service_revenue, drug_revenue, consumable_revenue, stay_revenue,
         service_line_count, drug_line_count, consumable_line_count,
         or_room_total, transferred_total,
+        company_share_total, patient_share_total,
+        equipment_revenue, gas_revenue, is_any_final_closed,
         latest_invoice_id, latest_invoice_number,
         latest_invoice_status, latest_doctor_name,
         latest_invoice_created_at,
@@ -472,7 +498,11 @@ const methods = {
         COALESCE(la.consumable_line_count, 0)                         AS consumable_line_count,
         COALESCE(la.or_room_total,         0)                         AS or_room_total,
         COALESCE(ta.transferred_total,     0)                         AS transferred_total,
-        -- أحدث فاتورة = الفاتورة نفسها (grain = فاتورة واحدة)
+        COALESCE(la.company_share_total,   0)                         AS company_share_total,
+        COALESCE(la.patient_share_total,   0)                         AS patient_share_total,
+        COALESCE(la.equipment_revenue,     0)                         AS equipment_revenue,
+        COALESCE(la.gas_revenue,           0)                         AS gas_revenue,
+        COALESCE(pih.is_final_closed, false)                           AS is_any_final_closed,
         pih.id                                                         AS latest_invoice_id,
         pih.invoice_number                                             AS latest_invoice_number,
         pih.status::text                                               AS latest_invoice_status,
@@ -482,7 +512,6 @@ const methods = {
 
       FROM patient_invoice_headers pih
 
-      -- ── تجميع بنود هذه الفاتورة (per invoice_id) ─────────────────────────
       LEFT JOIN (
         SELECT
           pil.header_id,
@@ -507,6 +536,22 @@ const methods = {
             WHEN pil.source_type = 'OR_ROOM' AND NOT pil.is_void
             THEN pil.total_price::numeric ELSE 0
           END)                                                        AS or_room_total,
+          SUM(CASE
+            WHEN pil.line_type = 'equipment' AND NOT pil.is_void
+            THEN pil.total_price::numeric ELSE 0
+          END)                                                        AS equipment_revenue,
+          SUM(CASE
+            WHEN pil.business_classification = 'gas' AND NOT pil.is_void
+            THEN pil.total_price::numeric ELSE 0
+          END)                                                        AS gas_revenue,
+          SUM(CASE
+            WHEN NOT pil.is_void
+            THEN COALESCE(pil.company_share_amount::numeric, 0) ELSE 0
+          END)                                                        AS company_share_total,
+          SUM(CASE
+            WHEN NOT pil.is_void
+            THEN COALESCE(pil.patient_share_amount::numeric, 0) ELSE 0
+          END)                                                        AS patient_share_total,
           COUNT(CASE
             WHEN pil.source_type IS NULL AND pil.line_type = 'service'
                  AND NOT pil.is_void THEN 1
@@ -564,6 +609,11 @@ const methods = {
         consumable_line_count  = EXCLUDED.consumable_line_count,
         or_room_total          = EXCLUDED.or_room_total,
         transferred_total      = EXCLUDED.transferred_total,
+        company_share_total    = EXCLUDED.company_share_total,
+        patient_share_total    = EXCLUDED.patient_share_total,
+        equipment_revenue      = EXCLUDED.equipment_revenue,
+        gas_revenue            = EXCLUDED.gas_revenue,
+        is_any_final_closed    = EXCLUDED.is_any_final_closed,
         latest_invoice_id      = EXCLUDED.latest_invoice_id,
         latest_invoice_number  = EXCLUDED.latest_invoice_number,
         latest_invoice_status  = EXCLUDED.latest_invoice_status,

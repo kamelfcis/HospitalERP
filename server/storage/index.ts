@@ -516,7 +516,7 @@ export interface IStorage {
   // ═══════════════════════════════════════════════════════════════════════════
   getPatients(limit?: number): Promise<Patient[]>;
   searchPatients(search: string): Promise<PatientSearchResult[]>;
-  getPatientStats(filters?: { search?: string; dateFrom?: string; dateTo?: string; deptIds?: string[]; page?: number; pageSize?: number }): Promise<{ rows: Record<string, unknown>[]; total: number; page: number; pageSize: number }>;
+  getPatientStats(filters?: { search?: string; dateFrom?: string; dateTo?: string; deptIds?: string[]; statusFilter?: string; page?: number; pageSize?: number }): Promise<{ rows: Record<string, unknown>[]; total: number; page: number; pageSize: number }>;
   getPatient(id: string): Promise<Patient | undefined>;
   getPatientJourney(patientId: string): Promise<Record<string, unknown> | null>;
   getPatientTimeline(patientId: string): Promise<Record<string, unknown> | null>;

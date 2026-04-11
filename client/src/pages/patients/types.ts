@@ -15,13 +15,20 @@ export interface PatientStats {
   consumablesTotal:  number;
   orRoomTotal:       number;
   stayTotal:         number;
+  equipmentTotal:    number;
+  gasTotal:          number;
   grandTotal:        number;
   paidTotal:         number;
   transferredTotal:  number;
+  companyShareTotal: number;
+  patientShareTotal: number;
+  outstandingTotal:  number;
   latestInvoiceId:     string | null;
   latestInvoiceNumber: string | null;
   latestInvoiceStatus: "draft" | "finalized" | "cancelled" | null;
   latestDoctorName:    string | null;
+  latestPatientType:   "cash" | "contract" | "CASH" | "CONTRACT" | null;
+  latestIsFinalClosed: boolean;
 }
 
 export interface DoctorOption {

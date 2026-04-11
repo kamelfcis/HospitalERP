@@ -295,7 +295,7 @@ const methods = {
     ];
   },
 
-  async getPatientStats(this: DatabaseStorage, filters?: { search?: string; dateFrom?: string; dateTo?: string; deptIds?: string[]; page?: number; pageSize?: number }): Promise<{ rows: Record<string, unknown>[]; total: number; page: number; pageSize: number }> {
+  async getPatientStats(this: DatabaseStorage, filters?: { search?: string; dateFrom?: string; dateTo?: string; deptIds?: string[]; statusFilter?: string; page?: number; pageSize?: number }): Promise<{ rows: Record<string, unknown>[]; total: number; page: number; pageSize: number }> {
     const toCamel = (s: string) => s.replace(/_([a-z])/g, (_: string, c: string) => c.toUpperCase());
 
     const page     = Math.max(1, filters?.page     ?? 1);
@@ -328,9 +328,11 @@ const methods = {
       const ids = filters.deptIds.map((d: string) => `'${d.replace(/'/g, "''")}'`).join(", ");
       rptConds.push(`r.department_id IN (${ids})`);
     }
+    if (filters?.statusFilter === "draft")        rptConds.push(`r.latest_invoice_status = 'draft'`);
+    if (filters?.statusFilter === "finalized")    rptConds.push(`r.latest_invoice_status = 'finalized' AND r.is_any_final_closed = false`);
+    if (filters?.statusFilter === "final_closed") rptConds.push(`r.is_any_final_closed = true`);
     const rptFilter = rptConds.join(" AND ");
 
-    // نفس الشروط لـ li_agg subquery (alias r2)
     const liRptConds: string[] = ["r2.invoice_count > 0"];
     if (effectiveDateFrom) liRptConds.push(`r2.visit_date >= '${effectiveDateFrom}'`);
     if (effectiveDateTo)   liRptConds.push(`r2.visit_date <= '${effectiveDateTo}'`);
@@ -338,6 +340,9 @@ const methods = {
       const ids = filters.deptIds.map((d: string) => `'${d.replace(/'/g, "''")}'`).join(", ");
       liRptConds.push(`r2.department_id IN (${ids})`);
     }
+    if (filters?.statusFilter === "draft")        liRptConds.push(`r2.latest_invoice_status = 'draft'`);
+    if (filters?.statusFilter === "finalized")    liRptConds.push(`r2.latest_invoice_status = 'finalized' AND r2.is_any_final_closed = false`);
+    if (filters?.statusFilter === "final_closed") liRptConds.push(`r2.is_any_final_closed = true`);
     const liRptFilter = liRptConds.join(" AND ");
 
     let patientFilter = "p.is_active = true";
@@ -379,29 +384,32 @@ const methods = {
         COALESCE(SUM(r.consumable_revenue), 0)   AS consumables_total,
         COALESCE(SUM(r.or_room_total),      0)   AS or_room_total,
         COALESCE(SUM(r.stay_revenue),       0)   AS stay_total,
-        COALESCE(SUM(r.service_revenue),    0)
-          + COALESCE(SUM(r.drug_revenue),       0)
-          + COALESCE(SUM(r.consumable_revenue), 0)
-          + COALESCE(SUM(r.or_room_total),      0)
-          + COALESCE(SUM(r.stay_revenue),       0) AS grand_total,
+        COALESCE(SUM(r.equipment_revenue),  0)   AS equipment_total,
+        COALESCE(SUM(r.gas_revenue),        0)   AS gas_total,
+        COALESCE(SUM(r.net_amount),         0)   AS grand_total,
         COALESCE(SUM(r.total_paid),         0)   AS paid_total,
         COALESCE(SUM(r.transferred_total),  0)   AS transferred_total,
+        COALESCE(SUM(r.company_share_total),0)   AS company_share_total,
+        COALESCE(SUM(r.patient_share_total),0)   AS patient_share_total,
+        COALESCE(SUM(r.outstanding_balance),0)   AS outstanding_total,
         li.latest_invoice_id,
         li.latest_invoice_number,
         li.latest_invoice_status,
         li.latest_doctor_name,
+        li.latest_patient_type,
+        li.latest_is_final_closed,
         COUNT(*) OVER()                          AS total_count
       FROM patients p
       JOIN rpt_patient_visit_summary r ON r.patient_name = p.full_name
-      -- أحدث زيارة/فاتورة لكل مريض: DISTINCT ON بدلاً من ARRAY_AGG
-      -- الترتيب: latest_invoice_created_at DESC (tie-breaker: latest_invoice_id DESC)
       LEFT JOIN (
         SELECT DISTINCT ON (r2.patient_name)
           r2.patient_name,
           r2.latest_invoice_id,
           r2.latest_invoice_number,
           r2.latest_invoice_status,
-          r2.latest_doctor_name
+          r2.latest_doctor_name,
+          r2.patient_type                        AS latest_patient_type,
+          r2.is_any_final_closed                 AS latest_is_final_closed
         FROM rpt_patient_visit_summary r2
         WHERE ${sql.raw(liRptFilter)}
         ORDER BY r2.patient_name,
@@ -412,7 +420,8 @@ const methods = {
         AND ${sql.raw(rptFilter)}
       GROUP BY p.id, p.patient_code, p.full_name, p.phone, p.national_id, p.age, p.created_at,
                li.latest_invoice_id, li.latest_invoice_number,
-               li.latest_invoice_status, li.latest_doctor_name
+               li.latest_invoice_status, li.latest_doctor_name,
+               li.latest_patient_type, li.latest_is_final_closed
       ORDER BY p.created_at DESC
       LIMIT ${pageSize} OFFSET ${offset}
     `);

@@ -71,7 +71,7 @@ export function registerPatientsRoutes(app: Express) {
   // Patient stats grid (patients/index page) — PATIENTS_VIEW + dept scope
   app.get("/api/patients/stats", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {
-      const { search, dateFrom, dateTo } = req.query as Record<string, string>;
+      const { search, dateFrom, dateTo, statusFilter } = req.query as Record<string, string>;
       const page     = parseInt(String(req.query.page     || "1"))  || 1;
       const pageSize = parseInt(String(req.query.pageSize || "50")) || 50;
       const scope    = await storage.getUserOperationalScope(req.session.userId!);
@@ -87,7 +87,7 @@ export function registerPatientsRoutes(app: Express) {
         if (adminDeptId) deptIds = [adminDeptId];
       }
 
-      const result = await storage.getPatientStats({ search, dateFrom, dateTo, deptIds, page, pageSize });
+      const result = await storage.getPatientStats({ search, dateFrom, dateTo, deptIds, statusFilter, page, pageSize });
       return res.json(result);
     } catch (error: unknown) {
       const _em = error instanceof Error ? error.message : String(error);

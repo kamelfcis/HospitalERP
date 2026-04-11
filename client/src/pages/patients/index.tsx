@@ -32,12 +32,13 @@ export default function Patients() {
 
   const today = new Date().toISOString().split("T")[0];
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [dateFrom,    setDateFrom]    = useState(today);
-  const [dateTo,      setDateTo]      = useState(today);
-  const [page,        setPage]        = useState(1);
+  const [searchQuery,  setSearchQuery]  = useState("");
+  const [dateFrom,     setDateFrom]    = useState(today);
+  const [dateTo,       setDateTo]      = useState(today);
+  const [page,         setPage]        = useState(1);
   const PAGE_SIZE = 50;
-  const [deptId,      setDeptId]      = useState("");
+  const [deptId,       setDeptId]      = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
 
   const [dialogOpen,        setDialogOpen]        = useState(false);
   const [editingPatient,    setEditingPatient]     = useState<Patient | null>(null);
@@ -49,7 +50,7 @@ export default function Patients() {
 
   const debouncedSearch = useDebounce(searchQuery, 350);
 
-  useEffect(() => { setPage(1); }, [debouncedSearch, dateFrom, dateTo, deptId]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, dateFrom, dateTo, deptId, statusFilter]);
 
   const { data: scope } = useQuery<PatientScope>({
     queryKey: ["/api/patient-scope"],
@@ -67,11 +68,12 @@ export default function Patients() {
   if (dateFrom) statsParams.set("dateFrom", dateFrom);
   if (dateTo)   statsParams.set("dateTo",   dateTo);
   if (isFullAccess && deptId) statsParams.set("deptId", deptId);
+  if (statusFilter) statsParams.set("statusFilter", statusFilter);
   statsParams.set("page",     String(page));
   statsParams.set("pageSize", String(PAGE_SIZE));
 
   const { data: statsResult, isLoading, isError } = useQuery<{ rows: PatientStats[]; total: number; page: number; pageSize: number }>({
-    queryKey: ["/api/patients/stats", debouncedSearch, dateFrom, dateTo, isFullAccess ? deptId : "__scoped__", page],
+    queryKey: ["/api/patients/stats", debouncedSearch, dateFrom, dateTo, isFullAccess ? deptId : "__scoped__", statusFilter, page],
     queryFn: async () => {
       const res = await fetch(`/api/patients/stats?${statsParams}`, { credentials: "include" });
       if (!res.ok) {
@@ -88,8 +90,8 @@ export default function Patients() {
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   const hasFilter = isFullAccess
-    ? (dateFrom !== today || dateTo !== today || !!deptId)
-    : (dateFrom !== today || dateTo !== today);
+    ? (dateFrom !== today || dateTo !== today || !!deptId || !!statusFilter)
+    : (dateFrom !== today || dateTo !== today || !!statusFilter);
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/patients/${id}`),
@@ -127,6 +129,7 @@ export default function Patients() {
   function handleClearFilters() {
     setDateFrom(today); setDateTo(today);
     if (isFullAccess) setDeptId("");
+    setStatusFilter("");
     setPage(1);
   }
   function handleBackToList() {
@@ -234,6 +237,21 @@ export default function Patients() {
                 })}
               </div>
             )}
+
+            <div className="flex items-center gap-1">
+              <Label className="text-xs text-muted-foreground whitespace-nowrap">الحالة:</Label>
+              <Select value={statusFilter || "all"} onValueChange={v => setStatusFilter(v === "all" ? "" : v)}>
+                <SelectTrigger className="h-7 text-xs w-28" data-testid="select-status-filter">
+                  <SelectValue placeholder="الكل" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">الكل</SelectItem>
+                  <SelectItem value="draft">مسودة</SelectItem>
+                  <SelectItem value="finalized">معتمدة</SelectItem>
+                  <SelectItem value="final_closed">حفظ نهائي</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
             {hasFilter && (
               <>

@@ -3,7 +3,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Edit2, Trash2, FileText, FolderOpen } from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
-import { AmountCell, InvoiceStatusBadge, TotalsRow } from "./PatientCells";
+import { AmountCell, PatientTypeBadge, InvoiceStatusBadge, TotalsRow } from "./PatientCells";
 import type { PatientGridProps, PatientRowProps } from "./types";
 
 function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, canAdmit, onEdit, onDelete, onOpenInvoice, onViewFile }: PatientRowProps) {
@@ -16,21 +16,33 @@ function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, canAdm
       <td className="text-muted-foreground text-xs truncate max-w-[8rem]" data-testid={`text-doctor-${p.id}`}>{p.latestDoctorName || "—"}</td>
       <td className="font-mono"    data-testid={`text-phone-${p.id}`}>{p.phone || "—"}</td>
       <td className="text-center"  data-testid={`text-age-${p.id}`}>{p.age ?? "—"}</td>
+      <PatientTypeBadge type={p.latestPatientType} />
       <AmountCell value={+p.servicesTotal} />
+      <AmountCell value={+p.orRoomTotal} />
+      <AmountCell value={+p.equipmentTotal} />
       <AmountCell value={+p.drugsTotal} />
       <AmountCell value={+p.consumablesTotal} />
-      <AmountCell value={+p.orRoomTotal} />
+      <AmountCell value={+p.gasTotal} />
       <AmountCell value={+p.stayTotal} />
       <td className="text-center font-bold tabular-nums" data-testid={`text-total-${p.id}`}>
         {+p.grandTotal > 0 ? formatNumber(+p.grandTotal) : "—"}
       </td>
+      <td className="text-center tabular-nums text-blue-700" data-testid={`text-company-share-${p.id}`}>
+        {+p.companyShareTotal > 0 ? formatNumber(+p.companyShareTotal) : "—"}
+      </td>
+      <td className="text-center tabular-nums text-orange-700" data-testid={`text-patient-share-${p.id}`}>
+        {+p.patientShareTotal > 0 ? formatNumber(+p.patientShareTotal) : "—"}
+      </td>
       <td className="text-center tabular-nums text-green-700" data-testid={`text-paid-${p.id}`}>
         {+p.paidTotal > 0 ? formatNumber(+p.paidTotal) : "—"}
+      </td>
+      <td className="text-center tabular-nums text-red-600" data-testid={`text-outstanding-${p.id}`}>
+        {+p.outstandingTotal > 0 ? formatNumber(+p.outstandingTotal) : "—"}
       </td>
       <td className="text-center tabular-nums text-purple-700" data-testid={`text-transferred-${p.id}`}>
         {+p.transferredTotal > 0 ? formatNumber(+p.transferredTotal) : "—"}
       </td>
-      <InvoiceStatusBadge status={p.latestInvoiceStatus} />
+      <InvoiceStatusBadge status={p.latestInvoiceStatus} isFinalClosed={p.latestIsFinalClosed} />
 
       <td>
         <div className="flex items-center justify-center gap-0.5">
@@ -106,26 +118,32 @@ export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInv
           <tr>
             <th className="w-8  text-center">#</th>
             <th className="text-right">الاسم</th>
-            <th className="w-32 text-right">الطبيب</th>
-            <th className="w-28 text-right">التليفون</th>
-            <th className="w-12 text-center">السن</th>
-            <th className="w-24 text-center">خدمات</th>
-            <th className="w-24 text-center">أدوية</th>
-            <th className="w-24 text-center">مستهلكات</th>
-            <th className="w-24 text-center">عملية</th>
-            <th className="w-24 text-center">إقامة</th>
-            <th className="w-28 text-center font-bold">الإجمالي</th>
-            <th className="w-24 text-center text-green-700">المسدد</th>
-            <th className="w-28 text-center text-purple-700">محول لطبيب</th>
+            <th className="w-28 text-right">الطبيب</th>
+            <th className="w-24 text-right">التليفون</th>
+            <th className="w-10 text-center">السن</th>
+            <th className="w-16 text-center">النوع</th>
+            <th className="w-20 text-center">خدمات</th>
+            <th className="w-20 text-center">عمليات</th>
+            <th className="w-20 text-center">أجهزة</th>
+            <th className="w-20 text-center">أدوية</th>
+            <th className="w-20 text-center">مستهلكات</th>
+            <th className="w-20 text-center">غازات</th>
+            <th className="w-20 text-center">إقامة</th>
+            <th className="w-24 text-center font-bold">الإجمالي</th>
+            <th className="w-20 text-center text-blue-700">حصة شركة</th>
+            <th className="w-20 text-center text-orange-700">حصة مريض</th>
+            <th className="w-20 text-center text-green-700">المسدد</th>
+            <th className="w-20 text-center text-red-600">المتبقي</th>
+            <th className="w-20 text-center text-purple-700">محول طبيب</th>
             <th className="w-20 text-center">الحالة</th>
-            <th className="w-24 text-center">إجراءات</th>
+            <th className="w-20 text-center">إجراءات</th>
           </tr>
         </thead>
 
         <tbody>
           {rows.length === 0 ? (
             <tr className="peachtree-grid-row">
-              <td colSpan={15} className="text-center py-6 text-muted-foreground">
+              <td colSpan={21} className="text-center py-6 text-muted-foreground">
                 لا يوجد مرضى
               </td>
             </tr>
@@ -151,7 +169,7 @@ export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInv
                 <>
                   <tr>
                     <td
-                      colSpan={15}
+                      colSpan={21}
                       className="py-1 px-2 text-xs text-muted-foreground bg-muted/20 border-y"
                     >
                       المرضى التاليون لا توجد لهم فواتير في هذا القسم ({inactiveRows.length})
