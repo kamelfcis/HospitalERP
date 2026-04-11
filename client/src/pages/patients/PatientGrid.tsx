@@ -1,21 +1,24 @@
+import { useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Edit2, Trash2, FileText, FolderOpen } from "lucide-react";
+import { Edit2, Trash2, FileText, FolderOpen, ChevronLeft, ChevronRight } from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
 import { AmountCell, PatientTypeBadge, InvoiceStatusBadge, TotalsRow } from "./PatientCells";
 import type { PatientGridProps, PatientRowProps } from "./types";
+
+const STICKY_BG       = "bg-background";
+const STICKY_BG_MUTED = "bg-muted/50";
 
 function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, canAdmit, onEdit, onDelete, onOpenInvoice, onViewFile }: PatientRowProps) {
   const rowClass = `peachtree-grid-row${dimmed ? " opacity-50" : ""}`;
 
   return (
     <tr className={rowClass} data-testid={`row-patient-${p.id}`}>
-      <td className="text-center text-muted-foreground">{index}</td>
-      <td className="font-medium"  data-testid={`text-name-${p.id}`}>{p.fullName}</td>
-      <td className="text-muted-foreground text-xs truncate max-w-[8rem]" data-testid={`text-doctor-${p.id}`}>{p.latestDoctorName || "—"}</td>
-      <td className="font-mono"    data-testid={`text-phone-${p.id}`}>{p.phone || "—"}</td>
-      <td className="text-center"  data-testid={`text-age-${p.id}`}>{p.age ?? "—"}</td>
+      <td className={`text-center text-muted-foreground sticky right-0 z-[2] ${STICKY_BG} border-l`}>{index}</td>
+      <td className={`font-medium sticky right-8 z-[2] ${STICKY_BG} border-l min-w-[10rem]`} data-testid={`text-name-${p.id}`}>{p.fullName}</td>
+      <td className="text-muted-foreground truncate min-w-[8rem]" data-testid={`text-doctor-${p.id}`}>{p.latestDoctorName || "—"}</td>
+      <td className="font-mono min-w-[7rem]" data-testid={`text-phone-${p.id}`}>{p.phone || "—"}</td>
+      <td className="text-center min-w-[3rem]" data-testid={`text-age-${p.id}`}>{p.age ?? "—"}</td>
       <PatientTypeBadge type={p.latestPatientType} />
       <AmountCell value={+p.servicesTotal} />
       <AmountCell value={+p.orRoomTotal} />
@@ -24,27 +27,27 @@ function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, canAdm
       <AmountCell value={+p.consumablesTotal} />
       <AmountCell value={+p.gasTotal} />
       <AmountCell value={+p.stayTotal} />
-      <td className="text-center font-bold tabular-nums" data-testid={`text-total-${p.id}`}>
+      <td className="text-center font-bold tabular-nums min-w-[6rem]" data-testid={`text-total-${p.id}`}>
         {+p.grandTotal > 0 ? formatNumber(+p.grandTotal) : "—"}
       </td>
-      <td className="text-center tabular-nums text-blue-700" data-testid={`text-company-share-${p.id}`}>
+      <td className="text-center tabular-nums text-blue-700 min-w-[6rem]" data-testid={`text-company-share-${p.id}`}>
         {+p.companyShareTotal > 0 ? formatNumber(+p.companyShareTotal) : "—"}
       </td>
-      <td className="text-center tabular-nums text-orange-700" data-testid={`text-patient-share-${p.id}`}>
+      <td className="text-center tabular-nums text-orange-700 min-w-[6rem]" data-testid={`text-patient-share-${p.id}`}>
         {+p.patientShareTotal > 0 ? formatNumber(+p.patientShareTotal) : "—"}
       </td>
-      <td className="text-center tabular-nums text-green-700" data-testid={`text-paid-${p.id}`}>
+      <td className="text-center tabular-nums text-green-700 min-w-[6rem]" data-testid={`text-paid-${p.id}`}>
         {+p.paidTotal > 0 ? formatNumber(+p.paidTotal) : "—"}
       </td>
-      <td className="text-center tabular-nums text-red-600" data-testid={`text-outstanding-${p.id}`}>
+      <td className="text-center tabular-nums text-red-600 min-w-[6rem]" data-testid={`text-outstanding-${p.id}`}>
         {+p.outstandingTotal > 0 ? formatNumber(+p.outstandingTotal) : "—"}
       </td>
-      <td className="text-center tabular-nums text-purple-700" data-testid={`text-transferred-${p.id}`}>
+      <td className="text-center tabular-nums text-purple-700 min-w-[6rem]" data-testid={`text-transferred-${p.id}`}>
         {+p.transferredTotal > 0 ? formatNumber(+p.transferredTotal) : "—"}
       </td>
       <InvoiceStatusBadge status={p.latestInvoiceStatus} isFinalClosed={p.latestIsFinalClosed} />
 
-      <td>
+      <td className={`sticky left-0 z-[2] ${STICKY_BG} border-r`}>
         <div className="flex items-center justify-center gap-0.5">
           <Button
             variant="ghost" size="icon" className="h-6 w-6 text-purple-600"
@@ -99,6 +102,14 @@ function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, canAdm
 }
 
 export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInvoice, canEdit, canAdmit, onEdit, onDelete, onOpenInvoice, onViewFile }: PatientGridProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const scroll = useCallback((dir: "left" | "right") => {
+    if (!scrollRef.current) return;
+    const amount = 320;
+    scrollRef.current.scrollBy({ left: dir === "left" ? -amount : amount, behavior: "smooth" });
+  }, []);
+
   if (isLoading) {
     return (
       <div className="p-3 space-y-2">
@@ -111,98 +122,126 @@ export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInv
   const inactiveRows = hasDeptFilter ? rows.filter(r => +r.grandTotal === 0) : [];
 
   return (
-    <ScrollArea className="h-[calc(100vh-210px)]">
-      <table className="w-full text-xs">
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between px-2 py-1 border-b bg-muted/30">
+        <span className="text-xs text-muted-foreground">اسحب الجدول أو استخدم الأسهم للتنقل</span>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline" size="sm" className="h-6 w-6 p-0"
+            onClick={() => scroll("right")}
+            title="تمرير لليمين"
+            data-testid="button-scroll-right"
+          >
+            <ChevronRight className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="outline" size="sm" className="h-6 w-6 p-0"
+            onClick={() => scroll("left")}
+            title="تمرير لليسار"
+            data-testid="button-scroll-left"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
 
-        <thead className="peachtree-grid-header sticky top-0 z-10">
-          <tr>
-            <th className="w-8  text-center">#</th>
-            <th className="text-right">الاسم</th>
-            <th className="w-28 text-right">الطبيب</th>
-            <th className="w-24 text-right">التليفون</th>
-            <th className="w-10 text-center">السن</th>
-            <th className="w-16 text-center">النوع</th>
-            <th className="w-20 text-center">خدمات</th>
-            <th className="w-20 text-center">عمليات</th>
-            <th className="w-20 text-center">أجهزة</th>
-            <th className="w-20 text-center">أدوية</th>
-            <th className="w-20 text-center">مستهلكات</th>
-            <th className="w-20 text-center">غازات</th>
-            <th className="w-20 text-center">إقامة</th>
-            <th className="w-24 text-center font-bold">الإجمالي</th>
-            <th className="w-20 text-center text-blue-700">حصة شركة</th>
-            <th className="w-20 text-center text-orange-700">حصة مريض</th>
-            <th className="w-20 text-center text-green-700">المسدد</th>
-            <th className="w-20 text-center text-red-600">المتبقي</th>
-            <th className="w-20 text-center text-purple-700">محول طبيب</th>
-            <th className="w-20 text-center">الحالة</th>
-            <th className="w-20 text-center">إجراءات</th>
-          </tr>
-        </thead>
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-auto"
+        style={{ maxHeight: "calc(100vh - 250px)" }}
+      >
+        <table className="text-xs border-collapse" style={{ minWidth: "1600px" }}>
 
-        <tbody>
-          {rows.length === 0 ? (
-            <tr className="peachtree-grid-row">
-              <td colSpan={21} className="text-center py-6 text-muted-foreground">
-                لا يوجد مرضى
-              </td>
+          <thead className="peachtree-grid-header sticky top-0 z-20">
+            <tr>
+              <th className={`w-8 text-center sticky right-0 z-30 ${STICKY_BG_MUTED} border-l`}>#</th>
+              <th className={`text-right min-w-[10rem] sticky right-8 z-30 ${STICKY_BG_MUTED} border-l`}>الاسم</th>
+              <th className="text-right min-w-[8rem] px-3">الطبيب</th>
+              <th className="text-right min-w-[7rem] px-3">التليفون</th>
+              <th className="text-center min-w-[3rem] px-2">السن</th>
+              <th className="text-center min-w-[4.5rem] px-2">النوع</th>
+              <th className="text-center min-w-[5.5rem] px-2">خدمات</th>
+              <th className="text-center min-w-[5.5rem] px-2">عمليات</th>
+              <th className="text-center min-w-[5.5rem] px-2">أجهزة</th>
+              <th className="text-center min-w-[5.5rem] px-2">أدوية</th>
+              <th className="text-center min-w-[5.5rem] px-2">مستهلكات</th>
+              <th className="text-center min-w-[5.5rem] px-2">غازات</th>
+              <th className="text-center min-w-[5.5rem] px-2">إقامة</th>
+              <th className="text-center min-w-[6.5rem] px-2 font-bold">الإجمالي</th>
+              <th className="text-center min-w-[6rem] px-2 text-blue-700">حصة شركة</th>
+              <th className="text-center min-w-[6rem] px-2 text-orange-700">حصة مريض</th>
+              <th className="text-center min-w-[6rem] px-2 text-green-700">المسدد</th>
+              <th className="text-center min-w-[6rem] px-2 text-red-600">المتبقي</th>
+              <th className="text-center min-w-[6rem] px-2 text-purple-700">محول طبيب</th>
+              <th className="text-center min-w-[5rem] px-2">الحالة</th>
+              <th className={`text-center min-w-[5.5rem] sticky left-0 z-30 ${STICKY_BG_MUTED} border-r`}>إجراءات</th>
             </tr>
-          ) : (
-            <>
-              {activeRows.map((p, idx) => (
-                <PatientRow
-                  key={p.id}
-                  patient={p}
-                  index={idx + 1}
-                  dimmed={false}
-                  canViewInvoice={canViewInvoice}
-                  canEdit={canEdit}
-                  canAdmit={canAdmit}
-                  onEdit={onEdit}
-                  onDelete={onDelete}
-                  onOpenInvoice={onOpenInvoice}
-                  onViewFile={onViewFile}
-                />
-              ))}
+          </thead>
 
-              {inactiveRows.length > 0 && (
-                <>
-                  <tr>
-                    <td
-                      colSpan={21}
-                      className="py-1 px-2 text-xs text-muted-foreground bg-muted/20 border-y"
-                    >
-                      المرضى التاليون لا توجد لهم فواتير في هذا القسم ({inactiveRows.length})
-                    </td>
-                  </tr>
-                  {inactiveRows.map((p, idx) => (
-                    <PatientRow
-                      key={p.id}
-                      patient={p}
-                      index={activeRows.length + idx + 1}
-                      dimmed={true}
-                      canViewInvoice={canViewInvoice}
-                      canEdit={canEdit}
-                      canAdmit={canAdmit}
-                      onEdit={onEdit}
-                      onDelete={onDelete}
-                      onOpenInvoice={onOpenInvoice}
-                      onViewFile={onViewFile}
-                    />
-                  ))}
-                </>
-              )}
-            </>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr className="peachtree-grid-row">
+                <td colSpan={21} className="text-center py-6 text-muted-foreground">
+                  لا يوجد مرضى
+                </td>
+              </tr>
+            ) : (
+              <>
+                {activeRows.map((p, idx) => (
+                  <PatientRow
+                    key={p.id}
+                    patient={p}
+                    index={idx + 1}
+                    dimmed={false}
+                    canViewInvoice={canViewInvoice}
+                    canEdit={canEdit}
+                    canAdmit={canAdmit}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                    onOpenInvoice={onOpenInvoice}
+                    onViewFile={onViewFile}
+                  />
+                ))}
+
+                {inactiveRows.length > 0 && (
+                  <>
+                    <tr>
+                      <td
+                        colSpan={21}
+                        className="py-1 px-2 text-xs text-muted-foreground bg-muted/20 border-y"
+                      >
+                        المرضى التاليون لا توجد لهم فواتير في هذا القسم ({inactiveRows.length})
+                      </td>
+                    </tr>
+                    {inactiveRows.map((p, idx) => (
+                      <PatientRow
+                        key={p.id}
+                        patient={p}
+                        index={activeRows.length + idx + 1}
+                        dimmed={true}
+                        canViewInvoice={canViewInvoice}
+                        canEdit={canEdit}
+                        canAdmit={canAdmit}
+                        onEdit={onEdit}
+                        onDelete={onDelete}
+                        onOpenInvoice={onOpenInvoice}
+                        onViewFile={onViewFile}
+                      />
+                    ))}
+                  </>
+                )}
+              </>
+            )}
+          </tbody>
+
+          {activeRows.length > 0 && (
+            <tfoot className="sticky bottom-0 z-10">
+              <TotalsRow rows={activeRows} />
+            </tfoot>
           )}
-        </tbody>
 
-        {activeRows.length > 0 && (
-          <tfoot>
-            <TotalsRow rows={activeRows} />
-          </tfoot>
-        )}
-
-      </table>
-    </ScrollArea>
+        </table>
+      </div>
+    </div>
   );
 }

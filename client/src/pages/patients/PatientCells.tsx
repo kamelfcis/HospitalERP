@@ -4,9 +4,9 @@ import type { PatientStats } from "./types";
 
 export function AmountCell({ value }: { value: number }) {
   if (!value || +value === 0) {
-    return <td className="text-center text-muted-foreground">—</td>;
+    return <td className="text-center text-muted-foreground px-2 min-w-[5.5rem]">—</td>;
   }
-  return <td className="text-center tabular-nums">{formatNumber(+value)}</td>;
+  return <td className="text-center tabular-nums px-2 min-w-[5.5rem]">{formatNumber(+value)}</td>;
 }
 
 export function PatientTypeBadge({ type }: { type: string | null }) {
@@ -55,23 +55,25 @@ export function TotalsRow({ rows }: { rows: PatientStats[] }) {
 
   return (
     <tr className="bg-muted/50 font-bold text-xs border-t-2">
-      <td colSpan={6} className="text-right pr-2 py-1">
+      <td className="sticky right-0 z-[2] bg-muted/50 border-l" />
+      <td className="sticky right-8 z-[2] bg-muted/50 border-l text-right pr-2 py-1" colSpan={5}>
         الإجمالي ({rows.length} مريض)
       </td>
-      <td className="text-center tabular-nums">{formatNumber(sum("servicesTotal"))}</td>
-      <td className="text-center tabular-nums">{formatNumber(sum("orRoomTotal"))}</td>
-      <td className="text-center tabular-nums">{formatNumber(sum("equipmentTotal"))}</td>
-      <td className="text-center tabular-nums">{formatNumber(sum("drugsTotal"))}</td>
-      <td className="text-center tabular-nums">{formatNumber(sum("consumablesTotal"))}</td>
-      <td className="text-center tabular-nums">{formatNumber(sum("gasTotal"))}</td>
-      <td className="text-center tabular-nums">{formatNumber(sum("stayTotal"))}</td>
-      <td className="text-center tabular-nums">{formatNumber(sum("grandTotal"))}</td>
-      <td className="text-center tabular-nums">{formatNumber(sum("companyShareTotal"))}</td>
-      <td className="text-center tabular-nums">{formatNumber(sum("patientShareTotal"))}</td>
-      <td className="text-center tabular-nums">{formatNumber(sum("paidTotal"))}</td>
-      <td className="text-center tabular-nums">{formatNumber(sum("outstandingTotal"))}</td>
-      <td className="text-center tabular-nums">{formatNumber(sum("transferredTotal"))}</td>
-      <td /><td />
+      <td className="text-center tabular-nums px-2">{formatNumber(sum("servicesTotal"))}</td>
+      <td className="text-center tabular-nums px-2">{formatNumber(sum("orRoomTotal"))}</td>
+      <td className="text-center tabular-nums px-2">{formatNumber(sum("equipmentTotal"))}</td>
+      <td className="text-center tabular-nums px-2">{formatNumber(sum("drugsTotal"))}</td>
+      <td className="text-center tabular-nums px-2">{formatNumber(sum("consumablesTotal"))}</td>
+      <td className="text-center tabular-nums px-2">{formatNumber(sum("gasTotal"))}</td>
+      <td className="text-center tabular-nums px-2">{formatNumber(sum("stayTotal"))}</td>
+      <td className="text-center tabular-nums px-2">{formatNumber(sum("grandTotal"))}</td>
+      <td className="text-center tabular-nums px-2">{formatNumber(sum("companyShareTotal"))}</td>
+      <td className="text-center tabular-nums px-2">{formatNumber(sum("patientShareTotal"))}</td>
+      <td className="text-center tabular-nums px-2">{formatNumber(sum("paidTotal"))}</td>
+      <td className="text-center tabular-nums px-2">{formatNumber(sum("outstandingTotal"))}</td>
+      <td className="text-center tabular-nums px-2">{formatNumber(sum("transferredTotal"))}</td>
+      <td />
+      <td className="sticky left-0 z-[2] bg-muted/50 border-r" />
     </tr>
   );
 }
