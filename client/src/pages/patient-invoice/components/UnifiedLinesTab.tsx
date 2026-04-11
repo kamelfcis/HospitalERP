@@ -302,7 +302,7 @@ export function UnifiedLinesTab({
           <thead>
             <tr className="peachtree-grid-header">
               <th className="text-center" style={{ width: 30 }}>#</th>
-              <th className="text-center" style={{ width: 72 }}>النوع</th>
+              <th className="text-center" style={{ width: 50 }}>النوع</th>
               <th>الوصف</th>
               <th className="text-center" style={{ width: 110 }}>الطبيب</th>
               <th className="text-center" style={{ width: 90 }}>الممرض</th>
