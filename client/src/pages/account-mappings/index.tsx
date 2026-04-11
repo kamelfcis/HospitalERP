@@ -17,6 +17,7 @@ import { MappingStatusBar }            from "./components/MappingStatusBar";
 import { WarehouseTransferNotice }     from "./components/WarehouseTransferNotice";
 import { MappingTable }                from "./components/MappingTable";
 import { SalesReturnJournalPreview }   from "./components/SalesReturnJournalPreview";
+import { JournalStructureSummary }     from "./components/JournalStructureSummary";
 import type { MappingRow } from "./types";
 
 export default function AccountMappings() {
@@ -104,6 +105,8 @@ export default function AccountMappings() {
             isDepartmentView={data.isDepartmentView}
           />
         )}
+
+        {!data.isLoading && <JournalStructureSummary txType={data.selectedTxType} />}
 
         {data.selectedTxType === "supplier_payment" && (
           <div className="mx-4 mb-3 flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-800 dark:text-amber-200" dir="rtl">

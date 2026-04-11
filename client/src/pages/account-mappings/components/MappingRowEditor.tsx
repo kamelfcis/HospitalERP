@@ -17,7 +17,7 @@ import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  CheckCircle2, AlertCircle, AlertTriangle, Info, Trash2, Zap,
+  CheckCircle2, AlertCircle, AlertTriangle, Info, Trash2, Zap, TriangleAlert,
 } from "lucide-react";
 import { AccountLookup } from "@/components/lookups/AccountLookup";
 import { mappingLineTypeLabels } from "@shared/schema";
@@ -26,6 +26,7 @@ import {
   type LineTypeSpec,
   type DynamicSideInfo,
   DYNAMIC_LINE_SPECS,
+  suggestedLineTypes,
   isRowComplete,
   allLineTypeOptions,
   getAccountFilter,
@@ -83,11 +84,15 @@ export function MappingRowEditor({
   const useDebit  = spec ? spec.debitSide  : true;
   const useCredit = spec ? spec.creditSide : true;
 
+  const suggested = suggestedLineTypes[txType] ?? [];
+  const isUnsuggestedLine = row.lineType && !suggested.includes(row.lineType);
+
   const showGenericFallback = (isWarehouseView || isPharmacyView) && row.source === "generic";
   const showWarehousePin    = isWarehouseView && row.source === "warehouse";
   const showPharmacyPin     = isPharmacyView  && row.source === "pharmacy";
 
-  const rowBg = !complete && required ? "bg-red-50/60 border-red-100"
+  const rowBg = isUnsuggestedLine    ? "bg-orange-50/50 dark:bg-orange-950/20 border-orange-200"
+              : !complete && required ? "bg-red-50/60 border-red-100"
               : !complete && cond     ? "bg-amber-50/40"
               : "";
 
@@ -126,6 +131,20 @@ export function MappingRowEditor({
         )}
         {showPharmacyPin && (
           <span className="text-[9px] text-emerald-600 leading-tight">↳ صيدلية محددة</span>
+        )}
+        {isUnsuggestedLine && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex items-center gap-0.5 text-[9px] text-orange-600 leading-tight cursor-help">
+                  <TriangleAlert className="h-2.5 w-2.5" />غير مستخدم
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed" dir="rtl">
+                هذا البند غير مستخدم في محرك القيود لنوع المعاملة الحالي — لن يؤثر على القيد المحاسبي
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
       </div>
 
