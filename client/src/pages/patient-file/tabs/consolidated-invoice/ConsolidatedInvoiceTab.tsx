@@ -130,21 +130,6 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
     queryClient.invalidateQueries({ queryKey: ["/api/patients", patientId, "invoices-aggregated"] });
   }, [patientId, refetchFullInvoice]);
 
-  if (isLoading) return (
-    <div className="flex justify-center items-center py-16">
-      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-    </div>
-  );
-
-  if (!data || data.totals.invoiceCount === 0) return (
-    <div className="text-center py-12 text-muted-foreground text-sm">لا توجد فواتير طبية لهذا المريض</div>
-  );
-
-  const admissionId = selectedVisit?.admission_id ?? undefined;
-  const visitId = (!admissionId && selectedVisit?.id) ? selectedVisit.id : undefined;
-  const totalsForSidebar = visitTotals ?? data.totals;
-  const hasEncounterView = !!selectedVisitId && !!visitSummary && visitSummary.encounters.length > 0;
-
   const invoiceStatus = primaryInvoice?.status;
   const invoiceNumber = visitSummary?.invoice?.invoiceNumber ?? primaryInvoice?.invoiceNumber;
 
@@ -165,6 +150,21 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
       isFinalClosed,
     });
   }, [displayVisit, invoiceNumber, invoiceStatus, isFinalClosed, onVisitHeaderChange]);
+
+  if (isLoading) return (
+    <div className="flex justify-center items-center py-16">
+      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+    </div>
+  );
+
+  if (!data || data.totals.invoiceCount === 0) return (
+    <div className="text-center py-12 text-muted-foreground text-sm">لا توجد فواتير طبية لهذا المريض</div>
+  );
+
+  const admissionId = selectedVisit?.admission_id ?? undefined;
+  const visitId = (!admissionId && selectedVisit?.id) ? selectedVisit.id : undefined;
+  const totalsForSidebar = visitTotals ?? data.totals;
+  const hasEncounterView = !!selectedVisitId && !!visitSummary && visitSummary.encounters.length > 0;
 
   const notes = fullInvoice?.notes ?? "";
   const headerDiscountPercent = parseFloat(String(fullInvoice?.headerDiscountPercent ?? (primaryInvoice as any)?.["headerDiscountPercent"] ?? "0"));
