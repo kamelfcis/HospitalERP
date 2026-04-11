@@ -55,8 +55,8 @@ export function TotalsRow({ rows }: { rows: PatientStats[] }) {
 
   return (
     <tr className="font-bold text-xs border-t-2" style={{ background: "hsl(210 15% 93%)" }}>
-      <td className="sticky-footer-right" style={{ right: 0, width: 36 }} />
-      <td className="sticky-footer-right text-right pr-3 py-1.5 whitespace-nowrap" style={{ right: 36, boxShadow: "-4px 0 8px -2px rgba(0,0,0,0.12)" }} colSpan={6}>
+      <td style={{ width: 36 }} />
+      <td className="text-right pr-3 py-1.5 whitespace-nowrap" colSpan={6}>
         الإجمالي ({rows.length} مريض)
       </td>
       <td className="text-center tabular-nums whitespace-nowrap px-3">{formatNumber(sum("servicesTotal"))}</td>

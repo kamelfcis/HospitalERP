@@ -11,8 +11,8 @@ function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, canAdm
 
   return (
     <tr className={rowClass} data-testid={`row-patient-${p.id}`}>
-      <td className="sticky-col-right text-center text-muted-foreground whitespace-nowrap" style={{ right: 0, width: 36 }}>{index}</td>
-      <td className="sticky-col-right sticky-name-shadow font-medium whitespace-nowrap px-3" style={{ right: 36 }} data-testid={`text-name-${p.id}`}>{p.fullName}</td>
+      <td className="text-center text-muted-foreground whitespace-nowrap" style={{ width: 36 }}>{index}</td>
+      <td className="font-medium whitespace-nowrap px-3" data-testid={`text-name-${p.id}`}>{p.fullName}</td>
       <td className="text-muted-foreground whitespace-nowrap px-3" data-testid={`text-doctor-${p.id}`}>{p.latestDoctorName || "—"}</td>
       <td className="font-mono whitespace-nowrap px-3" data-testid={`text-phone-${p.id}`}>{p.phone || "—"}</td>
       <td className="font-mono whitespace-nowrap px-3 text-muted-foreground" data-testid={`text-national-id-${p.id}`}>{p.nationalId || "—"}</td>
@@ -152,8 +152,8 @@ export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInv
 
           <thead className="peachtree-grid-header sticky top-0 z-20">
             <tr>
-              <th className="sticky-header-right text-center whitespace-nowrap" style={{ right: 0, width: 36 }}>#</th>
-              <th className="sticky-header-right sticky-header-name-shadow text-right whitespace-nowrap px-3" style={{ right: 36 }}>الاسم</th>
+              <th className="text-center whitespace-nowrap" style={{ width: 36 }}>#</th>
+              <th className="text-right whitespace-nowrap px-3">الاسم</th>
               <th className="text-right whitespace-nowrap px-3">الطبيب</th>
               <th className="text-right whitespace-nowrap px-3">التليفون</th>
               <th className="text-right whitespace-nowrap px-3">الرقم القومي</th>
