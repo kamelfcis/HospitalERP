@@ -1,9 +1,3 @@
-/**
- * InvoiceLineRow.tsx
- * ──────────────────────────────────────────────────────────────────────────────
- * صف واحد في جدول بنود فاتورة المريض الموحد (UnifiedLinesTab).
- * مفصول هنا لتقليل حجم UnifiedLinesTab وتسهيل صيانة منطق عرض كل بند.
- */
 import { Button } from "@/components/ui/button";
 import { Input }  from "@/components/ui/input";
 import { Badge }  from "@/components/ui/badge";
@@ -31,7 +25,6 @@ import { getUnitName } from "../utils/units";
 import { getUnitOptions } from "@/lib/invoice-lines";
 import type { LineLocal } from "../types";
 
-// ── مساعد: هل تاريخ الصلاحية قريب (أقل من 3 أشهر)؟ ─────────────────────────
 function isExpiryNear(month: number | null | undefined, year: number | null | undefined): boolean {
   if (!month || !year) return false;
   const now    = new Date();
@@ -40,7 +33,6 @@ function isExpiryNear(month: number | null | undefined, year: number | null | un
   return diffMs / (1000 * 60 * 60 * 24 * 30.44) < 3;
 }
 
-// ── نوع البند — مخطط الألوان والتسميات ───────────────────────────────────────
 type KnownLineType = "service" | "drug" | "consumable" | "equipment" | "doctor_cost";
 
 const LINE_TYPE_CONFIG: Record<KnownLineType, { label: string; className: string }> = {
@@ -55,24 +47,18 @@ function getLineTypeBadge(lineType: string) {
   const cfg = LINE_TYPE_CONFIG[lineType as KnownLineType];
   if (!cfg) return <Badge variant="outline" className="text-[10px] px-1">{lineType}</Badge>;
   return (
-    <Badge variant="outline" className={`text-[10px] px-1.5 py-0 font-medium ${cfg.className}`}>
+    <Badge variant="outline" className={`text-[10px] px-1.5 py-0 font-medium leading-none ${cfg.className}`}>
       {cfg.label}
     </Badge>
   );
 }
 
 function getBizClassBadge(bc: string | null | undefined) {
-  if (!bc) {
-    return (
-      <Badge variant="outline" className="text-[9px] px-1 py-0 text-muted-foreground border-muted-foreground/40">
-        غير مصنف
-      </Badge>
-    );
-  }
+  if (!bc) return null;
   const label = BUSINESS_CLASSIFICATION_LABELS[bc as keyof typeof BUSINESS_CLASSIFICATION_LABELS] ?? bc;
   const color = BUSINESS_CLASSIFICATION_COLORS[bc as keyof typeof BUSINESS_CLASSIFICATION_COLORS] ?? "bg-gray-100 text-gray-700 border-gray-300";
   return (
-    <Badge variant="outline" className={`text-[9px] px-1 py-0 ${color}`}>
+    <Badge variant="outline" className={`text-[9px] px-1 py-0 leading-none ${color}`}>
       {label}
     </Badge>
   );
@@ -86,7 +72,24 @@ function isDoctorCostLine(line: LineLocal): boolean {
   return line.lineType === "doctor_cost";
 }
 
-// ── Props ─────────────────────────────────────────────────────────────────────
+function getPriceSourceBadge(line: LineLocal) {
+  const isService = line.lineType === "service";
+  if (line.priceSource === "department") {
+    return <Badge variant="secondary" className="text-[9px] px-1 py-0 leading-none bg-green-100 text-green-700">قسم</Badge>;
+  }
+  if (!isService) return null;
+  if (line.priceSource === "manual_override") {
+    return <Badge variant="outline" className="text-[9px] px-1 py-0 leading-none bg-orange-50 text-orange-700 border-orange-300">✏ يدوي</Badge>;
+  }
+  if (line.priceSource === "contract_price_list") {
+    return <Badge variant="outline" className="text-[9px] px-1 py-0 leading-none bg-blue-50 text-blue-700 border-blue-200">عقد</Badge>;
+  }
+  if (line.priceSource === "default_price_list") {
+    return <Badge variant="outline" className="text-[9px] px-1 py-0 leading-none bg-amber-50 text-amber-700 border-amber-200">افتراضي</Badge>;
+  }
+  return null;
+}
+
 export interface InvoiceLineRowProps {
   line: LineLocal;
   index: number;
@@ -100,7 +103,6 @@ export interface InvoiceLineRowProps {
   pendingQtyRef?: React.MutableRefObject<Map<string, string>>;
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
 export function InvoiceLineRow({
   line,
   index: i,
@@ -129,167 +131,119 @@ export function InvoiceLineRow({
     ),
   });
 
+  const priceSourceBadge = getPriceSourceBadge(line);
+  const bizBadge = getBizClassBadge(line.businessClassification);
+
   return (
     <tr
       className={`peachtree-grid-row ${isService ? getServiceRowClass(line.serviceType) : ""} ${rowClass} ${isCostLine ? "opacity-70 bg-rose-50/40 dark:bg-rose-950/20" : ""}`}
       data-testid={`row-line-unified-${i}`}
     >
-      {/* # */}
-      <td className="text-center text-muted-foreground">{i + 1}</td>
+      <td className="text-center text-muted-foreground text-xs py-1">{i + 1}</td>
 
-      {/* النوع */}
-      <td className="text-center">
-        <div className="flex flex-col items-center gap-0.5">
+      <td className="text-center py-1">
+        <div className="flex items-center justify-center gap-0.5 flex-wrap">
           {getLineTypeBadge(line.lineType)}
-          {getBizClassBadge(line.businessClassification)}
+          {bizBadge}
           {isReadOnly && (
-            <Badge variant="outline" className={`text-[9px] px-1 py-0 ${isCostLine ? "text-rose-600 dark:text-rose-400 border-rose-300" : "text-sky-600 dark:text-sky-400 border-sky-300"}`}>
+            <Badge variant="outline" className={`text-[9px] px-1 py-0 leading-none ${isCostLine ? "text-rose-600 dark:text-rose-400 border-rose-300" : "text-sky-600 dark:text-sky-400 border-sky-300"}`}>
               {isCostLine ? "تكلفة" : "تلقائي"}
             </Badge>
           )}
         </div>
       </td>
 
-      {/* الوصف */}
-      <td>
+      <td className="py-1">
         {isDraft && !isReadOnly ? (
-          <div className="space-y-0.5">
-            <div className="flex flex-row-reverse items-center gap-1">
-              <Input
-                value={line.description}
-                onChange={(e) => updateLine(line.tempId, "description", e.target.value)}
-                className="h-7 text-xs flex-1"
-                data-testid={`input-desc-unified-${i}`}
-              />
-              {hasStatsBtn && (
-                <Button
-                  variant="ghost" size="icon" className="h-7 w-7 shrink-0"
-                  onClick={() => openStatsPopup(line.itemId!, line.description)}
-                  data-testid={`button-stock-stats-unified-${i}`}
-                >
-                  <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
-                </Button>
-              )}
-            </div>
-            {line.priceSource === "department" && (
-              <div className="flex flex-row-reverse items-center gap-1">
-                <Badge variant="secondary" className="text-[10px] bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400">
-                  سعر القسم
-                </Badge>
-              </div>
-            )}
-            {isService && line.priceSource === "manual_override" && (
-              <div className="flex flex-row-reverse items-center gap-1">
-                <Badge variant="outline" className="text-[10px] bg-orange-50 text-orange-700 border-orange-300 gap-0.5">
-                  ✏ سعر يدوي
-                </Badge>
-              </div>
-            )}
-            {isService && line.priceSource === "contract_price_list" && (
-              <div className="flex flex-row-reverse items-center gap-1">
-                <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200 gap-0.5">
-                  سعر العقد
-                </Badge>
-              </div>
-            )}
-            {isService && line.priceSource === "default_price_list" && (
-              <div className="flex flex-row-reverse items-center gap-1">
-                <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 gap-0.5">
-                  قائمة افتراضية
-                </Badge>
-              </div>
+          <div className="flex flex-row-reverse items-center gap-1">
+            <Input
+              value={line.description}
+              onChange={(e) => updateLine(line.tempId, "description", e.target.value)}
+              className="h-6 text-xs flex-1"
+              data-testid={`input-desc-unified-${i}`}
+            />
+            {priceSourceBadge}
+            {hasStatsBtn && (
+              <Button
+                variant="ghost" size="icon" className="h-6 w-6 shrink-0"
+                onClick={() => openStatsPopup(line.itemId!, line.description)}
+                data-testid={`button-stock-stats-unified-${i}`}
+              >
+                <BarChart3 className="h-3 w-3 text-muted-foreground" />
+              </Button>
             )}
           </div>
         ) : (
-          <div>
-            <div className="flex flex-row-reverse items-center gap-1">
-              <span className="text-xs">{line.description}</span>
-              {hasStatsBtn && (
-                <Button
-                  variant="ghost" size="icon" className="h-6 w-6 shrink-0"
-                  onClick={() => openStatsPopup(line.itemId!, line.description)}
-                  data-testid={`button-stock-stats-ro-${i}`}
-                >
-                  <BarChart3 className="h-3 w-3 text-muted-foreground" />
-                </Button>
-              )}
-            </div>
+          <div className="flex flex-row-reverse items-center gap-1 flex-wrap">
+            <span className="text-xs">{line.description}</span>
+            {hasStatsBtn && (
+              <Button
+                variant="ghost" size="icon" className="h-5 w-5 shrink-0"
+                onClick={() => openStatsPopup(line.itemId!, line.description)}
+                data-testid={`button-stock-stats-ro-${i}`}
+              >
+                <BarChart3 className="h-3 w-3 text-muted-foreground" />
+              </Button>
+            )}
+            {priceSourceBadge}
             {line.coverageStatus && line.coverageStatus !== "not_required" && (
               <TooltipProvider>
-                <div className="flex flex-row-reverse items-center gap-1 mt-0.5 flex-wrap">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span>
-                        {line.coverageStatus === "covered" ? (
-                          <Badge className="text-[10px] bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400 border-green-300 gap-0.5 cursor-help">
-                            <ShieldCheck className="h-2.5 w-2.5" />مشمول
-                          </Badge>
-                        ) : line.coverageStatus === "excluded" ? (
-                          <Badge className="text-[10px] bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-400 border-red-300 gap-0.5 cursor-help">
-                            <ShieldOff className="h-2.5 w-2.5" />مستثنى
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="text-[10px] gap-0.5 cursor-help">
-                            <ShieldCheck className="h-2.5 w-2.5" />{line.coverageStatus}
-                          </Badge>
-                        )}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" dir="rtl" className="max-w-xs text-xs leading-relaxed">
-                      {line.coverageStatus === "covered" && line.companyShareAmount && (
-                        <div>
-                          <span className="font-medium">نصيب الشركة: </span>
-                          {formatNumber(parseFloat(line.companyShareAmount || "0"))} ج.م
-                        </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      {line.coverageStatus === "covered" ? (
+                        <Badge className="text-[9px] px-1 py-0 leading-none bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400 border-green-300 gap-0.5 cursor-help">
+                          <ShieldCheck className="h-2.5 w-2.5" />مشمول
+                        </Badge>
+                      ) : line.coverageStatus === "excluded" ? (
+                        <Badge className="text-[9px] px-1 py-0 leading-none bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-400 border-red-300 gap-0.5 cursor-help">
+                          <ShieldOff className="h-2.5 w-2.5" />مستثنى
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-[9px] px-1 py-0 leading-none gap-0.5 cursor-help">
+                          <ShieldCheck className="h-2.5 w-2.5" />{line.coverageStatus}
+                        </Badge>
                       )}
-                    </TooltipContent>
-                  </Tooltip>
-                  {line.approvalStatus === "pending" && (
-                    <Badge className="text-[10px] bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-300 gap-0.5">
-                      <Clock className="h-2.5 w-2.5" />ينتظر موافقة
-                    </Badge>
-                  )}
-                  {line.coverageStatus === "covered" && line.companyShareAmount && parseFloat(line.companyShareAmount) > 0 && (
-                    <Badge variant="outline" className="text-[10px] text-blue-700 dark:text-blue-400 border-blue-300">
-                      شركة: {formatNumber(parseFloat(line.companyShareAmount))}
-                    </Badge>
-                  )}
-                  {line.coverageStatus === "covered" && line.patientShareAmount && parseFloat(line.patientShareAmount) > 0 && (
-                    <Badge variant="outline" className="text-[10px] text-orange-700 dark:text-orange-400 border-orange-300">
-                      مريض: {formatNumber(parseFloat(line.patientShareAmount))}
-                    </Badge>
-                  )}
-                </div>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" dir="rtl" className="max-w-xs text-xs leading-relaxed">
+                    {line.coverageStatus === "covered" && line.companyShareAmount && (
+                      <div>
+                        <span className="font-medium">نصيب الشركة: </span>
+                        {formatNumber(parseFloat(line.companyShareAmount || "0"))} ج.م
+                      </div>
+                    )}
+                  </TooltipContent>
+                </Tooltip>
               </TooltipProvider>
             )}
-            {isService && line.priceSource === "manual_override" && (
-              <Badge variant="outline" className="mt-0.5 text-[9px] bg-orange-50 text-orange-700 border-orange-300">
-                ✏ سعر يدوي
+            {line.approvalStatus === "pending" && (
+              <Badge className="text-[9px] px-1 py-0 leading-none bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-300 gap-0.5">
+                <Clock className="h-2.5 w-2.5" />موافقة
               </Badge>
             )}
-            {isService && line.priceSource === "contract_price_list" && (
-              <Badge variant="outline" className="mt-0.5 text-[9px] bg-blue-50 text-blue-600 border-blue-200">
-                سعر العقد
+            {line.coverageStatus === "covered" && line.companyShareAmount && parseFloat(line.companyShareAmount) > 0 && (
+              <Badge variant="outline" className="text-[9px] px-1 py-0 leading-none text-blue-700 dark:text-blue-400 border-blue-300">
+                شركة: {formatNumber(parseFloat(line.companyShareAmount))}
               </Badge>
             )}
-            {isService && line.priceSource === "default_price_list" && (
-              <Badge variant="outline" className="mt-0.5 text-[9px] bg-amber-50 text-amber-700 border-amber-200">
-                قائمة افتراضية
+            {line.coverageStatus === "covered" && line.patientShareAmount && parseFloat(line.patientShareAmount) > 0 && (
+              <Badge variant="outline" className="text-[9px] px-1 py-0 leading-none text-orange-700 dark:text-orange-400 border-orange-300">
+                مريض: {formatNumber(parseFloat(line.patientShareAmount))}
               </Badge>
             )}
           </div>
         )}
       </td>
 
-      {/* الطبيب */}
-      <td className={`text-center ${isService && line.requiresDoctor ? "bg-blue-50 dark:bg-blue-950/40" : ""}`}>
+      <td className={`text-center py-1 ${isService && line.requiresDoctor ? "bg-blue-50 dark:bg-blue-950/40" : ""}`}>
         {isService && line.requiresDoctor ? (
           isDraft ? (
             <Input
               value={line.doctorName}
               onChange={(e) => updateLine(line.tempId, "doctorName", e.target.value)}
-              placeholder="اسم الطبيب *"
-              className={`h-7 text-xs ${!line.doctorName ? "border-blue-400 dark:border-blue-600" : ""}`}
+              placeholder="الطبيب *"
+              className={`h-6 text-xs ${!line.doctorName ? "border-blue-400 dark:border-blue-600" : ""}`}
               data-testid={`input-doctor-unified-${i}`}
             />
           ) : (
@@ -300,15 +254,14 @@ export function InvoiceLineRow({
         )}
       </td>
 
-      {/* الممرض */}
-      <td className={`text-center ${isService && line.requiresNurse ? "bg-purple-50 dark:bg-purple-950/40" : ""}`}>
+      <td className={`text-center py-1 ${isService && line.requiresNurse ? "bg-purple-50 dark:bg-purple-950/40" : ""}`}>
         {isService && line.requiresNurse ? (
           isDraft ? (
             <Input
               value={line.nurseName}
               onChange={(e) => updateLine(line.tempId, "nurseName", e.target.value)}
-              placeholder="اسم الممرض *"
-              className={`h-7 text-xs ${!line.nurseName ? "border-purple-400 dark:border-purple-600" : ""}`}
+              placeholder="الممرض *"
+              className={`h-6 text-xs ${!line.nurseName ? "border-purple-400 dark:border-purple-600" : ""}`}
               data-testid={`input-nurse-unified-${i}`}
             />
           ) : (
@@ -319,8 +272,7 @@ export function InvoiceLineRow({
         )}
       </td>
 
-      {/* الوحدة */}
-      <td className={`text-center ${
+      <td className={`text-center py-1 ${
         !isService && line.unitLevel === "medium"
           ? "bg-orange-100 dark:bg-orange-900/30"
           : !isService && line.unitLevel === "minor"
@@ -332,7 +284,7 @@ export function InvoiceLineRow({
             <select
               value={line.unitLevel}
               onChange={(e) => handleUnitLevelChange(line.tempId, e.target.value as "major" | "medium" | "minor")}
-              className={`h-7 text-xs rounded border w-full text-center bg-background ${
+              className={`h-6 text-xs rounded border w-full text-center bg-background ${
                 line.unitLevel === "medium"
                   ? "border-orange-500 text-orange-800 dark:text-orange-200 bg-orange-50 dark:bg-orange-900/40"
                   : line.unitLevel === "minor"
@@ -353,7 +305,7 @@ export function InvoiceLineRow({
               ))}
             </select>
           ) : (
-            <span className={`font-bold ${
+            <span className={`text-xs font-bold ${
               line.unitLevel === "medium"
                 ? "text-orange-700 dark:text-orange-300"
                 : line.unitLevel === "minor"
@@ -368,8 +320,7 @@ export function InvoiceLineRow({
         )}
       </td>
 
-      {/* الكمية */}
-      <td className="text-center">
+      <td className="text-center py-1">
         {isDraft && !isCostLine ? (
           isAutoGenerated(line) ? (
             <Input
@@ -393,7 +344,7 @@ export function InvoiceLineRow({
                 }
               }}
               placeholder="الأيام"
-              className={`h-7 text-xs text-center ${line.quantity === 0 ? "border-amber-400 bg-amber-50 dark:bg-amber-950/20" : ""}`}
+              className={`h-6 text-xs text-center ${line.quantity === 0 ? "border-amber-400 bg-amber-50 dark:bg-amber-950/20" : ""}`}
               data-testid={`input-stay-days-${i}`}
             />
           ) : hasExpiry && line.lotId ? (
@@ -404,7 +355,7 @@ export function InvoiceLineRow({
               onChange={(e) => pendingQtyRef?.current.set(line.tempId, e.target.value)}
               onBlur={() => handleQtyConfirm(line.tempId)}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleQtyConfirm(line.tempId); } }}
-              className="h-7 text-xs text-center"
+              className="h-6 text-xs text-center"
               data-testid={`input-qty-unified-${i}`}
             />
           ) : (
@@ -413,7 +364,7 @@ export function InvoiceLineRow({
               value={line.quantity}
               min={0} step="any"
               onChange={(e) => updateLine(line.tempId, "quantity", parseFloat(e.target.value) || 0)}
-              className="h-7 text-xs text-center"
+              className="h-6 text-xs text-center"
               data-testid={`input-qty-unified-${i}`}
             />
           )
@@ -426,8 +377,7 @@ export function InvoiceLineRow({
         )}
       </td>
 
-      {/* الصلاحية */}
-      <td className={`text-center ${
+      <td className={`text-center py-1 ${
         hasExpiry && isExpiryNear(line.expiryMonth, line.expiryYear)
           ? "bg-yellow-50 dark:bg-yellow-900/20"
           : ""
@@ -454,8 +404,7 @@ export function InvoiceLineRow({
         )}
       </td>
 
-      {/* سعر الوحدة */}
-      <td className="text-center">
+      <td className="text-center py-1">
         {isDraft && isCostLine ? (
           <Input
             type="number"
@@ -468,30 +417,29 @@ export function InvoiceLineRow({
               updateLine(line.tempId, "totalPrice", val);
               updateLine(line.tempId, "doctorCostManualOverride", true);
             }}
-            className="h-7 text-xs text-center"
+            className="h-6 text-xs text-center"
             data-testid={`input-doctor-cost-price-${i}`}
           />
         ) : (
           <span
-            className="flex items-center justify-center gap-0.5 peachtree-amount"
-            title="سعر النظام — يتحدد تلقائياً بناءً على الصنف أو القسم"
+            className="flex items-center justify-center gap-0.5 peachtree-amount text-xs"
+            title="سعر النظام"
             data-testid={`text-unit-price-unified-${i}`}
           >
-            {isDraft && <Lock className="h-3 w-3 text-muted-foreground shrink-0" />}
+            {isDraft && <Lock className="h-2.5 w-2.5 text-muted-foreground shrink-0" />}
             {formatNumber(line.unitPrice)}
           </span>
         )}
       </td>
 
-      {/* خصم % */}
-      <td className="text-center">
+      <td className="text-center py-1">
         {isDraft && !isCostLine ? (
           <Input
             type="number"
             value={line.discountPercent}
             min={0} max={100}
             onChange={(e) => updateLine(line.tempId, "discountPercent", parseFloat(e.target.value) || 0)}
-            className="h-7 text-xs text-center"
+            className="h-6 text-xs text-center"
             data-testid={`input-disc-pct-unified-${i}`}
           />
         ) : (
@@ -499,15 +447,14 @@ export function InvoiceLineRow({
         )}
       </td>
 
-      {/* قيمة الخصم */}
-      <td className="text-center">
+      <td className="text-center py-1">
         {isDraft && !isCostLine ? (
           <Input
             type="number"
             value={line.discountAmount}
             min={0}
             onChange={(e) => updateLine(line.tempId, "discountAmount", parseFloat(e.target.value) || 0)}
-            className="h-7 text-xs text-center"
+            className="h-6 text-xs text-center"
             data-testid={`input-disc-amt-unified-${i}`}
           />
         ) : (
@@ -515,15 +462,13 @@ export function InvoiceLineRow({
         )}
       </td>
 
-      {/* الإجمالي */}
-      <td className="text-center font-bold text-xs">{formatNumber(line.totalPrice)}</td>
+      <td className="text-center font-bold text-xs py-1">{formatNumber(line.totalPrice)}</td>
 
-      {/* حذف */}
       {isDraft && (
-        <td className="text-center">
+        <td className="text-center py-1">
           {!isCostLine && (
             <Button
-              variant="ghost" size="icon"
+              variant="ghost" size="icon" className="h-5 w-5"
               onClick={() => removeLine(line.tempId)}
               data-testid={`button-remove-line-unified-${i}`}
             >
