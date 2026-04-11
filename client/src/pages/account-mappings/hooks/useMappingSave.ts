@@ -9,6 +9,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { AccountMapping } from "@shared/schema";
+import { mappingLineTypeLabels } from "@shared/schema";
 import type { UseMappingRowsResult } from "./useMappingRows";
 
 export interface UseMappingSaveResult {
@@ -69,6 +70,17 @@ export function useMappingSave(data: UseMappingRowsResult): UseMappingSaveResult
     if (validRows.length === 0) {
       toast({ title: "لا توجد إعدادات للحفظ", variant: "destructive" });
       return;
+    }
+
+    // Guard: duplicate lineType in the same scope → only last one would survive the upsert
+    const seenLineTypes = new Set<string>();
+    for (const r of validRows) {
+      if (seenLineTypes.has(r.lineType)) {
+        const label = mappingLineTypeLabels[r.lineType] ?? r.lineType;
+        toast({ title: "خطأ في البيانات", description: `نوع البند "${label}" مكرر — يُرجى إزالة السطر الزائد قبل الحفظ`, variant: "destructive" });
+        return;
+      }
+      seenLineTypes.add(r.lineType);
     }
 
     const payload = validRows.map(r => ({

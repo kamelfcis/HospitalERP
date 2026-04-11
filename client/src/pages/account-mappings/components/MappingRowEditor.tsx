@@ -156,11 +156,14 @@ export function MappingRowEditor({
               <SelectValue placeholder="اختر نوع البند" />
             </SelectTrigger>
             <SelectContent>
-              {allLineTypeOptions.map(([k, label]) => (
-                <SelectItem key={k} value={k}>
-                  {label}{usedLineTypes.has(k) && k !== row.lineType ? " (مستخدم)" : ""}
-                </SelectItem>
-              ))}
+              {allLineTypeOptions.map(([k, label]) => {
+                const alreadyUsed = usedLineTypes.has(k) && k !== row.lineType;
+                return (
+                  <SelectItem key={k} value={k} disabled={alreadyUsed}>
+                    {label}{alreadyUsed ? " ✓" : ""}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         ) : (
