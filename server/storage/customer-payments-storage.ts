@@ -231,18 +231,31 @@ export async function createCustomerReceipt(
     }
   }
 
-  // ── جلب حساب الذمم: نستخدم ربط sales_invoice / receivables ──────────────
+  // ── جلب حساب الذمم ──────────────────────────────────────────────────────
+  // 1) حساب GL المرتبط بالعميل مباشرة (glAccountId في pharmacy_credit_customers)
+  // 2) احتياطي: ربط sales_invoice / receivables من account_mappings
   let arAccountId:  string | null = null;
   let glDebitId:    string | null = null;
   let glCreditId:   string | null = null;
   if (effectiveGlAccountId) {
-    const mappings = await db.select().from(accountMappings)
-      .where(sql`transaction_type = 'sales_invoice'`);
-    const arMapping = mappings.find((m) => m.lineType === "receivables");
-    if (arMapping) {
-      arAccountId = arMapping.debitAccountId || null;
-      glDebitId   = effectiveGlAccountId;
-      glCreditId  = arAccountId;
+    const custRes = await pool.query<{ gl_account_id: string | null }>(
+      `SELECT gl_account_id FROM pharmacy_credit_customers WHERE id = $1 LIMIT 1`,
+      [input.customerId]
+    );
+    const custGlAccountId = custRes.rows[0]?.gl_account_id ?? null;
+
+    if (custGlAccountId) {
+      arAccountId = custGlAccountId;
+    } else {
+      const mappings = await db.select().from(accountMappings)
+        .where(sql`transaction_type = 'sales_invoice'`);
+      const arMapping = mappings.find((m) => m.lineType === "receivables");
+      arAccountId = arMapping?.debitAccountId || null;
+    }
+
+    if (arAccountId) {
+      glDebitId  = effectiveGlAccountId;
+      glCreditId = arAccountId;
     }
   }
 
@@ -603,13 +616,14 @@ export async function searchCreditCustomers(
 
   params.push(limit);
   const res = await pool.query(
-    `SELECT id, name, phone FROM pharmacy_credit_customers ${whereClause} ORDER BY name LIMIT $${idx}`,
+    `SELECT id, name, phone, gl_account_id FROM pharmacy_credit_customers ${whereClause} ORDER BY name LIMIT $${idx}`,
     params
   );
   return res.rows.map((r: any) => ({
-    id:    r.id,
-    name:  r.name,
-    phone: r.phone ?? null,
+    id:          r.id,
+    name:        r.name,
+    phone:       r.phone ?? null,
+    glAccountId: r.gl_account_id ?? null,
   }));
 }
 
@@ -618,11 +632,23 @@ export async function createCreditCustomer(
   name: string,
   phone?: string | null,
   notes?: string | null,
-  pharmacyId?: string | null
-): Promise<{ id: string; name: string; phone: string | null }> {
+  pharmacyId?: string | null,
+  glAccountId?: string | null
+): Promise<{ id: string; name: string; phone: string | null; glAccountId: string | null }> {
   const [row] = await db
     .insert(pharmacyCreditCustomers)
-    .values({ name, phone: phone ?? null, notes: notes ?? null, pharmacyId: pharmacyId ?? null })
-    .returning({ id: pharmacyCreditCustomers.id, name: pharmacyCreditCustomers.name, phone: pharmacyCreditCustomers.phone });
-  return { id: row.id, name: row.name, phone: row.phone ?? null };
+    .values({ name, phone: phone ?? null, notes: notes ?? null, pharmacyId: pharmacyId ?? null, glAccountId: glAccountId ?? null })
+    .returning({ id: pharmacyCreditCustomers.id, name: pharmacyCreditCustomers.name, phone: pharmacyCreditCustomers.phone, glAccountId: pharmacyCreditCustomers.glAccountId });
+  return { id: row.id, name: row.name, phone: row.phone ?? null, glAccountId: row.glAccountId ?? null };
+}
+
+// ─── updateCreditCustomerGlAccount ────────────────────────────────────────────
+export async function updateCreditCustomerGlAccount(
+  customerId: string,
+  glAccountId: string | null
+): Promise<void> {
+  await pool.query(
+    `UPDATE pharmacy_credit_customers SET gl_account_id = $1 WHERE id = $2`,
+    [glAccountId, customerId]
+  );
 }

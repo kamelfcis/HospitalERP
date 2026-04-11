@@ -21,11 +21,13 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { ChevronsUpDown, Check, Plus, Loader2, User } from "lucide-react";
+import { AccountLookup } from "@/components/lookups";
 
 export interface CreditCustomer {
-  id:    string;
-  name:  string;
-  phone: string | null;
+  id:          string;
+  name:        string;
+  phone:       string | null;
+  glAccountId?: string | null;
 }
 
 interface Props {
@@ -48,16 +50,18 @@ function QuickAddDialog({
   const { toast } = useToast();
   const [name,  setName]  = useState("");
   const [phone, setPhone] = useState("");
+  const [glAccountId, setGlAccountId] = useState("");
 
   const mutation = useMutation({
     mutationFn: () => apiRequestJson<CreditCustomer>("POST", "/api/credit-customers", {
       name: name.trim(), phone: phone.trim() || null, pharmacyId: pharmacyId ?? null,
+      glAccountId: glAccountId || null,
     }),
     onSuccess: (customer) => {
       queryClient.invalidateQueries({ queryKey: ["/api/credit-customers"] });
       toast({ title: "تم إضافة العميل بنجاح" });
       onCreated(customer);
-      setName(""); setPhone("");
+      setName(""); setPhone(""); setGlAccountId("");
       onClose();
     },
     onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
@@ -65,7 +69,7 @@ function QuickAddDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-xs" dir="rtl">
+      <DialogContent className="max-w-sm" dir="rtl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <User className="h-4 w-4" />
@@ -92,6 +96,15 @@ function QuickAddDialog({
               placeholder="اختياري"
               className="h-8 text-sm"
               onKeyDown={(e) => e.key === "Enter" && name.trim() && mutation.mutate()}
+            />
+          </div>
+          <div>
+            <Label className="text-xs mb-1 block">حساب GL في دليل الحسابات</Label>
+            <AccountLookup
+              value={glAccountId}
+              onChange={(item) => setGlAccountId(item?.id ?? "")}
+              placeholder="اختر حساب العميل..."
+              data-testid="lookup-credit-customer-gl-account"
             />
           </div>
           <div className="flex gap-2 justify-end mt-1">

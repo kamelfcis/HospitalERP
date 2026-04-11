@@ -17,6 +17,7 @@ import {
   getCustomerAccountStatement,
   searchCreditCustomers,
   createCreditCustomer,
+  updateCreditCustomerGlAccount,
 } from "../storage/customer-payments-storage";
 
 const createReceiptSchema = z.object({
@@ -102,12 +103,23 @@ export function registerCustomerPaymentRoutes(app: Express) {
   // ── POST /api/credit-customers (quick-add) ────────────────────────────────
   app.post("/api/credit-customers", requireAuth, checkPermission("credit_payment.manage"), async (req, res) => {
     try {
-      const { name, phone, notes, pharmacyId } = req.body;
+      const { name, phone, notes, pharmacyId, glAccountId } = req.body;
       if (!name?.trim()) return res.status(400).json({ message: "الاسم مطلوب" });
       const customer = await createCreditCustomer(
-        name.trim(), phone || null, notes || null, pharmacyId || null
+        name.trim(), phone || null, notes || null, pharmacyId || null, glAccountId || null
       );
       res.status(201).json(customer);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── PATCH /api/credit-customers/:id ─────────────────────────────────────────
+  app.patch("/api/credit-customers/:id", requireAuth, checkPermission("credit_payment.manage"), async (req, res) => {
+    try {
+      const { glAccountId } = req.body;
+      await updateCreditCustomerGlAccount(req.params.id, glAccountId ?? null);
+      res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

@@ -157,15 +157,17 @@ export type ItemConsumable = typeof itemConsumables.$inferSelect;
 
 // ─── Pharmacy Credit Customers — عملاء الآجل ─────────────────────────────────
 export const pharmacyCreditCustomers = pgTable("pharmacy_credit_customers", {
-  id:        varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name:      text("name").notNull(),
-  phone:     varchar("phone", { length: 30 }),
-  notes:     text("notes"),
-  pharmacyId: varchar("pharmacy_id").references(() => pharmacies.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
+  id:          varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name:        text("name").notNull(),
+  phone:       varchar("phone", { length: 30 }),
+  notes:       text("notes"),
+  pharmacyId:  varchar("pharmacy_id").references(() => pharmacies.id),
+  glAccountId: varchar("gl_account_id").references(() => accounts.id),
+  createdAt:   timestamp("created_at").notNull().defaultNow(),
 }, (t) => ({
   nameIdx:     index("idx_pcc_name").on(t.name),
   pharmacyIdx: index("idx_pcc_pharmacy").on(t.pharmacyId),
+  glAcctIdx:   index("idx_pcc_gl_account").on(t.glAccountId),
 }));
 
 export const insertPharmacyCreditCustomerSchema = createInsertSchema(pharmacyCreditCustomers).omit({ id: true, createdAt: true });
