@@ -96,6 +96,22 @@ async function retryPatientInvoice(sourceId: string): Promise<{ ok: boolean; jou
   const glLines = storage.buildPatientInvoiceGLLines(invoiceData, invoiceData.lines || []);
 
   const dynamicAccountOverrides: Record<string, { debitAccountId?: string | null }> = {};
+
+  if (invoiceData.patientType === "cash") {
+    const treasuryRes = await db.execute(sql`
+      SELECT t.gl_account_id
+      FROM patient_invoice_payments p
+      JOIN treasuries t ON t.id = p.treasury_id
+      WHERE p.header_id = ${sourceId} AND p.treasury_id IS NOT NULL
+      ORDER BY p.created_at DESC
+      LIMIT 1
+    `);
+    const treasuryGl = ((treasuryRes as any).rows[0])?.gl_account_id as string | undefined;
+    if (treasuryGl) {
+      dynamicAccountOverrides["cash"] = { debitAccountId: treasuryGl };
+    }
+  }
+
   if ((invoiceData as any).companyId && invoiceData.patientType !== "cash") {
     const compRow = await db.execute(sql`SELECT gl_account_id FROM companies WHERE id = ${(invoiceData as any).companyId} LIMIT 1`);
     const comp = (compRow as any).rows[0];

@@ -34,6 +34,7 @@ import {
   doctors,
   services,
   companies,
+  treasuries,
 } from "@shared/schema";
 import { resolveBusinessClassificationWithMeta } from "@shared/resolve-business-classification";
 import { applyContractCoverage } from "../lib/patient-invoice-coverage";
@@ -515,6 +516,21 @@ export function registerPatientInvoicesRoutes(app: Express) {
                 gl.costCenterId = effectiveCostCenterId;
               }
             }
+          }
+        }
+
+        if ((result as any).patientType === "cash") {
+          const treasuryRes = await db.execute(sql`
+            SELECT t.gl_account_id
+            FROM patient_invoice_payments p
+            JOIN treasuries t ON t.id = p.treasury_id
+            WHERE p.header_id = ${invoiceId} AND p.treasury_id IS NOT NULL
+            ORDER BY p.created_at DESC
+            LIMIT 1
+          `);
+          const treasuryGl = (treasuryRes.rows[0] as Record<string, unknown>)?.gl_account_id as string | undefined;
+          if (treasuryGl) {
+            dynamicAccountOverrides["cash"] = { debitAccountId: treasuryGl };
           }
         }
 

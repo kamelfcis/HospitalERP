@@ -128,12 +128,12 @@ export default function AccountMappings() {
             <div>
               <p className="font-semibold mb-0.5">هيكل القيد: مدين واحد / دائن متعدد</p>
               <p className="text-xs opacity-80 mb-1">
-                <strong>النقدية/الذمم</strong> تحتاج فقط حساب <strong>مدين</strong> (الخزنة أو حساب الذمم).
+                <strong>النقدية</strong>: تُحدد تلقائياً من <strong>حساب GL الخزنة</strong> المستخدمة في السداد.
+                {" "}<strong>الذمم</strong>: تُحدد تلقائياً من <strong>حساب GL شركة التعاقد</strong>.
                 {" "}<strong>الإيرادات</strong> تحتاج فقط حساب <strong>دائن</strong> (حسابات الإيراد المختلفة).
               </p>
               <p className="text-xs opacity-80">
-                لمرضى التعاقد: حساب الذمم يُحدد أولاً من <strong>حساب GL المرتبط بالشركة</strong> في بيانات الشركات.
-                الربط هنا يُستخدم كاحتياطي فقط إذا لم يكن للشركة حساب مخصص.
+                الربط هنا يُستخدم كاحتياطي فقط إذا لم يكن للخزنة أو الشركة حساب GL مخصص.
               </p>
             </div>
           </div>

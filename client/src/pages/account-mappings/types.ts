@@ -291,6 +291,13 @@ export const DYNAMIC_LINE_SPECS: Record<string, Record<string, { debit?: Dynamic
     },
   },
   patient_invoice: {
+    cash: {
+      debit: {
+        label:       "مدين: يُحدد تلقائياً من حساب GL الخزنة",
+        tooltip:     "للمرضى النقديين: حساب النقدية يُحدد تلقائياً من حساب GL المرتبط بالخزنة التي تمت فيها الدفعة. كل خزنة مربوطة بحساب GL مختلف. هذا الحساب يُستخدم كاحتياطي إذا لم تكن الدفعة مربوطة بخزنة.",
+        hasFallback: true,
+      },
+    },
     receivables: {
       debit: {
         label:       "مدين: يُحدد تلقائياً من حساب GL شركة التعاقد",
