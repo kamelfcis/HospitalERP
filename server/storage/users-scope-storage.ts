@@ -1,0 +1,200 @@
+import { db } from "../db";
+import { eq, desc, sql } from "drizzle-orm";
+import {
+  users,
+  userDepartments,
+  userWarehouses,
+  userClinics,
+  userAccountScopes,
+  departments,
+  warehouses,
+  accounts,
+} from "@shared/schema";
+import type {
+  User,
+  Department,
+  Warehouse,
+  Account,
+} from "@shared/schema";
+import type { DatabaseStorage } from "./index";
+
+const methods = {
+  async getUserDepartments(this: DatabaseStorage, userId: string): Promise<Department[]> {
+    const rows = await db.select({ department: departments })
+      .from(userDepartments)
+      .innerJoin(departments, eq(userDepartments.departmentId, departments.id))
+      .where(eq(userDepartments.userId, userId));
+    return rows.map(r => r.department);
+  },
+
+  async setUserDepartments(this: DatabaseStorage, userId: string, departmentIds: string[]): Promise<void> {
+    await db.delete(userDepartments).where(eq(userDepartments.userId, userId));
+    if (departmentIds.length > 0) {
+      await db.insert(userDepartments).values(
+        departmentIds.map(deptId => ({ userId, departmentId: deptId }))
+      );
+    }
+  },
+
+  async getUserWarehouses(this: DatabaseStorage, userId: string): Promise<Warehouse[]> {
+    const rows = await db.select({ warehouse: warehouses })
+      .from(userWarehouses)
+      .innerJoin(warehouses, eq(userWarehouses.warehouseId, warehouses.id))
+      .where(eq(userWarehouses.userId, userId));
+    return rows.map(r => r.warehouse);
+  },
+
+  async setUserWarehouses(this: DatabaseStorage, userId: string, warehouseIds: string[]): Promise<void> {
+    await db.delete(userWarehouses).where(eq(userWarehouses.userId, userId));
+    if (warehouseIds.length > 0) {
+      await db.insert(userWarehouses).values(
+        warehouseIds.map(whId => ({ userId, warehouseId: whId }))
+      );
+    }
+  },
+
+  async getUserClinics(this: DatabaseStorage, userId: string): Promise<string[]> {
+    const rows = await db.select({ clinicId: userClinics.clinicId })
+      .from(userClinics)
+      .where(eq(userClinics.userId, userId));
+    return rows.map(r => r.clinicId);
+  },
+
+  async setUserClinics(this: DatabaseStorage, userId: string, clinicIds: string[]): Promise<void> {
+    await db.delete(userClinics).where(eq(userClinics.userId, userId));
+    if (clinicIds.length > 0) {
+      await db.insert(userClinics).values(
+        clinicIds.map(clinicId => ({ userId, clinicId }))
+      );
+    }
+  },
+
+  async getUserAccountScope(this: DatabaseStorage, userId: string): Promise<string[]> {
+    const rows = await db.select({ accountId: userAccountScopes.accountId })
+      .from(userAccountScopes)
+      .where(eq(userAccountScopes.userId, userId));
+    return rows.map(r => r.accountId);
+  },
+
+  async setUserAccountScope(this: DatabaseStorage, userId: string, accountIds: string[], actorUserId: string): Promise<void> {
+    const uniqueIds = [...new Set(accountIds.filter(id => typeof id === "string" && id.trim() !== ""))];
+    await db.transaction(async (tx) => {
+      await tx.delete(userAccountScopes).where(eq(userAccountScopes.userId, userId));
+      if (uniqueIds.length > 0) {
+        await tx.insert(userAccountScopes).values(
+          uniqueIds.map(accountId => ({ userId, accountId, createdBy: actorUserId }))
+        );
+      }
+    });
+  },
+
+  async getVisibleAccountIds(this: DatabaseStorage, userId: string): Promise<string[] | null> {
+    const user = await this.getUser(userId);
+    if (!user) return null;
+    if (user.role === "admin" || (user.role as string) === "owner") return null;
+    const rows = await db.select({ accountId: userAccountScopes.accountId })
+      .from(userAccountScopes)
+      .where(eq(userAccountScopes.userId, userId));
+    if (rows.length === 0) return null;
+    return rows.map(r => r.accountId);
+  },
+
+  async getUserOperationalScope(this: DatabaseStorage, userId: string): Promise<{ isFullAccess: boolean; allowedPharmacyIds: string[]; allowedDepartmentIds: string[]; allowedClinicIds: string[] }> {
+    const user = await this.getUser(userId);
+    if (!user) return { isFullAccess: false, allowedPharmacyIds: [], allowedDepartmentIds: [], allowedClinicIds: [] };
+
+    if (user.role === "admin" || (user.role as string) === "owner") {
+      return { isFullAccess: true, allowedPharmacyIds: [], allowedDepartmentIds: [], allowedClinicIds: [] };
+    }
+
+    if (user.allCashierUnits) {
+      return { isFullAccess: true, allowedPharmacyIds: [], allowedDepartmentIds: [], allowedClinicIds: [] };
+    }
+
+    const allowedPharmacyIds = user.pharmacyId ? [user.pharmacyId] : [];
+
+    const deptRows = await db.select({ id: userDepartments.departmentId })
+      .from(userDepartments)
+      .where(eq(userDepartments.userId, userId));
+    let allowedDepartmentIds = deptRows.map(r => r.id);
+
+    if (allowedDepartmentIds.length === 0 && user.departmentId) {
+      allowedDepartmentIds = [user.departmentId];
+    }
+
+    const clinicRows = await db.select({ clinicId: userClinics.clinicId })
+      .from(userClinics)
+      .where(eq(userClinics.userId, userId));
+    const allowedClinicIds = clinicRows.map(r => r.clinicId);
+
+    return { isFullAccess: false, allowedPharmacyIds, allowedDepartmentIds, allowedClinicIds };
+  },
+
+  async getChatUsers(this: DatabaseStorage, currentUserId: string): Promise<{ id: string; fullName: string; role: string; unreadCount: number; lastMessage: string | null; lastMessageAt: Date | null }[]> {
+    const rows = await db.execute(sql`
+      SELECT
+        u.id,
+        u.full_name AS "fullName",
+        u.role,
+        COALESCE(unread.cnt, 0)::int AS "unreadCount",
+        lm.body AS "lastMessage",
+        lm.created_at AS "lastMessageAt"
+      FROM users u
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS cnt
+        FROM chat_messages cm
+        WHERE cm.sender_id = u.id AND cm.receiver_id = ${currentUserId} AND cm.read_at IS NULL
+      ) unread ON true
+      LEFT JOIN LATERAL (
+        SELECT body, created_at
+        FROM chat_messages cm2
+        WHERE (cm2.sender_id = u.id AND cm2.receiver_id = ${currentUserId})
+           OR (cm2.sender_id = ${currentUserId} AND cm2.receiver_id = u.id)
+        ORDER BY cm2.created_at DESC
+        LIMIT 1
+      ) lm ON true
+      WHERE u.id != ${currentUserId} AND u.is_active = true
+      ORDER BY lm.created_at DESC NULLS LAST, u.full_name
+    `);
+    return rows.rows as any[];
+  },
+
+  async getChatConversation(this: DatabaseStorage, userAId: string, userBId: string, limit = 100): Promise<any[]> {
+    const rows = await db.execute(sql`
+      SELECT id, sender_id AS "senderId", receiver_id AS "receiverId", body, read_at AS "readAt", created_at AS "createdAt"
+      FROM chat_messages
+      WHERE (sender_id = ${userAId} AND receiver_id = ${userBId})
+         OR (sender_id = ${userBId} AND receiver_id = ${userAId})
+      ORDER BY created_at ASC
+      LIMIT ${limit}
+    `);
+    return rows.rows as any[];
+  },
+
+  async sendChatMessage(this: DatabaseStorage, senderId: string, receiverId: string, body: string): Promise<any> {
+    const rows = await db.execute(sql`
+      INSERT INTO chat_messages (sender_id, receiver_id, body)
+      VALUES (${senderId}, ${receiverId}, ${body})
+      RETURNING id, sender_id AS "senderId", receiver_id AS "receiverId", body, read_at AS "readAt", created_at AS "createdAt"
+    `);
+    return rows.rows[0] as any;
+  },
+
+  async markChatRead(this: DatabaseStorage, senderId: string, currentUserId: string): Promise<void> {
+    await db.execute(sql`
+      UPDATE chat_messages
+      SET read_at = now()
+      WHERE sender_id = ${senderId} AND receiver_id = ${currentUserId} AND read_at IS NULL
+    `);
+  },
+
+  async getChatUnreadCount(this: DatabaseStorage, userId: string): Promise<number> {
+    const rows = await db.execute(sql`
+      SELECT COUNT(*)::int AS cnt FROM chat_messages
+      WHERE receiver_id = ${userId} AND read_at IS NULL
+    `);
+    return (rows.rows[0] as any)?.cnt ?? 0;
+  },
+};
+
+export default methods;
