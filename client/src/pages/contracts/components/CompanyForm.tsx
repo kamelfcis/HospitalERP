@@ -19,6 +19,7 @@ import {
   Form, FormControl, FormField, FormItem, FormLabel, FormMessage,
 } from "@/components/ui/form";
 import { Loader2 } from "lucide-react";
+import { AccountLookup } from "@/components/lookups";
 
 const companyFormSchema = insertCompanySchema.extend({
   code:        z.string().min(1, "الكود مطلوب").max(30, "الكود لا يتجاوز 30 حرفاً"),
@@ -50,6 +51,7 @@ export function CompanyForm({ open, onOpenChange, editing }: Props) {
       notes:         editing?.notes         ?? "",
       defaultPaymentTermsDays: editing?.defaultPaymentTermsDays ?? undefined,
       creditLimit:   editing?.creditLimit   ?? undefined,
+      glAccountId:   editing?.glAccountId   ?? "",
       isActive:      editing?.isActive      ?? true,
     },
   });
@@ -171,6 +173,21 @@ export function CompanyForm({ open, onOpenChange, editing }: Props) {
                 </FormItem>
               )} />
             </div>
+
+            <FormField control={form.control} name="glAccountId" render={({ field }) => (
+              <FormItem>
+                <FormLabel>حساب GL في دليل الحسابات</FormLabel>
+                <FormControl>
+                  <AccountLookup
+                    value={field.value ?? ""}
+                    onChange={(item) => field.onChange(item?.id ?? "")}
+                    placeholder="اختر حساب الشركة في الدليل..."
+                    data-testid="lookup-company-gl-account"
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
 
             <FormField control={form.control} name="address" render={({ field }) => (
               <FormItem>
