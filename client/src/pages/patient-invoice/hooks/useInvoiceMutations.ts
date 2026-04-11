@@ -178,8 +178,17 @@ export function useInvoiceMutations({
     mutationFn: async () => {
       const error = validateFinalize({ invoiceId, lines });
       if (error) throw new Error(error);
+
       const payload = buildPayload(false, "");
-      await callSaveApi(payload);
+      try {
+        await callSaveApi(payload);
+      } catch (saveErr) {
+        const msg = saveErr instanceof Error ? saveErr.message : String(saveErr);
+        throw new Error(`فشل الحفظ قبل الاعتماد: ${msg}`);
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ["/api/patient-invoices", invoiceId] });
+
       const res = await apiRequest("POST", `/api/patient-invoices/${invoiceId}/finalize`);
       return res.json();
     },
