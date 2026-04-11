@@ -918,7 +918,7 @@ import {
 } from "./transfers-storage";
 import { purchasingReceivingsMethods, purchasingInvoicesMethods, purchasingInvoicesJournalMethods } from "./purchasing-storage";
 import servicesMethods from "./services-storage";
-import { salesInvoicesCoreMethods, salesInvoicesFinalizeMethods } from "./sales-invoices-storage";
+import { salesInvoicesQueryMethods, salesInvoicesMutationMethods, salesInvoicesFinalizeMethods } from "./sales-invoices-storage";
 import salesJournalMethods from "./sales-journal-storage";
 import { patientInvoicesCoreMethods, patientInvoicesDistributionMethods, patientInvoicesReturnsMethods } from "./patient-invoices-storage";
 import cashierMethods from "./cashier-storage";
@@ -956,7 +956,8 @@ Object.assign(
   purchasingInvoicesMethods,
   purchasingInvoicesJournalMethods,
   servicesMethods,
-  salesInvoicesCoreMethods,
+  salesInvoicesQueryMethods,
+  salesInvoicesMutationMethods,
   salesInvoicesFinalizeMethods,
   salesJournalMethods,
   patientInvoicesCoreMethods,
