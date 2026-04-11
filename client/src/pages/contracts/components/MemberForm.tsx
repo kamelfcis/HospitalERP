@@ -1,4 +1,5 @@
 import { useForm } from "react-hook-form";
+import { useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation } from "@tanstack/react-query";
@@ -60,6 +61,25 @@ export function MemberForm({ open, onOpenChange, contractId, editing }: Props) {
       notes:            editing?.notes            ?? "",
     },
   });
+
+  useEffect(() => {
+    if (open) {
+      form.reset({
+        contractId,
+        memberCardNumber: editing?.memberCardNumber ?? "",
+        memberNameAr:     editing?.memberNameAr     ?? "",
+        memberNameEn:     editing?.memberNameEn     ?? "",
+        employeeNumber:   editing?.employeeNumber   ?? "",
+        nationalId:       editing?.nationalId       ?? "",
+        relationType:     editing?.relationType     ?? "primary",
+        memberClass:      editing?.memberClass      ?? "",
+        startDate:        editing?.startDate        ?? today(),
+        endDate:          editing?.endDate          ?? oneYearLater(),
+        isActive:         editing?.isActive         ?? true,
+        notes:            editing?.notes            ?? "",
+      });
+    }
+  }, [open, editing]);
 
   const mutation = useMutation({
     mutationFn: (data: MemberFormValues) =>

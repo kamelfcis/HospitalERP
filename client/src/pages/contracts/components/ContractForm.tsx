@@ -1,4 +1,5 @@
 import { useForm } from "react-hook-form";
+import { useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -62,6 +63,22 @@ export function ContractForm({ open, onOpenChange, companyId, editing }: Props) 
       basePriceListId:    (editing as any)?.basePriceListId ?? null,
     },
   });
+
+  useEffect(() => {
+    if (open) {
+      form.reset({
+        companyId,
+        contractNumber:     editing?.contractNumber     ?? "",
+        contractName:       editing?.contractName       ?? "",
+        companyCoveragePct: editing?.companyCoveragePct ?? "100",
+        startDate:          editing?.startDate          ?? today(),
+        endDate:            editing?.endDate            ?? oneYearLater(),
+        isActive:           editing?.isActive           ?? true,
+        notes:              editing?.notes              ?? "",
+        basePriceListId:    (editing as any)?.basePriceListId ?? null,
+      });
+    }
+  }, [open, editing]);
 
   const mutation = useMutation({
     mutationFn: (data: ContractFormValues) =>

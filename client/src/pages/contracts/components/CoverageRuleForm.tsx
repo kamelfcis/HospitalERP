@@ -1,4 +1,5 @@
 import { useForm } from "react-hook-form";
+import { useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -99,6 +100,26 @@ export function CoverageRuleForm({ open, onOpenChange, contractId, editing }: Pr
   const showDiscount   = ["discount_pct", "global_discount"].includes(ruleType);
   const showFixedPrice = ruleType === "fixed_price";
   const showOptionalScope = ["discount_pct", "fixed_price", "approval_required"].includes(ruleType);
+
+  useEffect(() => {
+    if (open) {
+      form.reset({
+        contractId,
+        ruleName:        editing?.ruleName        ?? "",
+        ruleType:        editing?.ruleType        ?? "global_discount",
+        serviceId:       editing?.serviceId       ?? "",
+        departmentId:    editing?.departmentId    ?? "",
+        serviceCategory: editing?.serviceCategory ?? "",
+        itemId:          (editing as any)?.itemId          ?? "",
+        itemCategory:    (editing as any)?.itemCategory    ?? "",
+        discountPct:     editing?.discountPct     ?? null,
+        fixedPrice:      editing?.fixedPrice      ?? null,
+        priority:        editing?.priority        ?? 10,
+        isActive:        editing?.isActive        ?? true,
+        notes:           editing?.notes           ?? "",
+      });
+    }
+  }, [open, editing]);
 
   const mutation = useMutation({
     mutationFn: (data: RuleFormValues) =>

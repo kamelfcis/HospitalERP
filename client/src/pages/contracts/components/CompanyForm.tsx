@@ -1,4 +1,5 @@
 import { useForm } from "react-hook-form";
+import { useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation } from "@tanstack/react-query";
@@ -55,6 +56,26 @@ export function CompanyForm({ open, onOpenChange, editing }: Props) {
       isActive:      editing?.isActive      ?? true,
     },
   });
+
+  useEffect(() => {
+    if (open) {
+      form.reset({
+        code:          editing?.code          ?? "",
+        nameAr:        editing?.nameAr        ?? "",
+        nameEn:        editing?.nameEn        ?? "",
+        companyType:   editing?.companyType   ?? "contract",
+        phone:         editing?.phone         ?? "",
+        email:         editing?.email         ?? "",
+        address:       editing?.address       ?? "",
+        taxId:         editing?.taxId         ?? "",
+        notes:         editing?.notes         ?? "",
+        defaultPaymentTermsDays: editing?.defaultPaymentTermsDays ?? undefined,
+        creditLimit:   editing?.creditLimit   ?? undefined,
+        glAccountId:   editing?.glAccountId   ?? "",
+        isActive:      editing?.isActive      ?? true,
+      });
+    }
+  }, [open, editing]);
 
   const mutation = useMutation({
     mutationFn: (data: CompanyFormValues) =>
