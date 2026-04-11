@@ -95,7 +95,7 @@ export async function logAcctEvent(params: AcctEventParams): Promise<string | nu
           next_retry_at    = CASE
                                WHEN accounting_event_log.status = 'completed' THEN NULL
                                WHEN EXCLUDED.status IN ('failed', 'needs_retry')
-                                 THEN NOW() + (POWER(2, accounting_event_log.attempt_count + 1)::int * INTERVAL '1 minute')
+                                 THEN NOW() + (POWER(2, LEAST(accounting_event_log.attempt_count + 1, 20))::int * INTERVAL '1 minute')
                                ELSE NULL
                              END,
           attempt_count    = accounting_event_log.attempt_count + 1,
@@ -146,7 +146,7 @@ export async function updateAcctEvent(
            journal_entry_id = COALESCE(${opts?.journalEntryId ?? null}, journal_entry_id),
            next_retry_at    = CASE
                                 WHEN ${status} IN ('failed', 'needs_retry')
-                                  THEN NOW() + (POWER(2, attempt_count + 1)::int * INTERVAL '1 minute')
+                                  THEN NOW() + (POWER(2, LEAST(attempt_count + 1, 20))::int * INTERVAL '1 minute')
                                 ELSE NULL
                               END,
            attempt_count    = attempt_count + 1,

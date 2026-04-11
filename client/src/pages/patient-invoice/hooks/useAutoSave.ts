@@ -135,12 +135,13 @@ export function useAutoSave(params: UseAutoSaveParams) {
   const [autoSaveStatus, setAutoSaveStatus] = useState<AutoSaveStatus>("idle");
   const lastSavedDataRef = useRef<string>("");
   const timerRef         = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savingRef        = useRef(false);
   const paramsRef        = useRef(params);
   paramsRef.current      = params;
 
   const performAutoSave = useCallback(async () => {
+    if (savingRef.current) return;
     const p = paramsRef.current;
-    // شرط الاكتمال: اسم المريض + المخزن + القسم
     if (!canAutoSave(p)) return;
 
     let payload: ReturnType<typeof buildAutoSavePayload>;
@@ -149,6 +150,7 @@ export function useAutoSave(params: UseAutoSaveParams) {
     const dataKey = JSON.stringify(payload);
     if (dataKey === lastSavedDataRef.current) return;
 
+    savingRef.current = true;
     setAutoSaveStatus("saving");
     try {
       const url    = p.invoiceId ? `/api/patient-invoices/${p.invoiceId}` : "/api/patient-invoices";
@@ -170,6 +172,8 @@ export function useAutoSave(params: UseAutoSaveParams) {
       }
     } catch {
       setAutoSaveStatus("error");
+    } finally {
+      savingRef.current = false;
     }
   }, []);
 

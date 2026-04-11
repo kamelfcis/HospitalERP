@@ -173,7 +173,7 @@ export function registerAccountingEventRoutes(app: Express) {
           await db.execute(sql`
             UPDATE accounting_event_log
             SET error_message = ${errorMsg},
-                next_retry_at = NOW() + (POWER(2, attempt_count + 1)::int * INTERVAL '1 minute'),
+                next_retry_at = NOW() + (POWER(2, LEAST(attempt_count + 1, 20))::int * INTERVAL '1 minute'),
                 attempt_count = attempt_count + 1,
                 last_attempted_at = NOW(), updated_at = NOW()
             WHERE id = ${id}
