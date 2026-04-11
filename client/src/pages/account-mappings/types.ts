@@ -289,6 +289,15 @@ export const DYNAMIC_LINE_SPECS: Record<string, Record<string, { debit?: Dynamic
       },
     },
   },
+  patient_invoice: {
+    receivables: {
+      debit: {
+        label:       "مدين: يُحدد تلقائياً من حساب GL شركة التعاقد",
+        tooltip:     "لمرضى التعاقد: حساب الذمم يُحدد تلقائياً من حساب GL المرتبط بشركة التعاقد في بيانات الشركات. كل شركة مربوطة بحساب ذمم مختلف. هذا الحساب يُستخدم كاحتياطي إذا لم يكن للشركة حساب GL مخصص.",
+        hasFallback: true,
+      },
+    },
+  },
   stock_count_adjustment: {
     // Surplus: Dr side is the warehouse GL account (resolved from session warehouse)
     stock_gain: {

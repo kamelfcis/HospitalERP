@@ -33,6 +33,7 @@ import {
   patientInvoiceLines,
   doctors,
   services,
+  companies,
 } from "@shared/schema";
 import { resolveBusinessClassificationWithMeta } from "@shared/resolve-business-classification";
 import { applyContractCoverage } from "../lib/patient-invoice-coverage";
@@ -514,6 +515,14 @@ export function registerPatientInvoicesRoutes(app: Express) {
                 gl.costCenterId = effectiveCostCenterId;
               }
             }
+          }
+        }
+
+        if ((result as any).companyId && (result as any).patientType !== "cash") {
+          const [comp] = await db.select({ glAccountId: companies.glAccountId })
+            .from(companies).where(eq(companies.id, (result as any).companyId)).limit(1);
+          if (comp?.glAccountId) {
+            dynamicAccountOverrides["receivables"] = { debitAccountId: comp.glAccountId };
           }
         }
 
