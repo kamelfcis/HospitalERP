@@ -94,13 +94,24 @@ async function retryPatientInvoice(sourceId: string): Promise<{ ok: boolean; jou
   if (!invoiceData) throw new Error("بيانات فاتورة المريض غير موجودة");
 
   const glLines = storage.buildPatientInvoiceGLLines(invoiceData, invoiceData.lines || []);
-  const entry = await storage.generateJournalEntry({
-    sourceType:       "patient_invoice",
+
+  const dynamicAccountOverrides: Record<string, { debitAccountId?: string | null }> = {};
+  if ((invoiceData as any).companyId && invoiceData.patientType !== "cash") {
+    const compRow = await db.execute(sql`SELECT gl_account_id FROM companies WHERE id = ${(invoiceData as any).companyId} LIMIT 1`);
+    const comp = (compRow as any).rows[0];
+    if (comp?.gl_account_id) {
+      dynamicAccountOverrides["receivables"] = { debitAccountId: comp.gl_account_id };
+    }
+  }
+
+  const entry = await storage.generatePatientInvoiceJournal({
     sourceDocumentId: sourceId,
     reference:        `PI-${invoiceData.invoiceNumber}`,
     description:      `قيد فاتورة مريض رقم ${invoiceData.invoiceNumber}`,
     entryDate:        invoiceData.invoiceDate,
     lines:            glLines,
+    departmentId:     (invoiceData as any).departmentId || null,
+    ...(Object.keys(dynamicAccountOverrides).length > 0 ? { dynamicAccountOverrides } : {}),
   });
   if (entry) return { ok: true, journalEntryId: entry.id };
   throw new Error("لم يُنشأ قيد — راجع ربط الحسابات");

@@ -893,6 +893,15 @@ export interface DatabaseStorage extends IStorage {
   completeSalesReturnWithCash(invoiceIds: string[], cashGlAccountId: string | null): Promise<void>;
   createCashierCollectionJournals(invoiceIds: string[], cashGlAccountOverride: string | null, pharmacyId: string): Promise<void>;
   generatePurchaseInvoiceJournal(invoiceId: string, invoice: PurchaseInvoiceHeader): Promise<JournalEntry | null>;
+  generatePatientInvoiceJournal(params: {
+    sourceDocumentId: string;
+    reference: string;
+    description: string;
+    entryDate: string;
+    lines: { lineType: string; amount: string; costCenterId?: string | null }[];
+    departmentId?: string | null;
+    dynamicAccountOverrides?: Record<string, { debitAccountId?: string | null; creditAccountId?: string | null }>;
+  }): Promise<JournalEntry | null>;
   getMappingsForTransaction(sourceType: string, warehouseId?: string | null, pharmacyId?: string | null, departmentId?: string | null): Promise<AccountMapping[]>;
   getNextEntryNumber(): Promise<number>;
   getNextSalesInvoiceNumber(): Promise<number>;

@@ -530,8 +530,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
         await db.update(patientInvoiceHeaders).set({ journalStatus: "pending", updatedAt: new Date() }).where(eq(patientInvoiceHeaders.id, invoiceId));
         await logAcctEvent({ sourceType: "patient_invoice", sourceId: invoiceId, eventType: "patient_invoice_journal", status: "pending" });
 
-        storage.generateJournalEntry({
-          sourceType: "patient_invoice",
+        storage.generatePatientInvoiceJournal({
           sourceDocumentId: invoiceId,
           reference: `PI-${result.invoiceNumber}`,
           description: `قيد فاتورة مريض رقم ${result.invoiceNumber} - ${result.patientName}`,
@@ -544,7 +543,6 @@ export function registerPatientInvoicesRoutes(app: Express) {
             await db.update(patientInvoiceHeaders).set({ journalStatus: "posted", journalError: null, updatedAt: new Date() }).where(eq(patientInvoiceHeaders.id, invoiceId));
             logAcctEvent({ sourceType: "patient_invoice", sourceId: invoiceId, eventType: "patient_invoice_journal", status: "completed", journalEntryId: entry.id }).catch(() => {});
           } else {
-            // generateJournalEntry returned null → mappings missing/skipped (already logged inside generateJournalEntry)
             await db.update(patientInvoiceHeaders).set({ journalStatus: "needs_retry", journalError: "ربط الحسابات غير مكتمل — راجع /account-mappings", updatedAt: new Date() }).where(eq(patientInvoiceHeaders.id, invoiceId));
           }
         }).catch(async (err: any) => {

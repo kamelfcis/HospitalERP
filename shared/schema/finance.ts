@@ -349,6 +349,7 @@ export const mappingLineTypeLabels: Record<string, string> = {
   receivables:          "ذمم مدينة",
   revenue_services:     "إيراد خدمات",
   revenue_equipment:    "إيراد معدات",
+  doctor_cost:          "تكلفة طبيب",
   // Receiving
   payable:              "ذمم دائنة",
   // Cashier

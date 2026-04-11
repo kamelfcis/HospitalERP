@@ -45,12 +45,13 @@ export const lineTypeSpecs: Record<string, Record<string, LineTypeSpec>> = {
     pharmacy_contract_receivable: { required: "cond", condition: "ذمة نصيب الشركة في فواتير التعاقد — حساب أصل (مدين عند البيع)", debitSide: true, creditSide: true },
   },
   patient_invoice: {
-    cash:                { required: "cond", condition: "للمرضى النقديين",          debitSide: true, creditSide: true },
-    receivables:         { required: "cond", condition: "للمرضى الآجلين",           debitSide: true, creditSide: true },
-    revenue_services:    { required: "cond", condition: "عند وجود خدمات",           debitSide: true, creditSide: true },
-    revenue_drugs:       { required: "cond", condition: "عند وجود أدوية",           debitSide: true, creditSide: true },
-    revenue_consumables: { required: "cond", condition: "عند وجود مستلزمات",        debitSide: true, creditSide: true },
-    revenue_equipment:   { required: "cond", condition: "عند وجود معدات",           debitSide: true, creditSide: true },
+    cash:                { required: "cond", condition: "للمرضى النقديين — حساب الخزنة أو النقدية",    debitSide: true,  creditSide: false },
+    receivables:         { required: "cond", condition: "للمرضى الآجلين/التعاقد — حساب الذمم",         debitSide: true,  creditSide: false },
+    revenue_services:    { required: "cond", condition: "عند وجود خدمات",                              debitSide: false, creditSide: true },
+    revenue_drugs:       { required: "cond", condition: "عند وجود أدوية",                              debitSide: false, creditSide: true },
+    revenue_consumables: { required: "cond", condition: "عند وجود مستلزمات",                           debitSide: false, creditSide: true },
+    revenue_equipment:   { required: "cond", condition: "عند وجود معدات",                              debitSide: false, creditSide: true },
+    doctor_cost:         { required: "cond", condition: "عند وجود تكلفة طبيب — مصروف مدين / مستحقات دائن", debitSide: true, creditSide: true },
   },
   receiving: {
     inventory: { required: true, debitSide: true, creditSide: true },
@@ -190,7 +191,7 @@ export const lineTypeSpecs: Record<string, Record<string, LineTypeSpec>> = {
 export const suggestedLineTypes: Record<string, string[]> = {
   sales_invoice:             ["receivables", "receivables_credit", "revenue_drugs", "revenue_consumables", "revenue_general", "cogs_drugs", "cogs_supplies", "discount_allowed", "vat_output", "pharmacy_patient_receivable", "pharmacy_contract_receivable"],
   sales_return:              ["receivables", "revenue_drugs", "revenue_consumables", "revenue_general", "cogs_drugs", "cogs_supplies", "inventory"],
-  patient_invoice:           ["cash", "receivables", "revenue_services", "revenue_drugs", "revenue_consumables", "revenue_equipment"],
+  patient_invoice:           ["cash", "receivables", "revenue_services", "revenue_drugs", "revenue_consumables", "revenue_equipment", "doctor_cost"],
   receiving:                 ["inventory", "payables"],
   purchase_invoice:          ["inventory", "vat_input", "discount_earned", "payables_drugs", "payables_consumables"],
   cashier_collection:        ["cash"],

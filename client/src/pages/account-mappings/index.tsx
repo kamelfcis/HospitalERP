@@ -123,11 +123,14 @@ export default function AccountMappings() {
           <div className="mx-4 mb-3 flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-800 dark:text-amber-200" dir="rtl">
             <Info className="h-4 w-4 mt-0.5 shrink-0" />
             <div>
-              <p className="font-semibold mb-0.5">ملاحظة: حساب الذمم يُحدد تلقائياً من بيانات شركة التعاقد</p>
+              <p className="font-semibold mb-0.5">هيكل القيد: مدين واحد / دائن متعدد</p>
+              <p className="text-xs opacity-80 mb-1">
+                <strong>النقدية/الذمم</strong> تحتاج فقط حساب <strong>مدين</strong> (الخزنة أو حساب الذمم).
+                {" "}<strong>الإيرادات</strong> تحتاج فقط حساب <strong>دائن</strong> (حسابات الإيراد المختلفة).
+              </p>
               <p className="text-xs opacity-80">
-                لمرضى التعاقد: حساب الذمم (المدين) يُحدد أولاً من <strong>حساب GL المرتبط بالشركة</strong> في شاشة بيانات الشركات.
-                كل شركة يمكن ربطها بحساب ذمم مختلف (مثلاً: ذمم حضانة، ذمم تكافل).
-                الربط هنا يُستخدم فقط كاحتياطي إذا لم يكن للشركة حساب مخصص.
+                لمرضى التعاقد: حساب الذمم يُحدد أولاً من <strong>حساب GL المرتبط بالشركة</strong> في بيانات الشركات.
+                الربط هنا يُستخدم كاحتياطي فقط إذا لم يكن للشركة حساب مخصص.
               </p>
             </div>
           </div>
