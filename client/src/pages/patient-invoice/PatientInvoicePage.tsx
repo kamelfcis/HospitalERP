@@ -575,6 +575,7 @@ export default function PatientInvoice() {
             canDiscount={canDiscount}
             onOpenDiscountDialog={() => setShowDiscountDialog(true)}
             applyTemplate={lm.applyTemplate}
+            onBack={() => { resetAll(); setMainTab("admission"); }}
           />
         </TabsContent>
 

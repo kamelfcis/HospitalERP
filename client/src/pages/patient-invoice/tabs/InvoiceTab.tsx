@@ -155,6 +155,7 @@ interface InvoiceTabProps {
   applyTemplate?: (templateId: string, opts?: { replaceExisting?: boolean }) => Promise<void>;
 
   warehouseIdForSearch?: string;
+  onBack?: () => void;
 }
 
 export function InvoiceTab({
@@ -190,6 +191,7 @@ export function InvoiceTab({
   getStatusBadgeClass, getServiceRowClass,
   canDiscount, onOpenDiscountDialog,
   applyTemplate,
+  onBack,
 }: InvoiceTabProps) {
   const [localDtDoctorId, setLocalDtDoctorId] = useState("");
   const { toast } = useToast();
@@ -252,6 +254,7 @@ export function InvoiceTab({
         finalizeMutation={finalizeMutation}
         autoSaveStatus={autoSaveStatus}
         getStatusBadgeClass={getStatusBadgeClass}
+        onBack={onBack}
       />
 
       <div className="border rounded-md p-2">
