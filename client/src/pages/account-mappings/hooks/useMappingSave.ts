@@ -26,24 +26,31 @@ export function useMappingSave(data: UseMappingRowsResult): UseMappingSaveResult
     },
     onSuccess: (savedRows) => {
       const txType = data.selectedTxType;
+      const deptId = data.selectedDepartmentId === "__generic__" ? null : (data.selectedDepartmentId || null);
+      const whId   = data.selectedWarehouseId  === "__generic__" ? null : (data.selectedWarehouseId  || null);
+      const phId   = data.selectedPharmacyId   === "__generic__" ? null : (data.selectedPharmacyId   || null);
 
+      // Update the query cache with the saved rows merged into the existing data.
+      // clearChanges() then releases the hasChanges guard so the row-rebuild effect
+      // fires and rebuilds from the updated mappings — correctly showing the new data.
       queryClient.setQueryData(
         ["/api/account-mappings", txType],
         (old: AccountMapping[] | undefined) => {
           if (!old) return savedRows;
-          const deptId = data.selectedDepartmentId === "__generic__" ? null : (data.selectedDepartmentId || null);
-          const whId   = data.selectedWarehouseId  === "__generic__" ? null : (data.selectedWarehouseId || null);
-          const phId   = data.selectedPharmacyId   === "__generic__" ? null : (data.selectedPharmacyId || null);
+          // Keep rows from OTHER scopes; replace the current scope's rows with savedRows
           const kept = old.filter(m => {
             return (m.departmentId ?? null) !== deptId ||
-                   (m.warehouseId ?? null)  !== whId  ||
-                   (m.pharmacyId ?? null)   !== phId;
+                   (m.warehouseId  ?? null) !== whId  ||
+                   (m.pharmacyId   ?? null) !== phId;
           });
           return [...kept, ...savedRows];
         }
       );
 
-      data.applyServerData(savedRows);
+      // Clear the hasChanges flag — this unblocks the row-rebuild useEffect.
+      // The effect will immediately rebuild from the updated mappings above.
+      data.clearChanges();
+
       toast({ title: "تم حفظ إعدادات ربط الحسابات بنجاح" });
     },
     onError: (error: Error) =>

@@ -61,7 +61,7 @@ export interface UseMappingRowsResult {
   addRow:    () => void;
   removeRow: (key: string) => void;
   resetChanges: () => void;
-  applyServerData: (savedRows: AccountMapping[]) => void;
+  clearChanges: () => void;
 }
 
 function buildRows(
@@ -130,7 +130,6 @@ export function useMappingRows(): UseMappingRowsResult {
   const [hasChanges, setHasChanges] = useState(false);
   const keyCounter = useRef(0);
   const prevFilterRef = useRef({ selectedTxType, selectedWarehouseId, selectedPharmacyId, selectedDepartmentId });
-  const saveLockRef = useRef(false);
 
   const { data: warehouses = [] } = useQuery<Warehouse[]>({
     queryKey: ["/api/warehouses"],
@@ -197,7 +196,6 @@ export function useMappingRows(): UseMappingRowsResult {
 
   useEffect(() => {
     if (mappingsLoading) return;
-    if (saveLockRef.current) return;
 
     const prev = prevFilterRef.current;
     const filterChanged =
@@ -207,6 +205,8 @@ export function useMappingRows(): UseMappingRowsResult {
       prev.selectedDepartmentId  !== selectedDepartmentId;
     prevFilterRef.current = { selectedTxType, selectedWarehouseId, selectedPharmacyId, selectedDepartmentId };
 
+    // Only block rebuild if user is actively editing (hasChanges) AND nothing changed in the filter
+    // We do NOT block if filter changed (scope switch) or if hasChanges was explicitly cleared (after save)
     if (!filterChanged && hasChanges) {
       return;
     }
@@ -220,19 +220,12 @@ export function useMappingRows(): UseMappingRowsResult {
     if (filterChanged) setHasChanges(false);
   }, [mappings, mappingsLoading, selectedTxType, selectedWarehouseId, selectedPharmacyId, selectedDepartmentId, hasChanges]);
 
-  const applyServerData = useCallback((savedRows: AccountMapping[]) => {
-    saveLockRef.current = true;
-
-    const effectiveDeptId = selectedDepartmentId === "__generic__" ? null : selectedDepartmentId;
-    const effectiveWhId   = selectedWarehouseId  === "__generic__" ? null : selectedWarehouseId;
-    const effectivePhId   = selectedPharmacyId   === "__generic__" ? null : selectedPharmacyId;
-
-    const newRows = buildRows(savedRows, selectedTxType, effectiveDeptId, effectiveWhId, effectivePhId, keyCounter);
-    setRows(newRows);
+  // clearChanges: called after a successful save to unblock the row-rebuild effect.
+  // setQueryData in useMappingSave updates `mappings` with fresh server data.
+  // When hasChanges goes false, the useEffect rebuilds rows from the updated mappings.
+  const clearChanges = useCallback(() => {
     setHasChanges(false);
-
-    setTimeout(() => { saveLockRef.current = false; }, 3000);
-  }, [selectedTxType, selectedDepartmentId, selectedWarehouseId, selectedPharmacyId]);
+  }, []);
 
   const updateRow = (key: string, field: keyof MappingRow, value: string) => {
     setRows(prev => prev.map(r => {
@@ -262,7 +255,7 @@ export function useMappingRows(): UseMappingRowsResult {
     setHasChanges(true);
   };
 
-  const resetChanges = () => setHasChanges(false);
+  const resetChanges = () => { setHasChanges(false); };
 
   const txSpecs               = lineTypeSpecs[selectedTxType] ?? {};
   const usedLineTypes         = new Set(rows.map(r => r.lineType));
@@ -289,6 +282,6 @@ export function useMappingRows(): UseMappingRowsResult {
     showWarehouseSelector, showPharmacySelector, showDepartmentSelector,
     requiredMissing, conditionalMissing, configured, setupComplete,
     warehouses, pharmacies, departments,
-    updateRow, addRow, removeRow, resetChanges, applyServerData,
+    updateRow, addRow, removeRow, resetChanges, clearChanges,
   };
 }
