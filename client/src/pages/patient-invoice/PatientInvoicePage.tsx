@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,7 @@ interface MemberResolved {
 
 export default function PatientInvoice() {
   const { toast }        = useToast();
+  const [, navigate]     = useLocation();
   const { hasPermission, user, allowedDepartmentIds, allowedWarehouseIds } = useAuth();
   const canDiscount      = hasPermission("patient_invoices.discount");
 
@@ -575,7 +577,7 @@ export default function PatientInvoice() {
             canDiscount={canDiscount}
             onOpenDiscountDialog={() => setShowDiscountDialog(true)}
             applyTemplate={lm.applyTemplate}
-            onBack={() => { resetAll(); setMainTab("admission"); }}
+            onBack={() => navigate("/patients")}
           />
         </TabsContent>
 
