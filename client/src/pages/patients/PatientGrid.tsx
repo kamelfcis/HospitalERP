@@ -6,13 +6,17 @@ import { formatNumber } from "@/lib/formatters";
 import { AmountCell, PatientTypeBadge, InvoiceStatusBadge, TotalsRow } from "./PatientCells";
 import type { PatientGridProps, PatientRowProps } from "./types";
 
+const IDX_W = 32;
+const NAME_W = 180;
+const FROZEN_W = IDX_W + NAME_W;
+
 function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, canAdmit, onEdit, onDelete, onOpenInvoice, onViewFile }: PatientRowProps) {
   const rowClass = `peachtree-grid-row${dimmed ? " opacity-50" : ""}`;
 
   return (
     <tr className={rowClass} data-testid={`row-patient-${p.id}`}>
-      <td className="text-center text-muted-foreground whitespace-nowrap" style={{ width: 36 }}>{index}</td>
-      <td className="font-medium whitespace-nowrap px-3" data-testid={`text-name-${p.id}`}>{p.fullName}</td>
+      <td className="sticky-col-right text-center text-muted-foreground whitespace-nowrap px-1" style={{ right: NAME_W, width: IDX_W }}>{index}</td>
+      <td className="sticky-col-right sticky-name-shadow font-medium whitespace-nowrap px-3 overflow-hidden text-ellipsis" style={{ right: 0, width: NAME_W, maxWidth: NAME_W }} data-testid={`text-name-${p.id}`}>{p.fullName}</td>
       <td className="text-muted-foreground whitespace-nowrap px-3" data-testid={`text-doctor-${p.id}`}>{p.latestDoctorName || "—"}</td>
       <td className="font-mono whitespace-nowrap px-3" data-testid={`text-phone-${p.id}`}>{p.phone || "—"}</td>
       <td className="font-mono whitespace-nowrap px-3 text-muted-foreground" data-testid={`text-national-id-${p.id}`}>{p.nationalId || "—"}</td>
@@ -152,8 +156,8 @@ export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInv
 
           <thead className="peachtree-grid-header sticky top-0 z-20">
             <tr>
-              <th className="text-center whitespace-nowrap" style={{ width: 36 }}>#</th>
-              <th className="text-right whitespace-nowrap px-3">الاسم</th>
+              <th className="sticky-header-right text-center whitespace-nowrap px-1" style={{ right: NAME_W, width: IDX_W }}>#</th>
+              <th className="sticky-header-right sticky-header-name-shadow text-right whitespace-nowrap px-3" style={{ right: 0, width: NAME_W }}>الاسم</th>
               <th className="text-right whitespace-nowrap px-3">الطبيب</th>
               <th className="text-right whitespace-nowrap px-3">التليفون</th>
               <th className="text-right whitespace-nowrap px-3">الرقم القومي</th>

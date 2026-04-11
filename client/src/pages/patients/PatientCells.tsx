@@ -2,6 +2,9 @@ import { Badge } from "@/components/ui/badge";
 import { formatNumber } from "@/lib/formatters";
 import type { PatientStats } from "./types";
 
+const IDX_W = 32;
+const NAME_W = 180;
+
 export function AmountCell({ value }: { value: number }) {
   if (!value || +value === 0) {
     return <td className="text-center text-muted-foreground whitespace-nowrap px-2">—</td>;
@@ -55,10 +58,11 @@ export function TotalsRow({ rows }: { rows: PatientStats[] }) {
 
   return (
     <tr className="font-bold text-xs border-t-2" style={{ background: "hsl(210 15% 93%)" }}>
-      <td style={{ width: 36 }} />
-      <td className="text-right pr-3 py-1.5 whitespace-nowrap" colSpan={6}>
-        الإجمالي ({rows.length} مريض)
+      <td className="sticky-footer-right text-center" style={{ right: NAME_W, width: IDX_W }} />
+      <td className="sticky-footer-right text-right pr-3 py-1.5 whitespace-nowrap" style={{ right: 0, width: NAME_W, boxShadow: "-4px 0 8px -2px rgba(0,0,0,0.12)" }}>
+        الإجمالي ({rows.length})
       </td>
+      <td colSpan={5} />
       <td className="text-center tabular-nums whitespace-nowrap px-3">{formatNumber(sum("servicesTotal"))}</td>
       <td className="text-center tabular-nums whitespace-nowrap px-3">{formatNumber(sum("orRoomTotal"))}</td>
       <td className="text-center tabular-nums whitespace-nowrap px-3">{formatNumber(sum("equipmentTotal"))}</td>
