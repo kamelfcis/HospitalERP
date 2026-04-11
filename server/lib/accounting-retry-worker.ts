@@ -93,22 +93,35 @@ async function retryPatientInvoice(sourceId: string): Promise<{ ok: boolean; jou
   const invoiceData = await storage.getPatientInvoice(sourceId);
   if (!invoiceData) throw new Error("بيانات فاتورة المريض غير موجودة");
 
-  const glLines = storage.buildPatientInvoiceGLLines(invoiceData, invoiceData.lines || []);
+  const glLines: { lineType: string; amount: string; costCenterId?: string | null; debitAccountId?: string | null }[] = storage.buildPatientInvoiceGLLines(invoiceData, invoiceData.lines || []);
 
   const dynamicAccountOverrides: Record<string, { debitAccountId?: string | null }> = {};
 
   if (invoiceData.patientType === "cash") {
-    const treasuryRes = await db.execute(sql`
-      SELECT t.gl_account_id
+    const treasuryPayments = await db.execute(sql`
+      SELECT t.gl_account_id, SUM(p.amount::numeric) AS total_amount
       FROM patient_invoice_payments p
       JOIN treasuries t ON t.id = p.treasury_id
       WHERE p.header_id = ${sourceId} AND p.treasury_id IS NOT NULL
-      ORDER BY p.created_at DESC
-      LIMIT 1
+      GROUP BY t.gl_account_id
     `);
-    const treasuryGl = ((treasuryRes as any).rows[0])?.gl_account_id as string | undefined;
-    if (treasuryGl) {
-      dynamicAccountOverrides["cash"] = { debitAccountId: treasuryGl };
+    const treasuryRows = (treasuryPayments as any).rows as { gl_account_id: string; total_amount: string }[];
+    if (treasuryRows.length > 0) {
+      const cashIdx = glLines.findIndex((l: any) => l.lineType === "cash");
+      if (cashIdx >= 0) glLines.splice(cashIdx, 1);
+      let treasuryTotal = 0;
+      for (const tr of treasuryRows) {
+        const amt = parseFloat(tr.total_amount);
+        if (amt > 0) {
+          glLines.unshift({ lineType: "cash", amount: String(Math.round(amt * 100) / 100), debitAccountId: tr.gl_account_id });
+          treasuryTotal += amt;
+        }
+      }
+      const totalNet = parseFloat(String(invoiceData.netAmount || "0"));
+      const remainder = totalNet - treasuryTotal;
+      if (remainder > 0.01) {
+        glLines.unshift({ lineType: "cash", amount: String(Math.round(remainder * 100) / 100) });
+      }
     }
   }
 

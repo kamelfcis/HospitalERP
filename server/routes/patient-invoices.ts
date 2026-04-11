@@ -36,6 +36,7 @@ import {
   companies,
   treasuries,
 } from "@shared/schema";
+import { roundMoney, parseMoney } from "../finance-helpers";
 import { resolveBusinessClassificationWithMeta } from "@shared/resolve-business-classification";
 import { applyContractCoverage } from "../lib/patient-invoice-coverage";
 import { injectDoctorCostLines } from "../lib/doctor-cost-engine";
@@ -476,7 +477,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
           .where(eq(patientInvoiceHeaders.id, invoiceId))
           .catch((err: any) => logger.warn({ err: err.message, invoiceId }, "[Snapshot] failed to save finalized snapshot to DB"));
 
-        const glLines = storage.buildPatientInvoiceGLLines(result, invoiceLines.lines || []);
+        const glLines: { lineType: string; amount: string; costCenterId?: string | null; debitAccountId?: string | null }[] = storage.buildPatientInvoiceGLLines(result, invoiceLines.lines || []);
 
         const dynamicAccountOverrides: Record<string, { debitAccountId?: string | null; creditAccountId?: string | null }> = {};
         const invBillingMode = (result as any).billingMode || "hospital_collect";
@@ -520,17 +521,30 @@ export function registerPatientInvoicesRoutes(app: Express) {
         }
 
         if ((result as any).patientType === "cash") {
-          const treasuryRes = await db.execute(sql`
-            SELECT t.gl_account_id
+          const treasuryPayments = await db.execute(sql`
+            SELECT t.gl_account_id, SUM(p.amount::numeric) AS total_amount
             FROM patient_invoice_payments p
             JOIN treasuries t ON t.id = p.treasury_id
             WHERE p.header_id = ${invoiceId} AND p.treasury_id IS NOT NULL
-            ORDER BY p.created_at DESC
-            LIMIT 1
+            GROUP BY t.gl_account_id
           `);
-          const treasuryGl = (treasuryRes.rows[0] as Record<string, unknown>)?.gl_account_id as string | undefined;
-          if (treasuryGl) {
-            dynamicAccountOverrides["cash"] = { debitAccountId: treasuryGl };
+          const treasuryRows = treasuryPayments.rows as { gl_account_id: string; total_amount: string }[];
+          if (treasuryRows.length > 0) {
+            const cashIdx = glLines.findIndex(l => l.lineType === "cash");
+            if (cashIdx >= 0) glLines.splice(cashIdx, 1);
+            let treasuryTotal = 0;
+            for (const tr of treasuryRows) {
+              const amt = parseFloat(tr.total_amount);
+              if (amt > 0) {
+                glLines.unshift({ lineType: "cash", amount: roundMoney(amt), debitAccountId: tr.gl_account_id });
+                treasuryTotal += amt;
+              }
+            }
+            const totalNet = parseMoney(result.netAmount);
+            const remainder = totalNet - treasuryTotal;
+            if (remainder > 0.01) {
+              glLines.unshift({ lineType: "cash", amount: roundMoney(remainder) });
+            }
           }
         }
 

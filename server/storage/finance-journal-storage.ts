@@ -325,7 +325,7 @@ const methods = {
     reference: string;
     description: string;
     entryDate: string;
-    lines: { lineType: string; amount: string; costCenterId?: string | null }[];
+    lines: { lineType: string; amount: string; costCenterId?: string | null; debitAccountId?: string | null }[];
     departmentId?: string | null;
     dynamicAccountOverrides?: Record<string, { debitAccountId?: string | null; creditAccountId?: string | null }>;
   }): Promise<JournalEntry | null> {
@@ -366,7 +366,7 @@ const methods = {
         if (amount <= 0) continue;
 
         if (DEBIT_ONLY_TYPES.has(line.lineType)) {
-          const debitId = overrides?.debitAccountId || mapping?.debitAccountId || null;
+          const debitId = line.debitAccountId || overrides?.debitAccountId || mapping?.debitAccountId || null;
           if (!debitId) {
             unmappedTypes.push(line.lineType);
             continue;
