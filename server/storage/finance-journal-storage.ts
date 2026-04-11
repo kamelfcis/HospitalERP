@@ -68,6 +68,11 @@ const methods = {
     } else {
       conditions.push(isNull(accountMappings.pharmacyId));
     }
+    if (data.departmentId) {
+      conditions.push(eq(accountMappings.departmentId, data.departmentId));
+    } else {
+      conditions.push(isNull(accountMappings.departmentId));
+    }
 
     const existing = await db.select().from(accountMappings)
       .where(and(...conditions));
@@ -109,6 +114,16 @@ const methods = {
         } else {
           conditions.push(isNull(accountMappings.warehouseId));
         }
+        if (data.pharmacyId) {
+          conditions.push(eq(accountMappings.pharmacyId, data.pharmacyId));
+        } else {
+          conditions.push(isNull(accountMappings.pharmacyId));
+        }
+        if (data.departmentId) {
+          conditions.push(eq(accountMappings.departmentId, data.departmentId));
+        } else {
+          conditions.push(isNull(accountMappings.departmentId));
+        }
         const existing = await tx.select({ id: accountMappings.id })
           .from(accountMappings).where(and(...conditions)).limit(1);
 
@@ -132,8 +147,8 @@ const methods = {
     transactionType: string,
     warehouseId?: string | null,
     pharmacyId?:  string | null,
+    departmentId?: string | null,
   ): Promise<AccountMapping[]> {
-    // ── 1. Fetch all active mappings for this transaction type ──────────────
     const allMappings = await db.select().from(accountMappings)
       .where(and(
         eq(accountMappings.transactionType, transactionType),
@@ -160,17 +175,21 @@ const methods = {
     }
 
     // ── 3. Partition by scope ──────────────────────────────────────────────
+    const departmentSpecific: AccountMapping[] = departmentId
+      ? allMappings.filter(m => m.departmentId === departmentId && !m.warehouseId && !m.pharmacyId)
+      : [];
+
     const warehouseSpecific: AccountMapping[] = warehouseId
-      ? allMappings.filter(m => m.warehouseId === warehouseId && !m.pharmacyId)
+      ? allMappings.filter(m => m.warehouseId === warehouseId && !m.pharmacyId && !m.departmentId)
       : [];
 
     const pharmacySpecific: AccountMapping[] = pharmacyId
-      ? allMappings.filter(m => m.pharmacyId === pharmacyId && !m.warehouseId)
+      ? allMappings.filter(m => m.pharmacyId === pharmacyId && !m.warehouseId && !m.departmentId)
       : [];
 
-    const generic: AccountMapping[] = allMappings.filter(m => !m.warehouseId && !m.pharmacyId);
+    const generic: AccountMapping[] = allMappings.filter(m => !m.warehouseId && !m.pharmacyId && !m.departmentId);
 
-    if (!warehouseId && !pharmacyId) {
+    if (!warehouseId && !pharmacyId && !departmentId) {
       return generic;
     }
 
@@ -208,13 +227,14 @@ const methods = {
     const resultMap = new Map<string, AccountMapping>();
 
     for (const lineType of allLineTypes) {
+      const dp = departmentSpecific.filter(m => m.lineType === lineType);
       const wh = warehouseSpecific.filter(m => m.lineType === lineType);
       const ph = pharmacySpecific.filter(m => m.lineType === lineType);
       const ge = generic.filter(m => m.lineType === lineType);
 
       const orderedCandidates: AccountMapping[] = REVENUE_FIRST_LINE_TYPES.has(lineType)
-        ? [...ph, ...wh, ...ge]  // revenue: pharmacy first
-        : [...wh, ...ph, ...ge]; // others:  warehouse first
+        ? [...dp, ...ph, ...wh, ...ge]
+        : [...dp, ...wh, ...ph, ...ge];
 
       for (const candidate of orderedCandidates) {
         if (isMappingValid(candidate)) {
@@ -291,15 +311,7 @@ const methods = {
     entryDate: string;
     lines: { lineType: string; amount: string; costCenterId?: string | null }[];
     periodId?: string;
-    /**
-     * Dynamic account overrides — applied BEFORE the static mapping lookup.
-     * Used when the system can resolve an account from operational context
-     * (e.g. cashier shift treasury GL, warehouse GL) without requiring manual mapping.
-     *
-     * Example:
-     *   { cash: { debitAccountId: shiftGlAccountId } }
-     *   → debit side uses the actual shift treasury; credit still comes from mapping
-     */
+    departmentId?: string | null;
     dynamicAccountOverrides?: Record<string, { debitAccountId?: string | null; creditAccountId?: string | null }>;
   }): Promise<JournalEntry | null> {
     return await db.transaction(async (tx) => {
@@ -318,7 +330,7 @@ const methods = {
         return existing[0];
       }
 
-      const mappings = await this.getMappingsForTransaction(params.sourceType, null);
+      const mappings = await this.getMappingsForTransaction(params.sourceType, null, null, params.departmentId ?? null);
       const mappingMap = new Map<string, AccountMapping>();
       for (const m of mappings) {
         mappingMap.set(m.lineType, m);

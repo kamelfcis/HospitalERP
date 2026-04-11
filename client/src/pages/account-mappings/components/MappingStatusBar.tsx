@@ -16,6 +16,7 @@ interface MappingStatusBarProps {
   configured:         MappingRow[];
   isWarehouseView:    boolean;
   isPharmacyView:     boolean;
+  isDepartmentView?:  boolean;
 }
 
 export function MappingStatusBar({
@@ -25,6 +26,7 @@ export function MappingStatusBar({
   configured,
   isWarehouseView,
   isPharmacyView,
+  isDepartmentView,
 }: MappingStatusBarProps) {
   return (
     <div
@@ -60,6 +62,11 @@ export function MappingStatusBar({
       {isPharmacyView && (
         <Badge variant="outline" className="text-[10px] mr-auto border-emerald-400 text-emerald-700">
           إعداد خاص بالصيدلية — السطور غير المحددة هنا تستخدم الإعداد العام تلقائياً
+        </Badge>
+      )}
+      {isDepartmentView && (
+        <Badge variant="outline" className="text-[10px] mr-auto border-violet-400 text-violet-700">
+          إعداد خاص بالقسم — السطور غير المحددة هنا تستخدم الإعداد العام تلقائياً
         </Badge>
       )}
     </div>

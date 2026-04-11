@@ -215,7 +215,7 @@ export interface MappingRow {
   lineType:       string;
   debitAccountId: string;
   creditAccountId: string;
-  source: "warehouse" | "pharmacy" | "generic" | "new";
+  source: "department" | "warehouse" | "pharmacy" | "generic" | "new";
 }
 
 // ─── Dynamic line specifications ───────────────────────────────────────────────
@@ -329,6 +329,7 @@ export const NO_WAREHOUSE_SELECTOR_TYPES: ReadonlySet<string> = new Set([
   "supplier_payment",
   "doctor_payable_settlement",
   "contract_settlement",
+  "patient_invoice",
 ]);
 
 // ─── Transaction types where a pharmacy-level override can be configured ───────
@@ -339,6 +340,10 @@ export const NO_WAREHOUSE_SELECTOR_TYPES: ReadonlySet<string> = new Set([
 export const PHARMACY_SELECTOR_TYPES: ReadonlySet<string> = new Set([
   "sales_invoice",
   "sales_return",
+]);
+
+export const DEPARTMENT_SELECTOR_TYPES: ReadonlySet<string> = new Set([
+  "patient_invoice",
 ]);
 
 // ─── Account category rules (mirrors server/lib/account-category-validator) ────

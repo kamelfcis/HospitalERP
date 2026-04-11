@@ -189,6 +189,7 @@ export const accountMappings = pgTable("account_mappings", {
   creditAccountId: varchar("credit_account_id").references(() => accounts.id),
   warehouseId: varchar("warehouse_id"),
   pharmacyId: varchar("pharmacy_id"),
+  departmentId: varchar("department_id"),
   description: text("description"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),

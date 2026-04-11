@@ -35,6 +35,8 @@ export function useMappingSave(data: UseMappingRowsResult): UseMappingSaveResult
       data.selectedWarehouseId === "__generic__" ? null : (data.selectedWarehouseId || null);
     const effectivePharmacyId =
       data.selectedPharmacyId === "__generic__" ? null : (data.selectedPharmacyId || null);
+    const effectiveDepartmentId =
+      data.selectedDepartmentId === "__generic__" ? null : (data.selectedDepartmentId || null);
 
     const validRows = data.rows.filter(r => r.lineType && (r.debitAccountId || r.creditAccountId));
     if (validRows.length === 0) {
@@ -49,6 +51,7 @@ export function useMappingSave(data: UseMappingRowsResult): UseMappingSaveResult
       creditAccountId: r.creditAccountId || null,
       warehouseId:     effectiveWarehouseId,
       pharmacyId:      effectivePharmacyId,
+      departmentId:    effectiveDepartmentId,
       isActive:        true,
     }));
 

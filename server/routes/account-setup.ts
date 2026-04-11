@@ -428,6 +428,7 @@ export function registerAccountSetupRoutes(app: Express) {
           creditAccountId: m.creditAccountId || null,
           warehouseId:     m.warehouseId     || null,
           pharmacyId:      m.pharmacyId      || null,
+          departmentId:    m.departmentId    || null,
           description:     m.description     || null,
           isActive:        m.isActive !== false,
         });

@@ -528,6 +528,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
           description: `قيد فاتورة مريض رقم ${result.invoiceNumber} - ${result.patientName}`,
           entryDate: result.invoiceDate,
           lines: glLines,
+          departmentId: (existing as any).departmentId || null,
           ...(Object.keys(dynamicAccountOverrides).length > 0 ? { dynamicAccountOverrides } : {}),
         }).then(async (entry) => {
           if (entry) {

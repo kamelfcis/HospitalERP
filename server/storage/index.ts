@@ -629,7 +629,7 @@ export interface IStorage {
   upsertAccountMapping(data: InsertAccountMapping): Promise<AccountMapping>;
   bulkUpsertAccountMappings(items: InsertAccountMapping[]): Promise<AccountMapping[]>;
   deleteAccountMapping(id: string): Promise<boolean>;
-  getMappingsForTransaction(transactionType: string, warehouseId?: string | null, pharmacyId?: string | null): Promise<AccountMapping[]>;
+  getMappingsForTransaction(transactionType: string, warehouseId?: string | null, pharmacyId?: string | null, departmentId?: string | null): Promise<AccountMapping[]>;
 
   // Auto Journal Entry
   generateJournalEntry(params: {
@@ -893,7 +893,7 @@ export interface DatabaseStorage extends IStorage {
   completeSalesReturnWithCash(invoiceIds: string[], cashGlAccountId: string | null): Promise<void>;
   createCashierCollectionJournals(invoiceIds: string[], cashGlAccountOverride: string | null, pharmacyId: string): Promise<void>;
   generatePurchaseInvoiceJournal(invoiceId: string, invoice: PurchaseInvoiceHeader): Promise<JournalEntry | null>;
-  getMappingsForTransaction(sourceType: string, warehouseId?: string | null, pharmacyId?: string | null): Promise<AccountMapping[]>;
+  getMappingsForTransaction(sourceType: string, warehouseId?: string | null, pharmacyId?: string | null, departmentId?: string | null): Promise<AccountMapping[]>;
   getNextEntryNumber(): Promise<number>;
   getNextSalesInvoiceNumber(): Promise<number>;
 }

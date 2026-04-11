@@ -80,10 +80,14 @@ export default function AccountMappings() {
             onWarehouseChange={data.setSelectedWarehouseId}
             selectedPharmacyId={data.selectedPharmacyId}
             onPharmacyChange={data.setSelectedPharmacyId}
+            selectedDepartmentId={data.selectedDepartmentId}
+            onDepartmentChange={data.setSelectedDepartmentId}
             warehouses={data.warehouses}
             pharmacies={data.pharmacies}
+            departments={data.departments}
             showWarehouseSelector={data.showWarehouseSelector}
             showPharmacySelector={data.showPharmacySelector}
+            showDepartmentSelector={data.showDepartmentSelector}
           />
         </CardHeader>
 
@@ -97,6 +101,7 @@ export default function AccountMappings() {
             configured={data.configured}
             isWarehouseView={data.isWarehouseView}
             isPharmacyView={data.isPharmacyView}
+            isDepartmentView={data.isDepartmentView}
           />
         )}
 
