@@ -295,4 +295,182 @@ export async function runMigrations(log: LogFn): Promise<void> {
   } catch (err: unknown) {
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] visit_group_patient index error");
   }
+
+  // ── Compound & Covering Indexes — Phase II ────────────────────────────────
+  // كل فهرس مستقل في try-catch خاص به حتى لا يوقف خطأ واحد بقية الفهارس
+  const p2Indexes: Array<[string, string]> = [];
+
+  const p2 = async (name: string, ddl: string) => {
+    try {
+      await db.execute(sql.raw(ddl));
+      p2Indexes.push([name, "OK"]);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("already exists")) {
+        p2Indexes.push([name, "EXISTS"]);
+      } else {
+        p2Indexes.push([name, `ERR: ${msg}`]);
+        logger.warn({ index: name, err: msg }, `[STARTUP] Phase II index warning`);
+      }
+    }
+  };
+
+  // ① journal_entries: idempotency check — البحث بـ source_type + source_document_id
+  // يُنفَّذ في كل تأكيد فاتورة — بدون هذا الفهرس يحدث seq scan على كل القيود
+  await p2("idx_je_source_doc", `
+    CREATE INDEX IF NOT EXISTS idx_je_source_doc
+    ON journal_entries (source_type, source_document_id)
+    WHERE source_document_id IS NOT NULL
+  `);
+
+  // ② patient_invoice_headers: قائمة فواتير القسم — الفلتر الأكثر استخداماً
+  await p2("idx_pih_dept_status_date", `
+    CREATE INDEX IF NOT EXISTS idx_pih_dept_status_date
+    ON patient_invoice_headers (department_id, status, created_at DESC)
+  `);
+
+  // ③ patient_invoice_headers: retry worker — فلترة بحالة القيد
+  await p2("idx_pih_journal_status", `
+    CREATE INDEX IF NOT EXISTS idx_pih_journal_status
+    ON patient_invoice_headers (journal_status)
+    WHERE journal_status IN ('needs_retry', 'none', 'failed')
+  `);
+
+  // ④ patient_invoice_headers: تقرير مرضى التعاقد بالشركة
+  await p2("idx_pih_company_status_date", `
+    CREATE INDEX IF NOT EXISTS idx_pih_company_status_date
+    ON patient_invoice_headers (company_id, status, created_at DESC)
+    WHERE company_id IS NOT NULL
+  `);
+
+  // ⑤ patient_invoice_headers: فلتر نوع المريض + قسم
+  await p2("idx_pih_type_dept_status", `
+    CREATE INDEX IF NOT EXISTS idx_pih_type_dept_status
+    ON patient_invoice_headers (patient_type, department_id, status)
+  `);
+
+  // ⑥ patient_invoice_lines: الاستعلام الأساسي لكل بنود الفاتورة (header + is_void)
+  await p2("idx_pil_header_active", `
+    CREATE INDEX IF NOT EXISTS idx_pil_header_active
+    ON patient_invoice_lines (header_id, is_void)
+  `);
+
+  // ⑦ patient_invoice_lines: بنود فاتورة مع نوع البند — لحساب الإجماليات حسب النوع
+  await p2("idx_pil_header_void_type", `
+    CREATE INDEX IF NOT EXISTS idx_pil_header_void_type
+    ON patient_invoice_lines (header_id, is_void, line_type)
+  `);
+
+  // ⑧ patient_invoice_lines: covering index للحساب المحاسبي (GL builder)
+  await p2("idx_pil_header_gl_covering", `
+    CREATE INDEX IF NOT EXISTS idx_pil_header_gl_covering
+    ON patient_invoice_lines (header_id, is_void)
+    INCLUDE (line_type, business_classification, total_price, doctor_id, cost_subtype)
+  `);
+
+  // ⑨ account_mappings: استعلام ربط الحسابات — النمط الأكثر تكراراً في توليد القيود
+  await p2("idx_acct_map_tx_dept", `
+    CREATE INDEX IF NOT EXISTS idx_acct_map_tx_dept
+    ON account_mappings (transaction_type, department_id)
+  `);
+
+  // ⑩ accounting_event_log: retry worker — ترتيب بالحالة والتاريخ
+  await p2("idx_ael_status_created", `
+    CREATE INDEX IF NOT EXISTS idx_ael_status_created
+    ON accounting_event_log (status, created_at DESC)
+  `);
+
+  // ⑪ sales_invoice_headers: قائمة صيدلية محددة مرتبة بالتاريخ
+  await p2("idx_sih_pharmacy_status_date", `
+    CREATE INDEX IF NOT EXISTS idx_sih_pharmacy_status_date
+    ON sales_invoice_headers (pharmacy_id, status, created_at DESC)
+  `);
+
+  // ⑫ sales_invoice_headers: وردية الكاشير — تجميع إيرادات الوردية
+  // العمود الصحيح هو claimed_by_shift_id
+  await p2("idx_sih_shift_status", `
+    CREATE INDEX IF NOT EXISTS idx_sih_shift_status
+    ON sales_invoice_headers (claimed_by_shift_id, status)
+    WHERE claimed_by_shift_id IS NOT NULL
+  `);
+
+  // ⑬ journal_lines: تقارير GL — ترصيد حساب معين في قيود متعددة
+  await p2("idx_jl_entry_account", `
+    CREATE INDEX IF NOT EXISTS idx_jl_entry_account
+    ON journal_lines (journal_entry_id, account_id)
+  `);
+
+  // ⑭ journal_lines: دفتر الأستاذ مع covering columns لتجنب رجوع الجدول
+  await p2("idx_jl_account_entry", `
+    CREATE INDEX IF NOT EXISTS idx_jl_account_entry
+    ON journal_lines (account_id, journal_entry_id)
+    INCLUDE (debit, credit, description)
+  `);
+
+  // ⑮ patient_invoice_payments: سداد المريض مع الخزينة — يُستخدم في GL builder
+  await p2("idx_pip_header_treasury", `
+    CREATE INDEX IF NOT EXISTS idx_pip_header_treasury
+    ON patient_invoice_payments (header_id, treasury_id)
+    WHERE treasury_id IS NOT NULL
+  `);
+
+  // ⑯ rpt_patient_visit_summary: شاشة استعلام المرضى المنومين
+  // العمود الصحيح هو admission_status (لا يوجد عمود status مباشر)
+  await p2("idx_pvs_dept_admission_status_date", `
+    CREATE INDEX IF NOT EXISTS idx_pvs_dept_admission_status_date
+    ON rpt_patient_visit_summary (department_id, admission_status, visit_date DESC)
+    WHERE department_id IS NOT NULL
+  `);
+
+  // ⑰ rpt_patient_visit_summary: نوع الزيارة + حالة التنويم
+  await p2("idx_pvs_type_admission_status", `
+    CREATE INDEX IF NOT EXISTS idx_pvs_type_admission_status
+    ON rpt_patient_visit_summary (visit_type, admission_status, visit_date DESC)
+  `);
+
+  // ⑱ receiving_headers: قائمة مستلمات المخزن بالحالة والتاريخ
+  await p2("idx_rh_warehouse_status_date", `
+    CREATE INDEX IF NOT EXISTS idx_rh_warehouse_status_date
+    ON receiving_headers (warehouse_id, status, receive_date DESC)
+  `);
+
+  // ⑲ store_transfers: تحويلات المخزن — مصدر + حالة + تاريخ
+  await p2("idx_st_source_status_date", `
+    CREATE INDEX IF NOT EXISTS idx_st_source_status_date
+    ON store_transfers (source_warehouse_id, status, transfer_date DESC)
+  `);
+
+  // ⑳ store_transfers: تحويلات الوجهة — وجهة + حالة + تاريخ
+  await p2("idx_st_dest_status_date", `
+    CREATE INDEX IF NOT EXISTS idx_st_dest_status_date
+    ON store_transfers (destination_warehouse_id, status, transfer_date DESC)
+  `);
+
+  // ㉑ purchase_invoice_lines: covering index لصفحة تفاصيل الفاتورة
+  await p2("idx_pil_purchase_invoice_item", `
+    CREATE INDEX IF NOT EXISTS idx_pil_purchase_invoice_item
+    ON purchase_invoice_lines (invoice_id, item_id)
+  `);
+
+  // ㉒ sales_invoice_lines: covering index لحساب تكلفة الصيدلية
+  // الأعمدة الصحيحة: qty, sale_price, line_total (لا يوجد quantity أو unit_price)
+  await p2("idx_sil_invoice_item_covering", `
+    CREATE INDEX IF NOT EXISTS idx_sil_invoice_item_covering
+    ON sales_invoice_lines (invoice_id, item_id)
+    INCLUDE (qty, sale_price, line_total, lot_id)
+  `);
+
+  // ㉓ admissions: compound لاستعلام نزيل نشط
+  await p2("idx_adm_patient_status", `
+    CREATE INDEX IF NOT EXISTS idx_adm_patient_status
+    ON admissions (patient_id, status, admission_date DESC)
+  `);
+
+  const ok  = p2Indexes.filter(([, s]) => s === "OK" || s === "EXISTS").length;
+  const err = p2Indexes.filter(([, s]) => s.startsWith("ERR")).length;
+  log(`[STARTUP] Compound & covering indexes (Phase II): ${ok} OK, ${err} errors`);
+  if (err > 0) {
+    const failures = p2Indexes.filter(([, s]) => s.startsWith("ERR"));
+    logger.warn({ failures }, "[STARTUP] Phase II index failures (non-fatal)");
+  }
 }
