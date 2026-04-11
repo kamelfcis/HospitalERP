@@ -361,20 +361,24 @@ export function registerPatientInvoicesRoutes(app: Express) {
         }
       }
 
+      // جلب بيانات الطبيب مرة واحدة — تُستخدم للتحقق والـ GL معاً
+      let doctorData: { payableAccountId: string | null; receivableAccountId: string | null; financialMode: string | null; costCenterId: string | null } | null = null;
       if (existing.doctorId) {
         const [doc] = await db.select({
-          payableAccountId: doctors.payableAccountId,
+          payableAccountId:    doctors.payableAccountId,
           receivableAccountId: doctors.receivableAccountId,
-          financialMode: doctors.financialMode,
+          financialMode:       doctors.financialMode,
+          costCenterId:        doctors.costCenterId,
         }).from(doctors).where(eq(doctors.id, existing.doctorId)).limit(1);
+        doctorData = doc ?? null;
 
-        if (validationBillingMode === "hospital_collect" && hasDoctorCostLines && !doc?.payableAccountId) {
+        if (validationBillingMode === "hospital_collect" && hasDoctorCostLines && !doctorData?.payableAccountId) {
           return res.status(400).json({
             message: "لا يمكن اعتماد فاتورة تحصيل مستشفى بدون تحديد حساب الدائنين (مستحقات الطبيب). عدّل بيانات الطبيب أولاً.",
             code: "DOCTOR_NO_PAYABLE",
           });
         }
-        if (validationBillingMode === "doctor_collect" && !doc?.receivableAccountId) {
+        if (validationBillingMode === "doctor_collect" && !doctorData?.receivableAccountId) {
           return res.status(400).json({
             message: "لا يمكن اعتماد فاتورة تحصيل طبيب بدون تحديد حساب المدينين للطبيب. عدّل بيانات الطبيب أولاً.",
             code: "DOCTOR_NO_RECEIVABLE",
@@ -418,7 +422,9 @@ export function registerPatientInvoicesRoutes(app: Express) {
         newValues: JSON.stringify({ status: "finalized", version: result.version }),
       }).catch(err => logger.warn({ err: err.message, invoiceId }, "[Audit] patient invoice finalize"));
 
-      const invoiceLines = await storage.getPatientInvoice(invoiceId);
+      // إعادة استخدام البيانات المجلوبة مسبقاً (existing) بدلاً من جلبها مرة ثانية
+      // البنود لا تتغير أثناء التأكيد، والـ header المحدّث موجود في result
+      const invoiceLines = existing;
       if (invoiceLines) {
         // ── INVOICE_FINALIZED audit log مع ملخص التصنيفات التجارية ─────────────
         const finalizedLines = invoiceLines.lines || [];
@@ -483,11 +489,8 @@ export function registerPatientInvoicesRoutes(app: Express) {
         const invBillingMode = (result as any).billingMode || "hospital_collect";
 
         if (result.doctorId) {
-          const [doc] = await db.select({
-            payableAccountId: doctors.payableAccountId,
-            receivableAccountId: doctors.receivableAccountId,
-            costCenterId: doctors.costCenterId,
-          }).from(doctors).where(eq(doctors.id, result.doctorId)).limit(1);
+          // doctorData جُلبت مسبقاً أعلاه — لا داعي لاستعلام ثانٍ
+          const doc = doctorData;
 
           if (invBillingMode === "doctor_collect") {
             if (doc?.receivableAccountId) {

@@ -36,6 +36,18 @@ import {
   REVENUE_FIRST_LINE_TYPES,
 } from "../lib/account-category-validator";
 
+// ── Account Mappings TTL Cache ────────────────────────────────────────────────
+// يُستخدم الكاش لتجنب استعلام DB في كل توليد قيد محاسبي (يُستدعى عند كل تأكيد فاتورة)
+// TTL: 60 ثانية — يُبطل تلقائياً عند أي تعديل في جدول account_mappings
+interface _MappingCacheEntry { data: AccountMapping[]; exp: number }
+const _mappingCache = new Map<string, _MappingCacheEntry>();
+const _MAPPING_TTL = 60_000;
+
+function _mkCacheKey(txType: string, wh?: string|null, ph?: string|null, dept?: string|null): string {
+  return `${txType}|${wh ?? ""}|${ph ?? ""}|${dept ?? ""}`;
+}
+function _invalidateMappingCache(): void { _mappingCache.clear(); }
+
 const methods = {
   // ==================== Account Mappings — ربط الحسابات ====================
 
@@ -77,68 +89,83 @@ const methods = {
     const existing = await db.select().from(accountMappings)
       .where(and(...conditions));
     
+    let result: AccountMapping;
     if (existing.length > 0) {
       const [updated] = await db.update(accountMappings)
         .set({ ...data, updatedAt: new Date() })
         .where(eq(accountMappings.id, existing[0].id))
         .returning();
-      return updated;
+      result = updated;
+    } else {
+      const [created] = await db.insert(accountMappings).values(data).returning();
+      result = created;
     }
-    
-    const [created] = await db.insert(accountMappings).values(data).returning();
-    return created;
+    _invalidateMappingCache();
+    return result;
   },
 
   async deleteAccountMapping(this: DatabaseStorage, id: string): Promise<boolean> {
-    const result = await db.delete(accountMappings).where(eq(accountMappings.id, id));
-    return (result as any).rowCount > 0;
+    const res = await db.delete(accountMappings).where(eq(accountMappings.id, id));
+    _invalidateMappingCache();
+    return (res as any).rowCount > 0;
   },
 
   // ── bulkUpsertAccountMappings ─────────────────────────────────────────────
-  // Wraps all upserts in a single DB transaction.
-  // Pre-validated by route (transactionType, lineType, account existence).
+  // جلب جميع السجلات الموجودة في استعلام واحد، ثم batch insert/update متوازية
+  // بدلاً من N×2 استعلام متسلسل كما كان سابقاً
   async bulkUpsertAccountMappings(
     this: DatabaseStorage,
     items: import("@shared/schema").InsertAccountMapping[]
   ): Promise<import("@shared/schema").AccountMapping[]> {
     if (items.length === 0) return [];
-    return db.transaction(async (tx) => {
-      const results: import("@shared/schema").AccountMapping[] = [];
-      for (const data of items) {
-        const conditions = [
-          eq(accountMappings.transactionType, data.transactionType),
-          eq(accountMappings.lineType, data.lineType),
-        ];
-        if (data.warehouseId) {
-          conditions.push(eq(accountMappings.warehouseId, data.warehouseId));
-        } else {
-          conditions.push(isNull(accountMappings.warehouseId));
-        }
-        if (data.pharmacyId) {
-          conditions.push(eq(accountMappings.pharmacyId, data.pharmacyId));
-        } else {
-          conditions.push(isNull(accountMappings.pharmacyId));
-        }
-        if (data.departmentId) {
-          conditions.push(eq(accountMappings.departmentId, data.departmentId));
-        } else {
-          conditions.push(isNull(accountMappings.departmentId));
-        }
-        const existing = await tx.select({ id: accountMappings.id })
-          .from(accountMappings).where(and(...conditions)).limit(1);
 
-        if (existing.length > 0) {
-          const [updated] = await tx.update(accountMappings)
-            .set({ ...data, updatedAt: new Date() })
-            .where(eq(accountMappings.id, existing[0].id))
-            .returning();
-          results.push(updated);
+    const txTypes = [...new Set(items.map(i => i.transactionType))];
+
+    return db.transaction(async (tx) => {
+      // ① جلب كل الربطات الموجودة لهذه أنواع المعاملات في استعلام واحد
+      const existingAll = await tx.select()
+        .from(accountMappings)
+        .where(inArray(accountMappings.transactionType, txTypes));
+
+      // ② بناء map للبحث السريع (O(1) بدلاً من O(n) per item)
+      const existingMap = new Map<string, import("@shared/schema").AccountMapping>();
+      for (const row of existingAll) {
+        const key = `${row.transactionType}|${row.lineType}|${row.warehouseId ?? ""}|${row.pharmacyId ?? ""}|${row.departmentId ?? ""}`;
+        existingMap.set(key, row);
+      }
+
+      const toInsert: import("@shared/schema").InsertAccountMapping[] = [];
+      const toUpdate: Array<{ id: string; data: import("@shared/schema").InsertAccountMapping }> = [];
+
+      for (const data of items) {
+        const key = `${data.transactionType}|${data.lineType}|${data.warehouseId ?? ""}|${data.pharmacyId ?? ""}|${data.departmentId ?? ""}`;
+        const existing = existingMap.get(key);
+        if (existing) {
+          toUpdate.push({ id: existing.id, data });
         } else {
-          const [inserted] = await tx.insert(accountMappings).values(data).returning();
-          results.push(inserted);
+          toInsert.push(data);
         }
       }
-      return results;
+
+      // ③ تنفيذ UPDATE و INSERT بالتوازي
+      const now = new Date();
+      const [insertedRows, updatedRows] = await Promise.all([
+        toInsert.length > 0
+          ? tx.insert(accountMappings).values(toInsert).returning()
+          : Promise.resolve([] as import("@shared/schema").AccountMapping[]),
+        Promise.all(
+          toUpdate.map(({ id, data }) =>
+            tx.update(accountMappings)
+              .set({ ...data, updatedAt: now })
+              .where(eq(accountMappings.id, id))
+              .returning()
+              .then(rows => rows[0])
+          )
+        ),
+      ]);
+
+      _invalidateMappingCache();
+      return [...insertedRows, ...updatedRows.filter(Boolean)];
     });
   },
 
@@ -149,6 +176,12 @@ const methods = {
     pharmacyId?:  string | null,
     departmentId?: string | null,
   ): Promise<AccountMapping[]> {
+    // ── TTL Cache — تجنّب استعلامَي DB في كل تأكيد فاتورة ───────────────────
+    const cacheKey = _mkCacheKey(transactionType, warehouseId, pharmacyId, departmentId);
+    const cached = _mappingCache.get(cacheKey);
+    if (cached && cached.exp > Date.now()) return cached.data;
+    // ─────────────────────────────────────────────────────────────────────────
+
     const allMappings = await db.select().from(accountMappings)
       .where(and(
         eq(accountMappings.transactionType, transactionType),
@@ -264,7 +297,9 @@ const methods = {
       }
     }
 
-    return [...resultMap.values()];
+    const resolved = [...resultMap.values()];
+    _mappingCache.set(cacheKey, { data: resolved, exp: Date.now() + _MAPPING_TTL });
+    return resolved;
   },
 
   buildPatientInvoiceGLLines(this: DatabaseStorage, header: PatientInvoiceHeader, lines: PatientInvoiceLine[]): { lineType: string; amount: string; costCenterId?: string | null }[] {

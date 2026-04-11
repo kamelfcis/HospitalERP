@@ -16,6 +16,7 @@ import {
   departments,
   items,
   patients,
+  admissions,
   patientInvoiceHeaders,
   patientInvoiceLines,
   patientInvoicePayments,
@@ -33,6 +34,7 @@ import type {
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
 import { roundMoney, parseMoney } from "../finance-helpers";
+import { getSetting } from "../settings-cache";
 
 const methods = {
 
@@ -88,67 +90,71 @@ const methods = {
   },
 
   async getPatientInvoice(this: DatabaseStorage, id: string): Promise<PatientInvoiceWithDetails | undefined> {
+    // ① header + department + patient + admission.doctor_name — في استعلام واحد بـ LEFT JOIN
+    // دمجنا استعلام admission.doctor_name مع الاستعلام الأساسي لتجنب round-trip ثانية
     const [headerRow] = await db.select({
-      header: patientInvoiceHeaders,
-      department: departments,
-      patientCode: patients.patientCode,
+      header:           patientInvoiceHeaders,
+      department:       departments,
+      patientCode:      patients.patientCode,
+      admDoctorName:    admissions.doctorName,
     })
       .from(patientInvoiceHeaders)
       .leftJoin(departments, eq(patientInvoiceHeaders.departmentId, departments.id))
-      .leftJoin(patients, eq(patientInvoiceHeaders.patientId, patients.id))
+      .leftJoin(patients,    eq(patientInvoiceHeaders.patientId,    patients.id))
+      .leftJoin(admissions,  eq(patientInvoiceHeaders.admissionId,  admissions.id))
       .where(eq(patientInvoiceHeaders.id, id));
 
     if (!headerRow) return undefined;
 
-    const lines = await db.select({
-      line: patientInvoiceLines,
-      service: services,
-      item: items,
-    })
-      .from(patientInvoiceLines)
-      .leftJoin(services, eq(patientInvoiceLines.serviceId, services.id))
-      .leftJoin(items, eq(patientInvoiceLines.itemId, items.id))
-      .where(eq(patientInvoiceLines.headerId, id))
-      .orderBy(asc(patientInvoiceLines.sortOrder));
+    // ② بنود + مدفوعات + سياق OPD — استعلامات مستقلة تُنفَّذ بالتوازي (Promise.all)
+    const [lines, payments, aptCtxRes] = await Promise.all([
+      db.select({
+        line:    patientInvoiceLines,
+        service: services,
+        item:    items,
+      })
+        .from(patientInvoiceLines)
+        .leftJoin(services, eq(patientInvoiceLines.serviceId, services.id))
+        .leftJoin(items,    eq(patientInvoiceLines.itemId,    items.id))
+        .where(eq(patientInvoiceLines.headerId, id))
+        .orderBy(asc(patientInvoiceLines.sortOrder)),
 
-    const payments = await db.select()
-      .from(patientInvoicePayments)
-      .where(eq(patientInvoicePayments.headerId, id))
-      .orderBy(asc(patientInvoicePayments.createdAt));
+      db.select()
+        .from(patientInvoicePayments)
+        .where(eq(patientInvoicePayments.headerId, id))
+        .orderBy(asc(patientInvoicePayments.createdAt)),
 
-    // جلب سياق موعد OPD المرتبط بالفاتورة (إن وُجد)
-    const aptCtxRes = await db.execute(sql`
-      SELECT
-        ca.id          AS opd_appointment_id,
-        ca.status      AS opd_apt_status,
-        ca.payment_type AS opd_payment_type,
-        cl.name_ar     AS opd_clinic_name,
-        dr.name        AS opd_doctor_name,
-        dp.name_ar     AS opd_department_name
-      FROM clinic_appointments ca
-      LEFT JOIN clinic_clinics cl ON cl.id = ca.clinic_id
-      LEFT JOIN doctors        dr ON dr.id = ca.doctor_id
-      LEFT JOIN departments    dp ON dp.id = cl.department_id
-      WHERE ca.invoice_id = ${id}
-      LIMIT 1
-    `);
+      db.execute(sql`
+        SELECT
+          ca.id           AS opd_appointment_id,
+          ca.status       AS opd_apt_status,
+          ca.payment_type AS opd_payment_type,
+          cl.name_ar      AS opd_clinic_name,
+          dr.name         AS opd_doctor_name,
+          dp.name_ar      AS opd_department_name
+        FROM clinic_appointments ca
+        LEFT JOIN clinic_clinics cl ON cl.id = ca.clinic_id
+        LEFT JOIN doctors        dr ON dr.id = ca.doctor_id
+        LEFT JOIN departments    dp ON dp.id = cl.department_id
+        WHERE ca.invoice_id = ${id}
+        LIMIT 1
+      `),
+    ]);
+
     const aptRow = (aptCtxRes.rows as Array<Record<string, unknown>>)[0] ?? null;
 
-    let effectiveDoctorName = headerRow.header.doctorName;
-    if (!effectiveDoctorName && headerRow.header.admissionId) {
-      const admRow = await db.execute(
-        sql`SELECT doctor_name FROM admissions WHERE id = ${headerRow.header.admissionId} LIMIT 1`
-      );
-      const admDoctorName = (admRow.rows[0] as Record<string, unknown>)?.doctor_name as string | null;
-      if (admDoctorName) effectiveDoctorName = admDoctorName;
-    }
+    // doctor_name: الأولوية للفاتورة، ثم اسم الطبيب من سجل التنويم
+    const effectiveDoctorName =
+      headerRow.header.doctorName ||
+      headerRow.admDoctorName ||
+      null;
 
     return {
       ...headerRow.header,
-      doctorName: effectiveDoctorName,
+      doctorName:  effectiveDoctorName,
       patientCode: headerRow.patientCode || null,
-      department: headerRow.department || undefined,
-      lines: lines.map(l => ({ ...l.line, service: l.service || undefined, item: l.item || undefined })),
+      department:  headerRow.department  || undefined,
+      lines:       lines.map(l => ({ ...l.line, service: l.service || undefined, item: l.item || undefined })),
       payments,
       opdContext: aptRow ? {
         appointmentId:  String(aptRow.opd_appointment_id),
@@ -225,13 +231,21 @@ const methods = {
 
       const oldStayLines = oldLines.filter((l) => l.sourceType === "STAY_ENGINE");
       const newStayLines = lines.filter((l) => l.sourceType === "STAY_ENGINE");
+
+      // استخدام Map بدلاً من find() داخل حلقة — O(n) بدلاً من O(n²)
+      const oldStayMap = new Map(oldStayLines.map(l => [l.sourceId, l]));
+      const newStayMap = new Map(newStayLines.map(l => [l.sourceId, l]));
+
+      const stayAuditValues: Array<{
+        tableName: string; recordId: string; action: string;
+        oldValues?: string; newValues?: string;
+      }> = [];
+
       for (const ns of newStayLines) {
-        const match = oldStayLines.find((os) => os.sourceId === ns.sourceId);
+        const match = oldStayMap.get(ns.sourceId!);
         if (match && (String(match.quantity) !== String(ns.quantity) || String(match.unitPrice) !== String(ns.unitPrice) || String(match.totalPrice) !== String(ns.totalPrice))) {
-          await tx.insert(auditLog).values({
-            tableName: "patient_invoice_lines",
-            recordId: id,
-            action: "stay_edit",
+          stayAuditValues.push({
+            tableName: "patient_invoice_lines", recordId: id, action: "stay_edit",
             oldValues: JSON.stringify({ sourceId: match.sourceId, quantity: match.quantity, unitPrice: match.unitPrice, totalPrice: match.totalPrice }),
             newValues: JSON.stringify({ sourceId: ns.sourceId, quantity: ns.quantity, unitPrice: ns.unitPrice, totalPrice: ns.totalPrice }),
           });
@@ -239,16 +253,18 @@ const methods = {
         }
       }
       for (const os of oldStayLines) {
-        if (!newStayLines.find((ns) => ns.sourceId === os.sourceId)) {
-          await tx.insert(auditLog).values({
-            tableName: "patient_invoice_lines",
-            recordId: id,
-            action: "stay_void",
+        if (!newStayMap.has(os.sourceId!)) {
+          stayAuditValues.push({
+            tableName: "patient_invoice_lines", recordId: id, action: "stay_void",
             oldValues: JSON.stringify({ sourceId: os.sourceId, quantity: os.quantity, totalPrice: os.totalPrice }),
             newValues: JSON.stringify({ removed: true }),
           });
           console.log(`[STAY_EDIT] Invoice ${id}: stay line ${os.sourceId} REMOVED`);
         }
+      }
+      // batch insert audit log مرة واحدة بدلاً من N مرات
+      if (stayAuditValues.length > 0) {
+        await tx.insert(auditLog).values(stayAuditValues as any);
       }
 
       const [result] = await tx.select().from(patientInvoiceHeaders).where(eq(patientInvoiceHeaders.id, id));
@@ -285,11 +301,8 @@ const methods = {
           const invItemMap: Record<string, any> = {};
           for (const row of invItemRows.rows as Array<Record<string, unknown>>) invItemMap[row.id as string] = row;
 
-          // ── Check feature flag for deferred cost issue ──────────────────
-          const flagRes = await tx.execute(
-            sql`SELECT value FROM system_settings WHERE key = 'enable_deferred_cost_issue' LIMIT 1`
-          );
-          const deferredEnabled = (flagRes.rows?.[0] as any)?.value === 'true';
+          // ── Check feature flag for deferred cost issue (from in-memory cache) ──
+          const deferredEnabled = getSetting("enable_deferred_cost_issue") === "true";
 
           // ── Check current stock availability for oversell detection ──────
           const stockBalanceRes = await tx.execute(
@@ -403,34 +416,36 @@ const methods = {
             });
           }
 
-          // ── Create pending_stock_allocations for oversell lines ──────────
+          // ── Create pending_stock_allocations for oversell lines (batch insert) ──
           if (oversellLines.length > 0) {
             // Validate: oversellReason is mandatory when deferred lines are created
             if (!oversellReason || oversellReason.trim() === "") {
               throw new Error("سبب الصرف بدون رصيد (oversellReason) إجباري عند وجود بنود مؤجلة التكلفة");
             }
             const userId = (locked.created_by as string) ?? null;
-            for (const ol of oversellLines) {
-              await tx.insert(pendingStockAllocations).values({
-                invoiceId: id,
-                invoiceLineId: ol.lineId,
-                itemId: ol.itemId,
+            const now = new Date();
+            // بدلاً من N insertات متسلسلة → insert واحد batch
+            await tx.insert(pendingStockAllocations)
+              .values(oversellLines.map(ol => ({
+                invoiceId:                   id,
+                invoiceLineId:               ol.lineId,
+                itemId:                      ol.itemId,
                 warehouseId,
-                qtyMinorPending: String(ol.qtyMinorPending),
-                qtyMinorOriginal: String(ol.qtyMinorPending),
-                status: "pending",
-                reason: oversellReason.trim(),
+                qtyMinorPending:             String(ol.qtyMinorPending),
+                qtyMinorOriginal:            String(ol.qtyMinorPending),
+                status:                      "pending" as const,
+                reason:                      oversellReason.trim(),
                 qtyMinorAvailableAtFinalize: String(ol.qtyMinorAvailableAtFinalize),
-                createdBy: userId,
-              }).onConflictDoUpdate({
+                createdBy:                   userId,
+              })))
+              .onConflictDoUpdate({
                 target: pendingStockAllocations.invoiceLineId,
                 set: {
-                  qtyMinorPending: String(ol.qtyMinorPending),
-                  status: "pending",
-                  updatedAt: new Date(),
+                  qtyMinorPending: sql`excluded.qty_minor_pending`,
+                  status:          "pending",
+                  updatedAt:       now,
                 },
               });
-            }
             console.log(JSON.stringify({
               event:     "OVERSELL_DEFERRED",
               timestamp: new Date().toISOString(),
