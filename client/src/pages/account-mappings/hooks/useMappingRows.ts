@@ -83,7 +83,6 @@ export function useMappingRows(): UseMappingRowsResult {
   const [rows,       setRows]       = useState<MappingRow[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
   const keyCounter = useRef(0);
-
   const prevFilterRef = useRef({ selectedTxType, selectedWarehouseId, selectedPharmacyId, selectedDepartmentId });
 
   const { data: warehouses = [] } = useQuery<Warehouse[]>({
@@ -163,10 +162,13 @@ export function useMappingRows(): UseMappingRowsResult {
       };
     });
 
+    if (!filterChanged && hasChanges) {
+      return;
+    }
+
     setRows(newRows);
-    // Only clear pending-changes flag when the user actively switches filter — not on silent refetch
     if (filterChanged) setHasChanges(false);
-  }, [mappings, mappingsLoading, selectedTxType, selectedWarehouseId, selectedPharmacyId, selectedDepartmentId]);
+  }, [mappings, mappingsLoading, selectedTxType, selectedWarehouseId, selectedPharmacyId, selectedDepartmentId, hasChanges]);
 
   // ── Row actions ────────────────────────────────────────────────────────────
   const updateRow = (key: string, field: keyof MappingRow, value: string) => {

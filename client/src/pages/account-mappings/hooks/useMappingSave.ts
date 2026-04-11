@@ -15,16 +15,23 @@ export interface UseMappingSaveResult {
   isSaving:   boolean;
 }
 
+interface SaveVariables {
+  payload: any[];
+  txType:  string;
+}
+
 export function useMappingSave(data: UseMappingRowsResult): UseMappingSaveResult {
   const { toast } = useToast();
 
   const saveMutation = useMutation({
-    mutationFn: (payload: any[]) =>
-      apiRequest("POST", "/api/account-mappings/bulk", { mappings: payload }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/account-mappings", data.selectedTxType] });
-      toast({ title: "تم حفظ إعدادات ربط الحسابات بنجاح" });
+    mutationFn: async ({ payload }: SaveVariables) => {
+      const res = await apiRequest("POST", "/api/account-mappings/bulk", { mappings: payload });
+      return res.json();
+    },
+    onSuccess: async (_savedMappings, { txType }) => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/account-mappings", txType] });
       data.resetChanges();
+      toast({ title: "تم حفظ إعدادات ربط الحسابات بنجاح" });
     },
     onError: (error: Error) =>
       toast({ title: "خطأ", description: error.message, variant: "destructive" }),
@@ -55,7 +62,7 @@ export function useMappingSave(data: UseMappingRowsResult): UseMappingSaveResult
       isActive:        true,
     }));
 
-    saveMutation.mutate(payload);
+    saveMutation.mutate({ payload, txType: data.selectedTxType });
   };
 
   return { handleSave, isSaving: saveMutation.isPending };
