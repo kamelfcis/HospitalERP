@@ -597,7 +597,7 @@ export function PatientFilePanel({ patientId, showPrint = true }: PatientFilePan
             <div className="flex items-center gap-2 shrink-0">
               <Button
                 variant="default" size="sm" className="h-7 text-xs gap-1 print:hidden"
-                onClick={() => navigate(`/patients/${patientId}/file`)}
+                onClick={() => navigate(`/patients/${patientId}/file?tab=consolidated`)}
                 data-testid="button-open-full-file"
               >
                 <LayoutGrid className="h-3 w-3" />

@@ -116,10 +116,7 @@ export default function Patients() {
     navigate(`/patient-invoices?loadId=${invoiceId}`);
   }
   function handleViewFile(patientId: string) {
-    const row = rows.find(r => r.id === patientId) ?? null;
-    setSelectedPatientId(patientId);
-    setSelectedPatientRow(row);
-    setActiveTab("file");
+    navigate(`/patients/${patientId}/file?tab=consolidated`);
   }
   function handleCloseDialog() {
     setDialogOpen(false);

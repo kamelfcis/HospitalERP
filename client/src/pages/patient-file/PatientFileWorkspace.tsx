@@ -124,7 +124,12 @@ const DefaultSidebar = memo(function DefaultSidebar({
 
 export const PatientFileWorkspace = memo(function PatientFileWorkspace({ patientId }: Props) {
   const [, navigate] = useLocation();
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [activeTab, setActiveTab] = useState<TabId>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    const valid: TabId[] = ["overview", "history", "invoices", "consolidated", "payments", "statement"];
+    return tab && valid.includes(tab as TabId) ? (tab as TabId) : "consolidated";
+  });
   const [sidebarEl, setSidebarEl] = useState<HTMLDivElement | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [visitHeader, setVisitHeader] = useState<VisitHeaderInfo | null>(null);
