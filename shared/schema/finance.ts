@@ -351,6 +351,7 @@ export const mappingLineTypeLabels: Record<string, string> = {
   revenue_gas:          "إيراد غازات",
   revenue_surgery:      "إيراد عمليات",
   revenue_equipment:    "إيراد أجهزة",
+  revenue_admin:        "إيراد خدمات إدارية",
   doctor_cost:          "تكلفة طبيب",
   // Receiving
   payable:              "ذمم دائنة",

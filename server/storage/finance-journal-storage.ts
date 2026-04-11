@@ -278,10 +278,13 @@ const methods = {
     // Fine-grained override: business_classification takes priority over line_type.
     // This allows hospitals to map gas, surgery, etc. to separate GL accounts.
     const bizClassMap: Record<string, string> = {
-      gas:           "revenue_gas",
-      operating_room:"revenue_surgery",
-      surgery:       "revenue_surgery",
-      operation:     "revenue_surgery",
+      gas:              "revenue_gas",
+      operating_room:   "revenue_surgery",
+      surgery:          "revenue_surgery",
+      operation:        "revenue_surgery",
+      administrative:   "revenue_admin",
+      admin:            "revenue_admin",
+      admin_service:    "revenue_admin",
     };
 
     const totals: Record<string, number> = {};

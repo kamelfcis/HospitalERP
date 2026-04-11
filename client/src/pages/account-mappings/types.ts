@@ -53,6 +53,7 @@ export const lineTypeSpecs: Record<string, Record<string, LineTypeSpec>> = {
     revenue_equipment:   { required: "cond", condition: "عند وجود استخدام أجهزة",                               debitSide: false, creditSide: true },
     revenue_gas:         { required: "cond", condition: "عند وجود غازات طبية (أكسجين وغيرها)",                  debitSide: false, creditSide: true },
     revenue_surgery:     { required: "cond", condition: "عند وجود عمليات / فتح عمليات / غرفة عمليات",           debitSide: false, creditSide: true },
+    revenue_admin:       { required: "cond", condition: "عند وجود خدمات إدارية",                                debitSide: false, creditSide: true },
     doctor_cost:         { required: "cond", condition: "عند وجود تكلفة طبيب — مصروف مدين / مستحقات دائن",      debitSide: true,  creditSide: true },
   },
   receiving: {
@@ -193,7 +194,7 @@ export const lineTypeSpecs: Record<string, Record<string, LineTypeSpec>> = {
 export const suggestedLineTypes: Record<string, string[]> = {
   sales_invoice:             ["receivables", "receivables_credit", "revenue_drugs", "revenue_consumables", "revenue_general", "cogs_drugs", "cogs_supplies", "discount_allowed", "vat_output", "pharmacy_patient_receivable", "pharmacy_contract_receivable"],
   sales_return:              ["receivables", "revenue_drugs", "revenue_consumables", "revenue_general", "cogs_drugs", "cogs_supplies", "inventory"],
-  patient_invoice:           ["cash", "receivables", "revenue_services", "revenue_gas", "revenue_surgery", "revenue_drugs", "revenue_consumables", "revenue_equipment", "doctor_cost"],
+  patient_invoice:           ["cash", "receivables", "revenue_services", "revenue_gas", "revenue_surgery", "revenue_admin", "revenue_drugs", "revenue_consumables", "revenue_equipment", "doctor_cost"],
   receiving:                 ["inventory", "payables"],
   purchase_invoice:          ["inventory", "vat_input", "discount_earned", "payables_drugs", "payables_consumables"],
   cashier_collection:        ["cash"],
