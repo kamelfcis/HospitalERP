@@ -27,6 +27,8 @@ export const LINE_TYPE_CATEGORY_RULES: Record<string, AccountCategoryRule> = {
   revenue_general:      { debit: ["asset"],                credit: ["revenue"] },
   revenue_consumables:  { debit: ["asset"],                credit: ["revenue"] },
   revenue_services:     { debit: ["asset"],                credit: ["revenue"] },
+  revenue_gas:          { debit: ["asset"],                credit: ["revenue"] },
+  revenue_surgery:      { debit: ["asset"],                credit: ["revenue"] },
   revenue_equipment:    { debit: ["asset"],                credit: ["revenue"] },
 
   inventory:            { debit: ["asset"],                credit: ["asset"]            },

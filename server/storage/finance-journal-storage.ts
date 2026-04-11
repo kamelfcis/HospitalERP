@@ -268,12 +268,22 @@ const methods = {
   },
 
   buildPatientInvoiceGLLines(this: DatabaseStorage, header: PatientInvoiceHeader, lines: PatientInvoiceLine[]): { lineType: string; amount: string; costCenterId?: string | null }[] {
+    // Base routing: patient_invoice_line_type → GL mapping line type
     const lineTypeMap: Record<string, string> = {
-      service: "revenue_services",
-      drug: "revenue_drugs",
-      consumable: "revenue_consumables",
+      service:   "revenue_services",
+      drug:      "revenue_drugs",
+      consumable:"revenue_consumables",
       equipment: "revenue_equipment",
     };
+    // Fine-grained override: business_classification takes priority over line_type.
+    // This allows hospitals to map gas, surgery, etc. to separate GL accounts.
+    const bizClassMap: Record<string, string> = {
+      gas:           "revenue_gas",
+      operating_room:"revenue_surgery",
+      surgery:       "revenue_surgery",
+      operation:     "revenue_surgery",
+    };
+
     const totals: Record<string, number> = {};
     let doctorCostTotal = 0;
     for (const line of lines) {
@@ -282,7 +292,10 @@ const methods = {
         doctorCostTotal += parseMoney(line.totalPrice);
         continue;
       }
-      const mappingType = lineTypeMap[line.lineType] || "revenue_general";
+      const bizClass = line.businessClassification ?? "";
+      const mappingType = (bizClass && bizClassMap[bizClass])
+        ? bizClassMap[bizClass]
+        : (lineTypeMap[line.lineType as string] || "revenue_general");
       totals[mappingType] = (totals[mappingType] || 0) + parseMoney(line.totalPrice);
     }
 
