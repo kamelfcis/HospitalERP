@@ -27,7 +27,6 @@ import {
 } from "../types";
 
 export interface UseMappingRowsResult {
-  // Filter state
   selectedTxType:      string;
   setSelectedTxType:   (v: string) => void;
   selectedWarehouseId: string;
@@ -37,12 +36,10 @@ export interface UseMappingRowsResult {
   selectedDepartmentId: string;
   setSelectedDepartmentId: (v: string) => void;
 
-  // Row state
   rows:          MappingRow[];
   hasChanges:    boolean;
   isLoading:     boolean;
 
-  // Derived
   txSpecs:              Record<string, import("../types").LineTypeSpec>;
   usedLineTypes:        Set<string>;
   isWarehouseView:      boolean;
@@ -56,16 +53,63 @@ export interface UseMappingRowsResult {
   configured:         MappingRow[];
   setupComplete:      boolean;
 
-  // Data
   warehouses:  Warehouse[];
   pharmacies:  Pharmacy[];
   departments: Department[];
 
-  // Actions
   updateRow: (key: string, field: keyof MappingRow, value: string) => void;
   addRow:    () => void;
   removeRow: (key: string) => void;
   resetChanges: () => void;
+  applyServerData: (savedRows: AccountMapping[]) => void;
+}
+
+function buildRows(
+  allMappings: AccountMapping[],
+  txType: string,
+  deptId: string | null,
+  whId: string | null,
+  phId: string | null,
+  keyCounter: { current: number },
+): MappingRow[] {
+  const departmentMappings = deptId
+    ? allMappings.filter(m => m.departmentId === deptId && !m.warehouseId && !m.pharmacyId)
+    : [];
+  const warehouseMappings = whId
+    ? allMappings.filter(m => m.warehouseId === whId && !m.pharmacyId && !m.departmentId)
+    : [];
+  const pharmacyMappings = phId
+    ? allMappings.filter(m => m.pharmacyId === phId && !m.warehouseId && !m.departmentId)
+    : [];
+  const genericMappings = allMappings.filter(m => !m.warehouseId && !m.pharmacyId && !m.departmentId);
+
+  const suggested   = suggestedLineTypes[txType] ?? [];
+  const allLineTypes = Array.from(new Set([
+    ...departmentMappings.map(m => m.lineType),
+    ...warehouseMappings.map(m => m.lineType),
+    ...pharmacyMappings.map(m => m.lineType),
+    ...genericMappings.map(m => m.lineType),
+    ...suggested,
+  ]));
+
+  return allLineTypes.map(lt => {
+    const departmentRow = departmentMappings.find(m => m.lineType === lt);
+    const warehouseRow  = warehouseMappings.find(m => m.lineType === lt);
+    const pharmacyRow   = pharmacyMappings.find(m => m.lineType === lt);
+    const genericRow    = genericMappings.find(m => m.lineType === lt);
+    const activeRow = departmentRow ?? warehouseRow ?? pharmacyRow ?? genericRow;
+    return {
+      key:             `row-${keyCounter.current++}`,
+      lineType:        lt,
+      debitAccountId:  activeRow?.debitAccountId  ?? "",
+      creditAccountId: activeRow?.creditAccountId ?? "",
+      source: departmentRow ? "department" as const
+            : warehouseRow  ? "warehouse" as const
+            : pharmacyRow   ? "pharmacy"  as const
+            : genericRow    ? "generic"   as const
+            : "new" as const,
+    };
+  });
 }
 
 export function useMappingRows(): UseMappingRowsResult {
@@ -86,6 +130,7 @@ export function useMappingRows(): UseMappingRowsResult {
   const [hasChanges, setHasChanges] = useState(false);
   const keyCounter = useRef(0);
   const prevFilterRef = useRef({ selectedTxType, selectedWarehouseId, selectedPharmacyId, selectedDepartmentId });
+  const saveLockRef = useRef(false);
 
   const { data: warehouses = [] } = useQuery<Warehouse[]>({
     queryKey: ["/api/warehouses"],
@@ -150,10 +195,9 @@ export function useMappingRows(): UseMappingRowsResult {
     autoDetectedRef.current = selectedTxType;
   }, [mappings, mappingsLoading, selectedTxType, selectedDepartmentId]);
 
-  // Rebuild rows whenever server data or filter selection changes.
-  // Only reset hasChanges when the FILTER selection changes — not on background refetches.
   useEffect(() => {
     if (mappingsLoading) return;
+    if (saveLockRef.current) return;
 
     const prev = prevFilterRef.current;
     const filterChanged =
@@ -163,56 +207,33 @@ export function useMappingRows(): UseMappingRowsResult {
       prev.selectedDepartmentId  !== selectedDepartmentId;
     prevFilterRef.current = { selectedTxType, selectedWarehouseId, selectedPharmacyId, selectedDepartmentId };
 
-    const allMappings = mappings ?? [];
-
-    const effectiveWarehouseId  = selectedWarehouseId  === "__generic__" ? null : selectedWarehouseId;
-    const effectivePharmacyId   = selectedPharmacyId   === "__generic__" ? null : selectedPharmacyId;
-    const effectiveDepartmentId = selectedDepartmentId  === "__generic__" ? null : selectedDepartmentId;
-
-    const departmentMappings = effectiveDepartmentId
-      ? allMappings.filter(m => m.departmentId === effectiveDepartmentId && !m.warehouseId && !m.pharmacyId)
-      : [];
-    const warehouseMappings = effectiveWarehouseId
-      ? allMappings.filter(m => m.warehouseId === effectiveWarehouseId && !m.pharmacyId && !m.departmentId)
-      : [];
-    const pharmacyMappings = effectivePharmacyId
-      ? allMappings.filter(m => m.pharmacyId === effectivePharmacyId && !m.warehouseId && !m.departmentId)
-      : [];
-    const genericMappings = allMappings.filter(m => !m.warehouseId && !m.pharmacyId && !m.departmentId);
-
-    const suggested   = suggestedLineTypes[selectedTxType] ?? [];
-    const allLineTypes = Array.from(new Set([
-      ...departmentMappings.map(m => m.lineType),
-      ...warehouseMappings.map(m => m.lineType),
-      ...pharmacyMappings.map(m => m.lineType),
-      ...genericMappings.map(m => m.lineType),
-      ...suggested,
-    ]));
-
-    const newRows: MappingRow[] = allLineTypes.map(lt => {
-      const departmentRow = departmentMappings.find(m => m.lineType === lt);
-      const warehouseRow  = warehouseMappings.find(m => m.lineType === lt);
-      const pharmacyRow   = pharmacyMappings.find(m => m.lineType === lt);
-      const genericRow    = genericMappings.find(m => m.lineType === lt);
-      const activeRow = departmentRow ?? warehouseRow ?? pharmacyRow ?? genericRow;
-      return {
-        key:             `row-${keyCounter.current++}`,
-        lineType:        lt,
-        debitAccountId:  activeRow?.debitAccountId  ?? "",
-        creditAccountId: activeRow?.creditAccountId ?? "",
-        source: departmentRow ? "department" : warehouseRow ? "warehouse" : pharmacyRow ? "pharmacy" : genericRow ? "generic" : "new",
-      };
-    });
-
     if (!filterChanged && hasChanges) {
       return;
     }
 
+    const effectiveDeptId = selectedDepartmentId === "__generic__" ? null : selectedDepartmentId;
+    const effectiveWhId   = selectedWarehouseId  === "__generic__" ? null : selectedWarehouseId;
+    const effectivePhId   = selectedPharmacyId   === "__generic__" ? null : selectedPharmacyId;
+
+    const newRows = buildRows(mappings ?? [], selectedTxType, effectiveDeptId, effectiveWhId, effectivePhId, keyCounter);
     setRows(newRows);
     if (filterChanged) setHasChanges(false);
   }, [mappings, mappingsLoading, selectedTxType, selectedWarehouseId, selectedPharmacyId, selectedDepartmentId, hasChanges]);
 
-  // ── Row actions ────────────────────────────────────────────────────────────
+  const applyServerData = useCallback((savedRows: AccountMapping[]) => {
+    saveLockRef.current = true;
+
+    const effectiveDeptId = selectedDepartmentId === "__generic__" ? null : selectedDepartmentId;
+    const effectiveWhId   = selectedWarehouseId  === "__generic__" ? null : selectedWarehouseId;
+    const effectivePhId   = selectedPharmacyId   === "__generic__" ? null : selectedPharmacyId;
+
+    const newRows = buildRows(savedRows, selectedTxType, effectiveDeptId, effectiveWhId, effectivePhId, keyCounter);
+    setRows(newRows);
+    setHasChanges(false);
+
+    setTimeout(() => { saveLockRef.current = false; }, 3000);
+  }, [selectedTxType, selectedDepartmentId, selectedWarehouseId, selectedPharmacyId]);
+
   const updateRow = (key: string, field: keyof MappingRow, value: string) => {
     setRows(prev => prev.map(r => {
       if (r.key !== key) return r;
@@ -243,7 +264,6 @@ export function useMappingRows(): UseMappingRowsResult {
 
   const resetChanges = () => setHasChanges(false);
 
-  // ── Derived state ──────────────────────────────────────────────────────────
   const txSpecs               = lineTypeSpecs[selectedTxType] ?? {};
   const usedLineTypes         = new Set(rows.map(r => r.lineType));
   const isWarehouseView       = selectedWarehouseId !== "__generic__";
@@ -269,6 +289,6 @@ export function useMappingRows(): UseMappingRowsResult {
     showWarehouseSelector, showPharmacySelector, showDepartmentSelector,
     requiredMissing, conditionalMissing, configured, setupComplete,
     warehouses, pharmacies, departments,
-    updateRow, addRow, removeRow, resetChanges,
+    updateRow, addRow, removeRow, resetChanges, applyServerData,
   };
 }

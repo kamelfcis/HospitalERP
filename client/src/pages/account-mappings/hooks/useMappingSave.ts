@@ -16,42 +16,35 @@ export interface UseMappingSaveResult {
   isSaving:   boolean;
 }
 
-interface SaveVariables {
-  payload: any[];
-  txType:  string;
-  deptId:  string | null;
-  whId:    string | null;
-  phId:    string | null;
-}
-
 export function useMappingSave(data: UseMappingRowsResult): UseMappingSaveResult {
   const { toast } = useToast();
 
   const saveMutation = useMutation({
-    mutationFn: async ({ payload }: SaveVariables) => {
+    mutationFn: async (payload: any[]) => {
       const res = await apiRequest("POST", "/api/account-mappings/bulk", { mappings: payload });
       return (await res.json()) as AccountMapping[];
     },
-    onSuccess: (savedRows, { txType, deptId, whId, phId }) => {
+    onSuccess: (savedRows) => {
+      const txType = data.selectedTxType;
+
       queryClient.setQueryData(
         ["/api/account-mappings", txType],
         (old: AccountMapping[] | undefined) => {
           if (!old) return savedRows;
-
+          const deptId = data.selectedDepartmentId === "__generic__" ? null : (data.selectedDepartmentId || null);
+          const whId   = data.selectedWarehouseId  === "__generic__" ? null : (data.selectedWarehouseId || null);
+          const phId   = data.selectedPharmacyId   === "__generic__" ? null : (data.selectedPharmacyId || null);
           const kept = old.filter(m => {
-            const mDept = m.departmentId ?? null;
-            const mWh   = m.warehouseId ?? null;
-            const mPh   = m.pharmacyId  ?? null;
-            return mDept !== deptId || mWh !== whId || mPh !== phId;
+            return (m.departmentId ?? null) !== deptId ||
+                   (m.warehouseId ?? null)  !== whId  ||
+                   (m.pharmacyId ?? null)   !== phId;
           });
           return [...kept, ...savedRows];
         }
       );
-      data.resetChanges();
+
+      data.applyServerData(savedRows);
       toast({ title: "تم حفظ إعدادات ربط الحسابات بنجاح" });
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/account-mappings", txType] });
-      }, 2000);
     },
     onError: (error: Error) =>
       toast({ title: "خطأ", description: error.message, variant: "destructive" }),
@@ -82,13 +75,7 @@ export function useMappingSave(data: UseMappingRowsResult): UseMappingSaveResult
       isActive:        true,
     }));
 
-    saveMutation.mutate({
-      payload,
-      txType: data.selectedTxType,
-      deptId: effectiveDepartmentId,
-      whId:   effectiveWarehouseId,
-      phId:   effectivePharmacyId,
-    });
+    saveMutation.mutate(payload);
   };
 
   return { handleSave, isSaving: saveMutation.isPending };
