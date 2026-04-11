@@ -118,14 +118,14 @@ export function useMappingRows(): UseMappingRowsResult {
       return;
     }
 
-    const hasGeneric = mappings.some(m => !m.warehouseId && !m.pharmacyId && !(m as any).departmentId);
+    const hasGeneric = mappings.some(m => !m.warehouseId && !m.pharmacyId && !m.departmentId);
     if (hasGeneric) {
       autoDetectedRef.current = selectedTxType;
       return;
     }
 
     if (DEPARTMENT_SELECTOR_TYPES.has(selectedTxType)) {
-      const deptId = mappings.find(m => (m as any).departmentId)?.departmentId as string | undefined;
+      const deptId = mappings.find(m => m.departmentId)?.departmentId as string | undefined;
       if (deptId) {
         autoDetectedRef.current = selectedTxType;
         setSelectedDepartmentId(deptId);
@@ -170,15 +170,15 @@ export function useMappingRows(): UseMappingRowsResult {
     const effectiveDepartmentId = selectedDepartmentId  === "__generic__" ? null : selectedDepartmentId;
 
     const departmentMappings = effectiveDepartmentId
-      ? allMappings.filter(m => (m as any).departmentId === effectiveDepartmentId && !m.warehouseId && !m.pharmacyId)
+      ? allMappings.filter(m => m.departmentId === effectiveDepartmentId && !m.warehouseId && !m.pharmacyId)
       : [];
     const warehouseMappings = effectiveWarehouseId
-      ? allMappings.filter(m => m.warehouseId === effectiveWarehouseId && !m.pharmacyId && !(m as any).departmentId)
+      ? allMappings.filter(m => m.warehouseId === effectiveWarehouseId && !m.pharmacyId && !m.departmentId)
       : [];
     const pharmacyMappings = effectivePharmacyId
-      ? allMappings.filter(m => m.pharmacyId === effectivePharmacyId && !m.warehouseId && !(m as any).departmentId)
+      ? allMappings.filter(m => m.pharmacyId === effectivePharmacyId && !m.warehouseId && !m.departmentId)
       : [];
-    const genericMappings = allMappings.filter(m => !m.warehouseId && !m.pharmacyId && !(m as any).departmentId);
+    const genericMappings = allMappings.filter(m => !m.warehouseId && !m.pharmacyId && !m.departmentId);
 
     const suggested   = suggestedLineTypes[selectedTxType] ?? [];
     const allLineTypes = Array.from(new Set([

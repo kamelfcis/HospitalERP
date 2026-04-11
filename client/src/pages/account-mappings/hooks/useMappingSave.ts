@@ -8,6 +8,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { AccountMapping } from "@shared/schema";
 import type { UseMappingRowsResult } from "./useMappingRows";
 
 export interface UseMappingSaveResult {
@@ -18,6 +19,9 @@ export interface UseMappingSaveResult {
 interface SaveVariables {
   payload: any[];
   txType:  string;
+  deptId:  string | null;
+  whId:    string | null;
+  phId:    string | null;
 }
 
 export function useMappingSave(data: UseMappingRowsResult): UseMappingSaveResult {
@@ -26,12 +30,28 @@ export function useMappingSave(data: UseMappingRowsResult): UseMappingSaveResult
   const saveMutation = useMutation({
     mutationFn: async ({ payload }: SaveVariables) => {
       const res = await apiRequest("POST", "/api/account-mappings/bulk", { mappings: payload });
-      return res.json();
+      return (await res.json()) as AccountMapping[];
     },
-    onSuccess: async (_savedMappings, { txType }) => {
-      await queryClient.invalidateQueries({ queryKey: ["/api/account-mappings", txType] });
+    onSuccess: (savedRows, { txType, deptId, whId, phId }) => {
+      queryClient.setQueryData(
+        ["/api/account-mappings", txType],
+        (old: AccountMapping[] | undefined) => {
+          if (!old) return savedRows;
+
+          const kept = old.filter(m => {
+            const mDept = m.departmentId ?? null;
+            const mWh   = m.warehouseId ?? null;
+            const mPh   = m.pharmacyId  ?? null;
+            return mDept !== deptId || mWh !== whId || mPh !== phId;
+          });
+          return [...kept, ...savedRows];
+        }
+      );
       data.resetChanges();
       toast({ title: "تم حفظ إعدادات ربط الحسابات بنجاح" });
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["/api/account-mappings", txType] });
+      }, 2000);
     },
     onError: (error: Error) =>
       toast({ title: "خطأ", description: error.message, variant: "destructive" }),
@@ -62,7 +82,13 @@ export function useMappingSave(data: UseMappingRowsResult): UseMappingSaveResult
       isActive:        true,
     }));
 
-    saveMutation.mutate({ payload, txType: data.selectedTxType });
+    saveMutation.mutate({
+      payload,
+      txType: data.selectedTxType,
+      deptId: effectiveDepartmentId,
+      whId:   effectiveWarehouseId,
+      phId:   effectivePharmacyId,
+    });
   };
 
   return { handleSave, isSaving: saveMutation.isPending };
