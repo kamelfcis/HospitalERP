@@ -6,7 +6,7 @@
  * down to child components — no business logic lives in the page.
  */
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   type AccountMapping,
@@ -74,10 +74,12 @@ export function useMappingRows(): UseMappingRowsResult {
   const [selectedPharmacyId,  setSelectedPharmacyId]  = useState<string>("__generic__");
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>("__generic__");
 
+  const autoDetectedRef = useRef<string | null>(null);
   const setSelectedTxType = (v: string) => {
     if (NO_WAREHOUSE_SELECTOR_TYPES.has(v)) setSelectedWarehouseId("__generic__");
     if (!PHARMACY_SELECTOR_TYPES.has(v))    setSelectedPharmacyId("__generic__");
     if (!DEPARTMENT_SELECTOR_TYPES.has(v))  setSelectedDepartmentId("__generic__");
+    autoDetectedRef.current = null;
     setSelectedTxTypeRaw(v);
   };
   const [rows,       setRows]       = useState<MappingRow[]>([]);
@@ -107,6 +109,46 @@ export function useMappingRows(): UseMappingRowsResult {
       return res.json();
     },
   });
+
+  useEffect(() => {
+    if (mappingsLoading || !mappings || mappings.length === 0) return;
+    if (autoDetectedRef.current === selectedTxType) return;
+    if (selectedDepartmentId !== "__generic__") {
+      autoDetectedRef.current = selectedTxType;
+      return;
+    }
+
+    const hasGeneric = mappings.some(m => !m.warehouseId && !m.pharmacyId && !(m as any).departmentId);
+    if (hasGeneric) {
+      autoDetectedRef.current = selectedTxType;
+      return;
+    }
+
+    if (DEPARTMENT_SELECTOR_TYPES.has(selectedTxType)) {
+      const deptId = mappings.find(m => (m as any).departmentId)?.departmentId as string | undefined;
+      if (deptId) {
+        autoDetectedRef.current = selectedTxType;
+        setSelectedDepartmentId(deptId);
+        return;
+      }
+    }
+
+    const whId = mappings.find(m => m.warehouseId)?.warehouseId as string | undefined;
+    if (whId) {
+      autoDetectedRef.current = selectedTxType;
+      setSelectedWarehouseId(whId);
+      return;
+    }
+
+    const phId = mappings.find(m => m.pharmacyId)?.pharmacyId as string | undefined;
+    if (phId) {
+      autoDetectedRef.current = selectedTxType;
+      setSelectedPharmacyId(phId);
+      return;
+    }
+
+    autoDetectedRef.current = selectedTxType;
+  }, [mappings, mappingsLoading, selectedTxType, selectedDepartmentId]);
 
   // Rebuild rows whenever server data or filter selection changes.
   // Only reset hasChanges when the FILTER selection changes — not on background refetches.
