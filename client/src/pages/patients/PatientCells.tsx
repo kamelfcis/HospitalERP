@@ -54,9 +54,9 @@ export function TotalsRow({ rows }: { rows: PatientStats[] }) {
     rows.reduce((acc, r) => acc + +(r[key] ?? 0), 0);
 
   return (
-    <tr className="bg-muted/50 font-bold text-xs border-t-2">
-      <td className="sticky right-0 z-[2] bg-muted/50 border-l" />
-      <td className="sticky right-8 z-[2] bg-muted/50 border-l text-right pr-2 py-1" colSpan={5}>
+    <tr className="font-bold text-xs border-t-2" style={{ background: "hsl(210 15% 93%)" }}>
+      <td className="sticky-footer-right" style={{ right: 0, width: 36 }} />
+      <td className="sticky-footer-right text-right pr-3 py-1.5" style={{ right: 36, minWidth: 160, boxShadow: "-4px 0 8px -2px rgba(0,0,0,0.12)" }} colSpan={5}>
         الإجمالي ({rows.length} مريض)
       </td>
       <td className="text-center tabular-nums px-2">{formatNumber(sum("servicesTotal"))}</td>
@@ -73,7 +73,7 @@ export function TotalsRow({ rows }: { rows: PatientStats[] }) {
       <td className="text-center tabular-nums px-2">{formatNumber(sum("outstandingTotal"))}</td>
       <td className="text-center tabular-nums px-2">{formatNumber(sum("transferredTotal"))}</td>
       <td />
-      <td className="sticky left-0 z-[2] bg-muted/50 border-r" />
+      <td className="sticky-footer-left" style={{ minWidth: 80 }} />
     </tr>
   );
 }

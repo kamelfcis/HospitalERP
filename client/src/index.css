@@ -425,6 +425,86 @@
     border-right: none;
   }
 
+  .sticky-col-right {
+    position: sticky;
+    z-index: 2;
+    background: white;
+  }
+  .peachtree-grid-row:nth-child(even) .sticky-col-right {
+    background: hsl(210 15% 97%);
+  }
+  .peachtree-grid-row:hover .sticky-col-right {
+    background: hsl(210 30% 94%);
+  }
+
+  .sticky-col-left {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: white;
+    box-shadow: 4px 0 8px -2px rgba(0,0,0,0.12);
+  }
+  .peachtree-grid-row:nth-child(even) .sticky-col-left {
+    background: hsl(210 15% 97%);
+  }
+  .peachtree-grid-row:hover .sticky-col-left {
+    background: hsl(210 30% 94%);
+  }
+
+  .sticky-name-shadow {
+    box-shadow: -4px 0 8px -2px rgba(0,0,0,0.12);
+  }
+
+  .sticky-header-right {
+    position: sticky;
+    z-index: 30;
+    background: linear-gradient(180deg, hsl(215 55% 38%) 0%, hsl(215 55% 28%) 100%);
+  }
+  .sticky-header-left {
+    position: sticky;
+    left: 0;
+    z-index: 30;
+    background: linear-gradient(180deg, hsl(215 55% 38%) 0%, hsl(215 55% 28%) 100%);
+    box-shadow: 4px 0 8px -2px rgba(0,0,0,0.2);
+  }
+  .sticky-header-name-shadow {
+    box-shadow: -4px 0 8px -2px rgba(0,0,0,0.2);
+  }
+
+  .sticky-footer-right {
+    position: sticky;
+    z-index: 5;
+    background: hsl(210 15% 93%);
+  }
+  .sticky-footer-left {
+    position: sticky;
+    left: 0;
+    z-index: 5;
+    background: hsl(210 15% 93%);
+    box-shadow: 4px 0 8px -2px rgba(0,0,0,0.12);
+  }
+
+  .dark .sticky-col-right,
+  .dark .sticky-col-left {
+    background: hsl(215 15% 18%);
+  }
+  .dark .peachtree-grid-row:nth-child(even) .sticky-col-right,
+  .dark .peachtree-grid-row:nth-child(even) .sticky-col-left {
+    background: hsl(215 15% 16%);
+  }
+  .dark .peachtree-grid-row:hover .sticky-col-right,
+  .dark .peachtree-grid-row:hover .sticky-col-left {
+    background: hsl(215 20% 22%);
+  }
+  .dark .sticky-header-right,
+  .dark .sticky-header-left {
+    background: linear-gradient(180deg, hsl(215 35% 30%) 0%, hsl(215 35% 22%) 100%);
+  }
+  .dark .sticky-footer-right,
+  .dark .sticky-footer-left {
+    background: hsl(215 15% 22%);
+  }
+
   .peachtree-input {
     height: 28px;
     font-size: 13px;
