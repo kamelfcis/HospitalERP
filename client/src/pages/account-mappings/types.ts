@@ -280,6 +280,15 @@ export const DYNAMIC_LINE_SPECS: Record<string, Record<string, { debit?: Dynamic
       },
     },
   },
+  supplier_payment: {
+    ap_settlement: {
+      debit: {
+        label:       "مدين: يُحدد تلقائياً من حساب GL المرتبط بالمورد",
+        tooltip:     "حساب ذمم الموردين يُحدد تلقائياً من حساب GL المرتبط بالمورد في بيانات الموردين. كل مورد مربوط بحساب مختلف في دليل الحسابات — لا يحتاج الأدمن لتحديد حساب ذمم هنا. إذا لم يكن للمورد حساب GL، يُستخدم الحساب الاحتياطي المحدد هنا.",
+        hasFallback: true,
+      },
+    },
+  },
   stock_count_adjustment: {
     // Surplus: Dr side is the warehouse GL account (resolved from session warehouse)
     stock_gain: {

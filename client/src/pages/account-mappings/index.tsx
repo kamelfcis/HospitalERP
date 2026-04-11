@@ -100,6 +100,20 @@ export default function AccountMappings() {
           />
         )}
 
+        {data.selectedTxType === "supplier_payment" && (
+          <div className="mx-4 mb-3 flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-800 dark:text-amber-200" dir="rtl">
+            <Info className="h-4 w-4 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-semibold mb-0.5">ملاحظة: حساب ذمم الموردين مُعيَّن على مستوى المورد</p>
+              <p className="text-xs opacity-80">
+                حساب الذمم (الجانب المدين) يُحدد تلقائياً من <strong>حساب GL المرتبط بالمورد</strong> في شاشة بيانات الموردين.
+                كل مورد مربوط بحساب مختلف في دليل الحسابات — لا يحتاج الأدمن لتحديد حساب ذمم موحد هنا.
+                الربط هنا يُستخدم فقط كاحتياطي في حالة عدم وجود حساب مرتبط بالمورد.
+              </p>
+            </div>
+          </div>
+        )}
+
         {data.selectedTxType === "cashier_shift_close" && (
           <div className="mx-4 mb-3 flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg text-sm text-blue-800 dark:text-blue-200" dir="rtl">
             <Info className="h-4 w-4 mt-0.5 shrink-0" />
