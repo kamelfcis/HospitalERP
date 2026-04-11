@@ -11,12 +11,12 @@ function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, canAdm
 
   return (
     <tr className={rowClass} data-testid={`row-patient-${p.id}`}>
-      <td className="sticky-col-right text-center text-muted-foreground" style={{ right: 0, width: 36 }}>{index}</td>
-      <td className="sticky-col-right sticky-name-shadow font-medium whitespace-nowrap px-3" style={{ right: 36, minWidth: 160 }} data-testid={`text-name-${p.id}`}>{p.fullName}</td>
-      <td className="text-muted-foreground whitespace-nowrap px-3" style={{ minWidth: 120 }} data-testid={`text-doctor-${p.id}`}>{p.latestDoctorName || "—"}</td>
-      <td className="font-mono whitespace-nowrap px-3" style={{ minWidth: 110 }} data-testid={`text-phone-${p.id}`}>{p.phone || "—"}</td>
-      <td className="font-mono whitespace-nowrap px-3 text-muted-foreground" style={{ minWidth: 120 }} data-testid={`text-national-id-${p.id}`}>{p.nationalId || "—"}</td>
-      <td className="text-center px-2" style={{ minWidth: 44 }} data-testid={`text-age-${p.id}`}>{p.age ?? "—"}</td>
+      <td className="sticky-col-right text-center text-muted-foreground whitespace-nowrap" style={{ right: 0, width: 36 }}>{index}</td>
+      <td className="sticky-col-right sticky-name-shadow font-medium whitespace-nowrap px-3" style={{ right: 36 }} data-testid={`text-name-${p.id}`}>{p.fullName}</td>
+      <td className="text-muted-foreground whitespace-nowrap px-3" data-testid={`text-doctor-${p.id}`}>{p.latestDoctorName || "—"}</td>
+      <td className="font-mono whitespace-nowrap px-3" data-testid={`text-phone-${p.id}`}>{p.phone || "—"}</td>
+      <td className="font-mono whitespace-nowrap px-3 text-muted-foreground" data-testid={`text-national-id-${p.id}`}>{p.nationalId || "—"}</td>
+      <td className="text-center whitespace-nowrap px-2" data-testid={`text-age-${p.id}`}>{p.age ?? "—"}</td>
       <PatientTypeBadge type={p.latestPatientType} />
       <AmountCell value={+p.servicesTotal} />
       <AmountCell value={+p.orRoomTotal} />
@@ -25,27 +25,27 @@ function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, canAdm
       <AmountCell value={+p.consumablesTotal} />
       <AmountCell value={+p.gasTotal} />
       <AmountCell value={+p.stayTotal} />
-      <td className="text-center font-bold tabular-nums px-2" style={{ minWidth: 100 }} data-testid={`text-total-${p.id}`}>
+      <td className="text-center font-bold tabular-nums whitespace-nowrap px-3" data-testid={`text-total-${p.id}`}>
         {+p.grandTotal > 0 ? formatNumber(+p.grandTotal) : "—"}
       </td>
-      <td className="text-center tabular-nums text-blue-700 px-2" style={{ minWidth: 90 }} data-testid={`text-company-share-${p.id}`}>
+      <td className="text-center tabular-nums text-blue-700 whitespace-nowrap px-3" data-testid={`text-company-share-${p.id}`}>
         {+p.companyShareTotal > 0 ? formatNumber(+p.companyShareTotal) : "—"}
       </td>
-      <td className="text-center tabular-nums text-orange-700 px-2" style={{ minWidth: 90 }} data-testid={`text-patient-share-${p.id}`}>
+      <td className="text-center tabular-nums text-orange-700 whitespace-nowrap px-3" data-testid={`text-patient-share-${p.id}`}>
         {+p.patientShareTotal > 0 ? formatNumber(+p.patientShareTotal) : "—"}
       </td>
-      <td className="text-center tabular-nums text-green-700 px-2" style={{ minWidth: 90 }} data-testid={`text-paid-${p.id}`}>
+      <td className="text-center tabular-nums text-green-700 whitespace-nowrap px-3" data-testid={`text-paid-${p.id}`}>
         {+p.paidTotal > 0 ? formatNumber(+p.paidTotal) : "—"}
       </td>
-      <td className="text-center tabular-nums text-red-600 px-2" style={{ minWidth: 90 }} data-testid={`text-outstanding-${p.id}`}>
+      <td className="text-center tabular-nums text-red-600 whitespace-nowrap px-3" data-testid={`text-outstanding-${p.id}`}>
         {+p.outstandingTotal > 0 ? formatNumber(+p.outstandingTotal) : "—"}
       </td>
-      <td className="text-center tabular-nums text-purple-700 px-2" style={{ minWidth: 90 }} data-testid={`text-transferred-${p.id}`}>
+      <td className="text-center tabular-nums text-purple-700 whitespace-nowrap px-3" data-testid={`text-transferred-${p.id}`}>
         {+p.transferredTotal > 0 ? formatNumber(+p.transferredTotal) : "—"}
       </td>
       <InvoiceStatusBadge status={p.latestInvoiceStatus} isFinalClosed={p.latestIsFinalClosed} />
 
-      <td className="sticky-col-left" style={{ minWidth: 80 }}>
+      <td className="sticky-col-left whitespace-nowrap">
         <div className="flex items-center justify-center gap-0.5">
           <Button
             variant="ghost" size="icon" className="h-6 w-6 text-purple-600"
@@ -148,32 +148,32 @@ export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInv
         className="flex-1 overflow-auto"
         style={{ maxHeight: "calc(100vh - 250px)" }}
       >
-        <table className="text-xs border-collapse" style={{ minWidth: 1920 }}>
+        <table className="text-xs" style={{ borderCollapse: "collapse", tableLayout: "auto" }}>
 
           <thead className="peachtree-grid-header sticky top-0 z-20">
             <tr>
-              <th className="sticky-header-right text-center" style={{ right: 0, width: 36 }}>#</th>
-              <th className="sticky-header-right sticky-header-name-shadow text-right px-3" style={{ right: 36, minWidth: 160 }}>الاسم</th>
-              <th className="text-right px-3" style={{ minWidth: 120 }}>الطبيب</th>
-              <th className="text-right px-3" style={{ minWidth: 110 }}>التليفون</th>
-              <th className="text-right px-3" style={{ minWidth: 120 }}>الرقم القومي</th>
-              <th className="text-center px-2" style={{ minWidth: 44 }}>السن</th>
-              <th className="text-center px-2" style={{ minWidth: 70 }}>النوع</th>
-              <th className="text-center px-2" style={{ minWidth: 88 }}>خدمات</th>
-              <th className="text-center px-2" style={{ minWidth: 88 }}>عمليات</th>
-              <th className="text-center px-2" style={{ minWidth: 88 }}>أجهزة</th>
-              <th className="text-center px-2" style={{ minWidth: 88 }}>أدوية</th>
-              <th className="text-center px-2" style={{ minWidth: 88 }}>مستهلكات</th>
-              <th className="text-center px-2" style={{ minWidth: 88 }}>غازات</th>
-              <th className="text-center px-2" style={{ minWidth: 88 }}>إقامة</th>
-              <th className="text-center px-2 font-bold" style={{ minWidth: 100 }}>الإجمالي</th>
-              <th className="text-center px-2 text-blue-300" style={{ minWidth: 90 }}>حصة شركة</th>
-              <th className="text-center px-2 text-orange-300" style={{ minWidth: 90 }}>حصة مريض</th>
-              <th className="text-center px-2 text-green-300" style={{ minWidth: 90 }}>المسدد</th>
-              <th className="text-center px-2 text-red-300" style={{ minWidth: 90 }}>المتبقي</th>
-              <th className="text-center px-2 text-purple-300" style={{ minWidth: 90 }}>محول طبيب</th>
-              <th className="text-center px-2" style={{ minWidth: 80 }}>الحالة</th>
-              <th className="sticky-header-left text-center" style={{ minWidth: 80 }}>إجراءات</th>
+              <th className="sticky-header-right text-center whitespace-nowrap" style={{ right: 0, width: 36 }}>#</th>
+              <th className="sticky-header-right sticky-header-name-shadow text-right whitespace-nowrap px-3" style={{ right: 36 }}>الاسم</th>
+              <th className="text-right whitespace-nowrap px-3">الطبيب</th>
+              <th className="text-right whitespace-nowrap px-3">التليفون</th>
+              <th className="text-right whitespace-nowrap px-3">الرقم القومي</th>
+              <th className="text-center whitespace-nowrap px-2">السن</th>
+              <th className="text-center whitespace-nowrap px-2">النوع</th>
+              <th className="text-center whitespace-nowrap px-2">خدمات</th>
+              <th className="text-center whitespace-nowrap px-2">عمليات</th>
+              <th className="text-center whitespace-nowrap px-2">أجهزة</th>
+              <th className="text-center whitespace-nowrap px-2">أدوية</th>
+              <th className="text-center whitespace-nowrap px-2">مستهلكات</th>
+              <th className="text-center whitespace-nowrap px-2">غازات</th>
+              <th className="text-center whitespace-nowrap px-2">إقامة</th>
+              <th className="text-center whitespace-nowrap px-3 font-bold">الإجمالي</th>
+              <th className="text-center whitespace-nowrap px-3 text-blue-300">حصة شركة</th>
+              <th className="text-center whitespace-nowrap px-3 text-orange-300">حصة مريض</th>
+              <th className="text-center whitespace-nowrap px-3 text-green-300">المسدد</th>
+              <th className="text-center whitespace-nowrap px-3 text-red-300">المتبقي</th>
+              <th className="text-center whitespace-nowrap px-3 text-purple-300">محول طبيب</th>
+              <th className="text-center whitespace-nowrap px-2">الحالة</th>
+              <th className="sticky-header-left text-center whitespace-nowrap">إجراءات</th>
             </tr>
           </thead>
 
