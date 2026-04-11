@@ -166,7 +166,7 @@ export const FinancialSidebar = memo(function FinancialSidebar({
                 سيتم إغلاق الفاتورة <strong>{invoiceNumber}</strong> نهائياً.
                 بعد الإغلاق لن يمكن إجراء أي تعديلات عليها إلا بصلاحية خاصة.
                 <br /><br />
-                <strong>الشروط:</strong> الرصيد المتبقي = صفر، لا فواتير مسودة في الإقامة.
+                <strong>الشروط:</strong> نقدي: الرصيد المتبقي = صفر. تعاقد: نصيب المريض مدفوع (المتبقي على الشركة). لا فواتير مسودة في الإقامة.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

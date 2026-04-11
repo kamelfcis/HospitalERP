@@ -614,17 +614,52 @@ export function registerPatientInvoicesRoutes(app: Express) {
       const isContractPatient = !!(inv.contract_id || inv.company_id);
 
       if (isContractPatient) {
+        // ACCOUNTING_PENDING: contract final-close — company share treated as آجل (accounts receivable)
+        //
+        // Cascade: try contract_claim_lines first, then invoice line-level shares,
+        // then treat entire remaining as company share for contract patients.
+        //
+        // Rule: contract patient can final-close if patient has paid their share.
+        // The remaining balance is the company's responsibility per contract terms.
+
         const claimRes = await db.execute(sql`
           SELECT COALESCE(SUM(company_share_amount::numeric), 0)::text AS total_company_share
           FROM contract_claim_lines
           WHERE invoice_header_id = ${id}
         `);
-        const totalCompanyShare = parseFloat(String((claimRes.rows[0] as Record<string,unknown>)?.total_company_share || "0"));
-        const coveredAmount = paidAmount + totalCompanyShare;
+        const claimCompanyShare = parseFloat(String((claimRes.rows[0] as Record<string,unknown>)?.total_company_share || "0"));
+
+        let coveredAmount: number;
+
+        if (claimCompanyShare > 0.01) {
+          coveredAmount = paidAmount + claimCompanyShare;
+        } else {
+          const lineShareRes = await db.execute(sql`
+            SELECT
+              COALESCE(SUM(company_share_amount::numeric), 0)::text          AS line_company_share,
+              COALESCE(SUM(patient_share_amount::numeric), 0)::text          AS line_patient_share,
+              COALESCE(SUM(total_price::numeric), 0)::text                   AS lines_net,
+              COALESCE(SUM(CASE WHEN company_share_amount IS NULL AND patient_share_amount IS NULL
+                                THEN total_price::numeric ELSE 0 END), 0)::text AS unassigned_amount
+            FROM patient_invoice_lines
+            WHERE header_id = ${id} AND COALESCE(is_void, false) = false
+          `);
+          const lineCompanyShare  = parseFloat(String((lineShareRes.rows[0] as Record<string,unknown>)?.line_company_share  || "0"));
+          const linePatientShare  = parseFloat(String((lineShareRes.rows[0] as Record<string,unknown>)?.line_patient_share  || "0"));
+          const unassignedAmount  = parseFloat(String((lineShareRes.rows[0] as Record<string,unknown>)?.unassigned_amount   || "0"));
+
+          if (lineCompanyShare > 0.01 || linePatientShare > 0.01) {
+            coveredAmount = paidAmount + lineCompanyShare + unassignedAmount;
+          } else {
+            coveredAmount = netAmount;
+          }
+        }
+
         if (coveredAmount < netAmount - 0.01) {
+          const companyPortion = coveredAmount - paidAmount;
           const remaining = netAmount - coveredAmount;
           return res.status(409).json({
-            message: `لا يمكن الإغلاق النهائي — يوجد رصيد متبقي ${remaining.toFixed(2)} ج.م غير مغطى (المدفوع: ${paidAmount.toFixed(2)} + مطالبات الشركة: ${totalCompanyShare.toFixed(2)} من أصل ${netAmount.toFixed(2)})`,
+            message: `لا يمكن الإغلاق النهائي — يوجد رصيد متبقي ${remaining.toFixed(2)} ج.م غير مغطى (المدفوع من المريض: ${paidAmount.toFixed(2)} + نصيب الشركة: ${companyPortion.toFixed(2)} من أصل ${netAmount.toFixed(2)})`,
           });
         }
       } else {
