@@ -7,8 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   Save, Plus, Loader2, CreditCard, ShieldCheck,
-  Search, XCircle, CheckCircle2, ChevronDown, ChevronUp, BookmarkPlus, Cloud, CloudOff, AlertTriangle,
+  Search, XCircle, CheckCircle2, ChevronDown, ChevronUp, BookmarkPlus, Cloud, CloudOff, AlertTriangle, ArrowRight,
 } from "lucide-react";
+import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import type { AutoSaveStatus } from "../hooks/useAutoSave";
 import { patientInvoiceStatusLabels } from "@shared/schema";
@@ -113,6 +114,8 @@ export function InvoiceHeaderBar({
   getStatusBadgeClass,
 }: InvoiceHeaderBarProps) {
   const { toast } = useToast();
+
+  const [, navigate] = useLocation();
 
   // ── collapse: new invoice→expanded, loaded invoice→collapsed ─────────────
   const [expanded, setExpanded] = useState(!invoiceId);
@@ -317,6 +320,17 @@ export function InvoiceHeaderBar({
 
         {/* ── Summary bar (always visible) ──────────────────────────────────── */}
         <div className="flex items-center gap-2 px-2 py-1 bg-muted/30 border-b border-border/40">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0"
+            onClick={() => navigate("/patient-invoices")}
+            title="رجوع لحالات الدخول"
+            data-testid="button-back-to-admissions"
+          >
+            <ArrowRight className="h-4 w-4" />
+          </Button>
+
           <button type="button" onClick={() => setExpanded(v => !v)}
             className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
             title={expanded ? "تصغير" : "توسيع"}
