@@ -353,6 +353,7 @@ const methods = {
         return (
           `(p.full_name ILIKE ${pat}` +
           ` OR p.phone ILIKE ${pat}` +
+          ` OR p.national_id ILIKE ${pat}` +
           ` OR EXISTS (` +
             `SELECT 1 FROM rpt_patient_visit_summary r3` +
             ` WHERE r3.patient_name = p.full_name` +

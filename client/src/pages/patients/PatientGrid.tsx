@@ -15,6 +15,7 @@ function PatientRow({ patient: p, index, dimmed, canViewInvoice, canEdit, canAdm
       <td className="sticky-col-right sticky-name-shadow font-medium whitespace-nowrap px-3" style={{ right: 36, minWidth: 160 }} data-testid={`text-name-${p.id}`}>{p.fullName}</td>
       <td className="text-muted-foreground whitespace-nowrap px-3" style={{ minWidth: 120 }} data-testid={`text-doctor-${p.id}`}>{p.latestDoctorName || "—"}</td>
       <td className="font-mono whitespace-nowrap px-3" style={{ minWidth: 110 }} data-testid={`text-phone-${p.id}`}>{p.phone || "—"}</td>
+      <td className="font-mono whitespace-nowrap px-3 text-muted-foreground" style={{ minWidth: 120 }} data-testid={`text-national-id-${p.id}`}>{p.nationalId || "—"}</td>
       <td className="text-center px-2" style={{ minWidth: 44 }} data-testid={`text-age-${p.id}`}>{p.age ?? "—"}</td>
       <PatientTypeBadge type={p.latestPatientType} />
       <AmountCell value={+p.servicesTotal} />
@@ -147,7 +148,7 @@ export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInv
         className="flex-1 overflow-auto"
         style={{ maxHeight: "calc(100vh - 250px)" }}
       >
-        <table className="text-xs border-collapse" style={{ minWidth: 1800 }}>
+        <table className="text-xs border-collapse" style={{ minWidth: 1920 }}>
 
           <thead className="peachtree-grid-header sticky top-0 z-20">
             <tr>
@@ -155,6 +156,7 @@ export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInv
               <th className="sticky-header-right sticky-header-name-shadow text-right px-3" style={{ right: 36, minWidth: 160 }}>الاسم</th>
               <th className="text-right px-3" style={{ minWidth: 120 }}>الطبيب</th>
               <th className="text-right px-3" style={{ minWidth: 110 }}>التليفون</th>
+              <th className="text-right px-3" style={{ minWidth: 120 }}>الرقم القومي</th>
               <th className="text-center px-2" style={{ minWidth: 44 }}>السن</th>
               <th className="text-center px-2" style={{ minWidth: 70 }}>النوع</th>
               <th className="text-center px-2" style={{ minWidth: 88 }}>خدمات</th>
@@ -178,7 +180,7 @@ export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInv
           <tbody>
             {rows.length === 0 ? (
               <tr className="peachtree-grid-row">
-                <td colSpan={21} className="text-center py-6 text-muted-foreground">
+                <td colSpan={22} className="text-center py-6 text-muted-foreground">
                   لا يوجد مرضى
                 </td>
               </tr>
@@ -204,7 +206,7 @@ export default function PatientGrid({ rows, isLoading, hasDeptFilter, canViewInv
                   <>
                     <tr>
                       <td
-                        colSpan={21}
+                        colSpan={22}
                         className="py-1 px-2 text-xs text-muted-foreground bg-muted/20 border-y"
                       >
                         المرضى التاليون لا توجد لهم فواتير في هذا القسم ({inactiveRows.length})
