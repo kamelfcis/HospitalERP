@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeftRight, Stethoscope, FileCheck, Loader2, Save, Lock } from "lucide-react";
+import { ArrowLeftRight, Stethoscope, FileCheck, Loader2, Save } from "lucide-react";
 import { formatCurrency, formatDateShort } from "@/lib/formatters";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -194,7 +194,7 @@ export function InvoiceTab({
   const [localDtDoctorId, setLocalDtDoctorId] = useState("");
   const { toast } = useToast();
 
-  const diagnosisEditable = !isFinalClosed;
+  const diagnosisEditable = true;
   const saveDiagnosisMutation = useMutation({
     mutationFn: () => apiRequest("PATCH", `/api/patient-invoices/${invoiceId}/clinical-info`, { diagnosis, notes }),
     onSuccess: () => toast({ title: "تم الحفظ", description: "تم حفظ التشخيص والتقرير الطبي" }),
@@ -317,29 +317,12 @@ export function InvoiceTab({
 
           {invoiceId && (
             <TabsContent value="diagnosis" className="mt-2">
-              <div className="space-y-4 max-w-2xl">
-                <div className="flex items-center gap-2">
-                  <FileCheck className="h-4 w-4 text-blue-600" />
-                  <h3 className="text-sm font-semibold">التشخيص والتقرير الطبي</h3>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label className="text-xs text-muted-foreground">التشخيص</Label>
-                  <Textarea
-                    value={diagnosis}
-                    onChange={e => setDiagnosis(e.target.value)}
-                    disabled={!diagnosisEditable}
-                    placeholder={diagnosisEditable ? "أدخل التشخيص..." : "—"}
-                    rows={4}
-                    className="text-sm resize-none"
-                    data-testid="textarea-diagnosis"
-                  />
-                </div>
-                {isFinalClosed && (
-                  <p className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Lock className="h-3 w-3" /> مغلق نهائياً — غير قابل للتعديل
-                  </p>
-                )}
-                {diagnosisEditable && (
+              <div className="space-y-3" dir="rtl">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileCheck className="h-4 w-4 text-blue-600" />
+                    <h3 className="text-sm font-semibold">التشخيص والتقرير الطبي</h3>
+                  </div>
                   <Button
                     size="sm"
                     className="gap-1"
@@ -348,9 +331,35 @@ export function InvoiceTab({
                     data-testid="button-save-diagnosis"
                   >
                     {saveDiagnosisMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                    حفظ التشخيص
+                    حفظ
                   </Button>
-                )}
+                </div>
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <Label className="text-xs font-medium">التشخيص</Label>
+                    <Textarea
+                      value={diagnosis}
+                      onChange={e => setDiagnosis(e.target.value)}
+                      placeholder="أدخل التشخيص..."
+                      rows={5}
+                      className="text-sm resize-y w-full text-right"
+                      dir="rtl"
+                      data-testid="textarea-diagnosis"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Label className="text-xs font-medium">ملاحظات / تقرير طبي</Label>
+                    <Textarea
+                      value={notes}
+                      onChange={e => setNotes(e.target.value)}
+                      placeholder="أدخل الملاحظات أو التقرير الطبي..."
+                      rows={5}
+                      className="text-sm resize-y w-full text-right"
+                      dir="rtl"
+                      data-testid="textarea-medical-notes"
+                    />
+                  </div>
+                </div>
               </div>
             </TabsContent>
           )}

@@ -766,7 +766,7 @@ export function registerPatientInvoicesRoutes(app: Express) {
 
   // ══════════════════════════════════════════════════════════════════════════
   //  PATCH /api/patient-invoices/:id/clinical-info
-  //  تحديث التشخيص والملاحظات — مسموح حتى بعد الاعتماد، ممنوع فقط بعد الإغلاق النهائي
+  //  تحديث التشخيص والملاحظات — مسموح دائماً حتى بعد الحفظ النهائي (بيانات طبية)
   // ══════════════════════════════════════════════════════════════════════════
   app.patch("/api/patient-invoices/:id/clinical-info", requireAuth, checkPermission(PERMISSIONS.PATIENT_INVOICES_EDIT), async (req, res) => {
     try {
@@ -782,9 +782,6 @@ export function registerPatientInvoicesRoutes(app: Express) {
       `);
       const inv = invRes.rows[0] as Record<string, unknown> | undefined;
       if (!inv) return res.status(404).json({ message: "الفاتورة غير موجودة" });
-      if (inv.is_final_closed) {
-        return res.status(409).json({ message: "لا يمكن تعديل فاتورة تم إغلاقها نهائيًا" });
-      }
 
       const oldDiagnosis = inv.diagnosis;
       const oldNotes = inv.notes;
