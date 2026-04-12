@@ -1,6 +1,5 @@
 import { db } from "../db";
 import { eq, and, sql, asc, desc } from "drizzle-orm";
-import { logAcctEvent } from "../lib/accounting-event-logger";
 import { logger } from "../lib/logger";
 import {
   doctorTransfers,
@@ -14,6 +13,7 @@ import {
 import type { DatabaseStorage } from "./index";
 import { roundMoney, parseMoney } from "../finance-helpers";
 import { generateDoctorTransferGL } from "../lib/doctor-transfer-gl";
+import { generateDoctorSettlementGL } from "../lib/doctor-settlement-gl";
 
 const methods = {
 
@@ -151,23 +151,26 @@ const methods = {
     return { data, total, page, pageSize };
   },
 
-  async getDoctorOutstandingTransfers(this: DatabaseStorage, doctorName: string): Promise<(DoctorTransfer & { settled: string; remaining: string })[]> {
+  async getDoctorOutstandingTransfers(this: DatabaseStorage, doctorName: string): Promise<(DoctorTransfer & { settled: string; remaining: string; invoiceNumber: string; patientName: string })[]> {
     const res = await db.execute(sql`
       SELECT
         dt.id,
-        dt.invoice_id        AS "invoiceId",
-        dt.doctor_name       AS "doctorName",
-        dt.amount::text      AS amount,
-        dt.client_request_id AS "clientRequestId",
-        dt.transferred_at    AS "transferredAt",
+        dt.invoice_id          AS "invoiceId",
+        dt.doctor_name         AS "doctorName",
+        dt.amount::text        AS amount,
+        dt.client_request_id   AS "clientRequestId",
+        dt.transferred_at      AS "transferredAt",
         dt.notes,
-        dt.created_at        AS "createdAt",
-        COALESCE(SUM(dsa.amount), 0)::text              AS settled,
-        (dt.amount - COALESCE(SUM(dsa.amount), 0))::text AS remaining
+        dt.created_at          AS "createdAt",
+        COALESCE(SUM(dsa.amount), 0)::text               AS settled,
+        (dt.amount - COALESCE(SUM(dsa.amount), 0))::text AS remaining,
+        COALESCE(pih.invoice_number, '')                 AS "invoiceNumber",
+        COALESCE(pih.patient_name,   '')                 AS "patientName"
       FROM doctor_transfers dt
       LEFT JOIN doctor_settlement_allocations dsa ON dsa.transfer_id = dt.id
+      LEFT JOIN patient_invoice_headers pih       ON pih.id = dt.invoice_id
       WHERE dt.doctor_name = ${doctorName}
-      GROUP BY dt.id
+      GROUP BY dt.id, pih.invoice_number, pih.patient_name
       HAVING (dt.amount - COALESCE(SUM(dsa.amount), 0)) > 0.001
       ORDER BY dt.transferred_at ASC
     `);
@@ -180,6 +183,7 @@ const methods = {
     amount: string;
     paymentMethod: string;
     settlementUuid: string;
+    treasuryId?: string;
     notes?: string;
     allocations?: { transferId: string; amount: string }[];
   }): Promise<DoctorSettlement & { allocations: DoctorSettlementAllocation[] }> {
@@ -258,37 +262,17 @@ const methods = {
       });
     });
 
-    if (glSourceId) {
-      try {
-        const entry = await this.generateJournalEntry({
-          sourceType: "doctor_payable_settlement",
-          sourceDocumentId: glSourceId,
-          reference: `SETTLE-${glSourceId.slice(0, 8).toUpperCase()}`,
-          description: `تسوية مستحقات الطبيب: ${params.doctorName}`,
-          entryDate: params.paymentDate,
-          lines: [{ lineType: "doctor_payable_settlement", amount: params.amount }],
-        });
-        await db.update(doctorSettlements)
-          .set({ glPosted: true })
-          .where(eq(doctorSettlements.id, glSourceId));
-        await logAcctEvent({
-          sourceType:    "doctor_payable_settlement",
-          sourceId:      glSourceId,
-          eventType:     "doctor_settlement_journal",
-          status:        "completed",
-          journalEntryId: entry?.id ?? null,
-        });
-      } catch (e) {
-        const msg = (e as Error).message;
-        logger.error({ err: msg, settlementId: glSourceId, doctorName: params.doctorName }, "[DOCTOR_SETTLEMENT] GL journal failed");
-        await logAcctEvent({
-          sourceType:   "doctor_payable_settlement",
-          sourceId:     glSourceId,
-          eventType:    "doctor_settlement_journal",
-          status:       "failed",
-          errorMessage: msg,
-        }).catch(() => {});
-      }
+    // توليد قيد التسوية — fire-and-forget إذا كانت خزنة محددة
+    if (glSourceId && params.treasuryId) {
+      generateDoctorSettlementGL({
+        settlementId: glSourceId,
+        doctorName:   params.doctorName,
+        amount:       params.amount,
+        paymentDate:  params.paymentDate,
+        treasuryId:   params.treasuryId,
+      }).catch(err =>
+        logger.warn({ err: err.message, settlementId: glSourceId }, "[DoctorSettlementGL] fire-and-forget error"),
+      );
     }
 
     logger.info({ settlementId, doctorName: params.doctorName, amount: params.amount }, "[DOCTOR_SETTLEMENT] settlement completed");

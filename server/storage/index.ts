@@ -606,8 +606,8 @@ export interface IStorage {
 
   // Doctor Settlements
   getDoctorSettlements(params?: { doctorName?: string; dateFrom?: string; dateTo?: string; page?: number; pageSize?: number }): Promise<{ data: (DoctorSettlement & { allocations: DoctorSettlementAllocation[] })[]; total: number; page: number; pageSize: number }>;
-  getDoctorOutstandingTransfers(doctorName: string): Promise<(DoctorTransfer & { settled: string; remaining: string })[]>;
-  createDoctorSettlement(params: { doctorName: string; paymentDate: string; amount: string; paymentMethod: string; settlementUuid: string; notes?: string; allocations?: { transferId: string; amount: string }[] }): Promise<DoctorSettlement & { allocations: DoctorSettlementAllocation[] }>;
+  getDoctorOutstandingTransfers(doctorName: string): Promise<(DoctorTransfer & { settled: string; remaining: string; invoiceNumber: string; patientName: string })[]>;
+  createDoctorSettlement(params: { doctorName: string; paymentDate: string; amount: string; paymentMethod: string; settlementUuid: string; treasuryId?: string; notes?: string; allocations?: { transferId: string; amount: string }[] }): Promise<DoctorSettlement & { allocations: DoctorSettlementAllocation[] }>;
 
   // Treasuries
   getTreasuriesSummary(): Promise<(Treasury & { glAccountCode: string; glAccountName: string; openingBalance: string; totalIn: string; totalOut: string; balance: string; hasPassword: boolean })[]>;

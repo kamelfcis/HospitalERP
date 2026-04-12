@@ -82,7 +82,7 @@ export function registerDoctorsRoutes(app: Express) {
     checkPermission(PERMISSIONS.DOCTOR_SETTLEMENTS_CREATE),
     async (req, res) => {
     try {
-      const { doctorName, paymentDate, amount, paymentMethod, settlementUuid, notes, allocations } = req.body;
+      const { doctorName, paymentDate, amount, paymentMethod, settlementUuid, treasuryId, notes, allocations } = req.body;
       if (!doctorName || !paymentDate || !amount || !settlementUuid) {
         return res.status(400).json({ message: "doctorName وpaymentDate وamount وsettlementUuid مطلوبة" });
       }
@@ -92,6 +92,7 @@ export function registerDoctorsRoutes(app: Express) {
         amount: String(amount),
         paymentMethod: paymentMethod || "cash",
         settlementUuid,
+        treasuryId: treasuryId || undefined,
         notes,
         allocations,
       });

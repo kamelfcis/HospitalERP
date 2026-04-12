@@ -1,11 +1,11 @@
 /**
- * قيد تحويل مستحقات الطبيب
- * يُنشأ تلقائياً عند تنفيذ تحويل مديونية لطبيب من فاتورة مريض:
- *   مدين : حساب مصروف أتعاب الطبيب  (من ربط الحسابات: patient_invoice / doctor_cost)
- *   دائن : حساب مستحقات الطبيب      (من بيانات الطبيب: payableAccountId)
+ * قيد تحويل مديونية مريض للطبيب
+ * عند التحويل:
+ *   مدين : ذمم مدينة من الأطباء  (doctor.receivableAccountId)
+ *   دائن : ذمم المرضى             (patient_invoice mapping → receivables → debitAccountId)
  */
 import { db } from "../db";
-import { eq, and, lte, gte, sql } from "drizzle-orm";
+import { eq, and, lte, gte } from "drizzle-orm";
 import { storage } from "../storage";
 import { logger } from "./logger";
 import { roundMoney, parseMoney } from "../finance-helpers";
@@ -15,51 +15,51 @@ import {
 } from "@shared/schema";
 
 export async function generateDoctorTransferGL(params: {
-  transferId:   string;
-  invoiceId:    string;
-  doctorName:   string;
-  amount:       string;
-  invoiceDate:  string;
+  transferId:    string;
+  invoiceId:     string;
+  doctorName:    string;
+  amount:        string;
+  invoiceDate:   string;
   invoiceNumber: string;
   departmentId:  string | null;
 }): Promise<void> {
-  const { transferId, invoiceId, doctorName, amount, invoiceDate, invoiceNumber, departmentId } = params;
+  const { transferId, doctorName, amount, invoiceDate, invoiceNumber, departmentId } = params;
   const amtNum = parseMoney(amount);
   if (amtNum <= 0) return;
 
-  // ── ١. حساب مستحقات الطبيب (دائن) ─────────────────────────────────────────
-  const [doctor] = await db.select({ payableAccountId: doctors.payableAccountId })
+  // ── ١. حساب ذمم مدينة من الأطباء (مدين) — من بيانات الطبيب ───────────────
+  const [doctor] = await db.select({ receivableAccountId: doctors.receivableAccountId })
     .from(doctors)
     .where(eq(doctors.name, doctorName))
     .limit(1);
 
-  if (!doctor?.payableAccountId) {
-    logger.warn({ transferId, doctorName }, "[DoctorTransferGL] لا يوجد حساب مستحقات مُعرَّف للطبيب — تم تخطي القيد");
+  if (!doctor?.receivableAccountId) {
+    logger.warn({ transferId, doctorName }, "[DoctorTransferGL] الطبيب لا يملك حساب ذمم مدينة — تم تخطي القيد");
     await logAcctEvent({
       sourceType: "doctor_transfer", sourceId: transferId,
       eventType: "doctor_transfer_journal", status: "needs_retry",
-      errorMessage: `الطبيب "${doctorName}" لا يملك حساب مستحقات (payableAccountId) — عرِّفه من صفحة الأطباء`,
+      errorMessage: `الطبيب "${doctorName}" لا يملك حساب ذمم مدينة (receivableAccountId) — عرِّفه من صفحة الأطباء`,
     }).catch(() => {});
     return;
   }
-  const creditAccountId = doctor.payableAccountId;
+  const debitAccountId = doctor.receivableAccountId;
 
-  // ── ٢. حساب تحويل الذمة (مدين) من ربط حسابات "تحويل مديونية لطبيب" ────────
-  // هذا الحساب يمثل ذمة المريض المحوَّلة للطبيب (أصول أو إيرادات — ليس مصروفاً)
-  // يُضبط من صفحة ربط الحسابات ← "تحويل مديونية لطبيب" ← "تحويل ذمة مريض لطبيب"
-  const mappings = await storage.getMappingsForTransaction("doctor_transfer", null, null, null);
-  const transferMapping = mappings.find(m => m.lineType === "payable_transfer");
+  // ── ٢. حساب ذمم المرضى (دائن) — من ربط فاتورة المريض ─────────────────────
+  // نستخدم debitAccountId من سطر receivables لأنه يمثل ذمة المريض المدينة
+  // ونضعه دائناً لتصفية الذمة عند التحويل
+  const mappings = await storage.getMappingsForTransaction("patient_invoice", null, null, departmentId ?? null);
+  const receivablesMapping = mappings.find(m => m.lineType === "receivables");
 
-  if (!transferMapping?.debitAccountId) {
-    logger.warn({ transferId }, "[DoctorTransferGL] ربط payable_transfer غير موجود — تم تخطي القيد");
+  if (!receivablesMapping?.debitAccountId) {
+    logger.warn({ transferId }, "[DoctorTransferGL] ربط حساب ذمم المرضى (receivables) غير مكتمل");
     await logAcctEvent({
       sourceType: "doctor_transfer", sourceId: transferId,
       eventType: "doctor_transfer_journal", status: "needs_retry",
-      errorMessage: "ربط حساب تحويل ذمة مريض لطبيب (payable_transfer) غير مكتمل — أضفه من صفحة ربط الحسابات ← تحويل مديونية لطبيب",
+      errorMessage: "حساب ذمم المرضى (receivables) غير محدد في ربط حسابات فاتورة المريض",
     }).catch(() => {});
     return;
   }
-  const debitAccountId = transferMapping.debitAccountId;
+  const creditAccountId = receivablesMapping.debitAccountId;
 
   // ── ٣. إنشاء القيد ─────────────────────────────────────────────────────────
   try {
@@ -100,7 +100,7 @@ export async function generateDoctorTransferGL(params: {
         entryNumber,
         entryDate:        invoiceDate,
         reference:        `DT-PI-${invoiceNumber}`,
-        description:      `تحويل مستحقات طبيب: ${doctorName} — فاتورة ${invoiceNumber}`,
+        description:      `تحويل مديونية مريض للطبيب: ${doctorName} — فاتورة ${invoiceNumber}`,
         status:           "posted",
         periodId:         period.id,
         sourceType:       "doctor_transfer",
@@ -116,7 +116,7 @@ export async function generateDoctorTransferGL(params: {
           accountId:      debitAccountId,
           debit:          amtStr,
           credit:         "0.00",
-          description:    `ذمة مريض محوَّلة للطبيب: ${doctorName} — فاتورة ${invoiceNumber}`,
+          description:    `ذمم مدينة من الطبيب ${doctorName} — فاتورة ${invoiceNumber}`,
         },
         {
           journalEntryId: entry.id,
@@ -124,11 +124,11 @@ export async function generateDoctorTransferGL(params: {
           accountId:      creditAccountId,
           debit:          "0.00",
           credit:         amtStr,
-          description:    `مستحقات طبيب: ${doctorName} — فاتورة ${invoiceNumber}`,
+          description:    `إقفال ذمة مريض — فاتورة ${invoiceNumber}`,
         },
       ]);
 
-      logger.info({ transferId, entryNumber, doctorName, amtStr }, "[DoctorTransferGL] قيد تحويل مستحقات طبيب تم بنجاح");
+      logger.info({ transferId, entryNumber, doctorName, amtStr }, "[DoctorTransferGL] قيد التحويل تم بنجاح");
       await logAcctEvent({
         sourceType: "doctor_transfer", sourceId: transferId,
         eventType: "doctor_transfer_journal", status: "completed",

@@ -91,15 +91,6 @@ export const lineTypeSpecs: Record<string, Record<string, LineTypeSpec>> = {
     cash:             { required: "cond", condition: "عند الدفع نقداً", debitSide: true, creditSide: true },
     receivable_clear: { required: "cond", condition: "لتصفية الذمم",    debitSide: true, creditSide: true },
   },
-  doctor_transfer: {
-    // تحويل ذمة المريض لحساب الطبيب — الدائن يُحدد تلقائياً من payableAccountId في بيانات الطبيب
-    payable_transfer: {
-      required: true,
-      condition: "مدين: حساب ذمم/إيرادات (ذمة المريض المحوَّلة) — دائن: مستحقات الطبيب تلقائياً من بيانات الطبيب",
-      debitSide: true,
-      creditSide: false,
-    },
-  },
   stock_count_adjustment: {
     // surplus: Dr = warehouse GL account (dynamic — from session warehouse), Cr = stock_gain.creditAccountId (configured here)
     // shortage: Dr = stock_loss.debitAccountId (configured here), Cr = warehouse GL account (dynamic)
@@ -210,7 +201,6 @@ export const suggestedLineTypes: Record<string, string[]> = {
   cashier_refund:            ["cash", "returns", "revenue_drugs", "inventory"],
   warehouse_transfer:        ["inventory"],
   doctor_payable_settlement: ["doctor_payable", "cash", "receivable_clear"],
-  doctor_transfer:           ["payable_transfer"],
   stock_count_adjustment:    ["stock_gain", "stock_loss"],
   supplier_payment:          ["ap_settlement"],
   cashier_shift_close:       ["treasury"],
@@ -358,7 +348,6 @@ export const NO_WAREHOUSE_SELECTOR_TYPES: ReadonlySet<string> = new Set([
   "warehouse_transfer",
   "supplier_payment",
   "doctor_payable_settlement",
-  "doctor_transfer",
   "contract_settlement",
   "patient_invoice",
 ]);
@@ -419,8 +408,6 @@ export const ACCOUNT_CATEGORY_RULES: Record<string, AccountCategoryRule> = {
 
   doctor_payable:       { debit: ["liability"],            credit: ["asset"]             },
   receivable_clear:     { debit: ["asset"],                credit: ["asset"]             },
-  payable_transfer:     { debit: ["asset", "revenue"]                                   },
-
   stock_gain:           {                                  credit: ["revenue", "equity", "expense"] },
   stock_loss:           { debit: ["expense", "equity"]                                  },
 

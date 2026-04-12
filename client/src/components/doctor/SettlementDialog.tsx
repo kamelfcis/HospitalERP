@@ -7,14 +7,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { Loader2, CheckCircle, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/formatters";
 import type { DoctorTransfer } from "@shared/schema";
 
-type OutstandingRow = DoctorTransfer & { settled: string; remaining: string };
+type OutstandingRow = DoctorTransfer & {
+  settled: string;
+  remaining: string;
+  invoiceNumber: string;
+  patientName: string;
+};
+
+type TreasuryOption = { id: string; name: string; glAccountId: string };
 
 export interface SettlementDialogProps {
   open: boolean;
@@ -28,18 +34,18 @@ function genUUID() {
   return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2, 18);
 }
 
-const METHOD_LABELS: Record<string, string> = { cash: "نقدي", bank: "بنكي", card: "بطاقة" };
-
 export function SettlementDialog({
   open, onClose, doctorName, preselectedTransferId, preselectedRemaining,
 }: SettlementDialogProps) {
   const { toast } = useToast();
 
-  const [date, setDate]     = useState(new Date().toISOString().split("T")[0]);
-  const [method, setMethod] = useState("cash");
-  const [amount, setAmount] = useState(preselectedRemaining ?? "");
-  const [notes, setNotes]   = useState("");
-  const [mode, setMode]     = useState<"single" | "fifo" | "manual">(preselectedTransferId ? "single" : "fifo");
+  const [date, setDate]           = useState(new Date().toISOString().split("T")[0]);
+  const [treasuryId, setTreasuryId] = useState("");
+  const [amount, setAmount]       = useState(preselectedRemaining ?? "");
+  const [notes, setNotes]         = useState("");
+  const [mode, setMode]           = useState<"fifo" | "manual">(
+    preselectedTransferId ? "fifo" : "fifo",
+  );
   const [manualAllocs, setManualAllocs] = useState<Record<string, string>>({});
 
   const { data: outstanding = [], isLoading } = useQuery<OutstandingRow[]>({
@@ -60,11 +66,15 @@ export function SettlementDialog({
       }).then(r => r.json()),
   });
 
+  const { data: treasuries = [] } = useQuery<TreasuryOption[]>({
+    queryKey: ["/api/treasuries"],
+    enabled: open,
+  });
+
   const totalOpdDeductions = parseFloat(opdDeductionsData?.totalOpdDeductions ?? "0");
-  const totalOutstanding = outstanding.reduce((s, t) => s + parseFloat(t.remaining), 0);
+  const totalOutstanding   = outstanding.reduce((s, t) => s + parseFloat(t.remaining), 0);
 
   const fifoAllocations = useMemo(() => {
-    if (mode !== "fifo") return [];
     const amt = parseFloat(amount);
     if (isNaN(amt) || amt <= 0) return [];
     const out: { transferId: string; amount: number }[] = [];
@@ -77,25 +87,16 @@ export function SettlementDialog({
       left = Math.round((left - take) * 100) / 100;
     }
     return out;
-  }, [amount, outstanding, mode]);
-
-  const singleAllocation = useMemo(() => {
-    if (mode !== "single" || !preselectedTransferId) return [];
-    const t = outstanding.find(o => o.id === preselectedTransferId);
-    if (!t) return [];
-    const amt = parseFloat(amount);
-    if (isNaN(amt) || amt <= 0) return [];
-    return [{ transferId: preselectedTransferId, amount: Math.min(amt, parseFloat(t.remaining)) }];
-  }, [mode, preselectedTransferId, outstanding, amount]);
+  }, [amount, outstanding]);
 
   const manualAllocSum = Object.values(manualAllocs).reduce((s, v) => s + (parseFloat(v) || 0), 0);
 
   const activeAllocations =
-    mode === "fifo"   ? fifoAllocations   :
-    mode === "single" ? singleAllocation  :
-    Object.entries(manualAllocs)
-      .filter(([, v]) => parseFloat(v) > 0)
-      .map(([transferId, amt]) => ({ transferId, amount: parseFloat(amt) }));
+    mode === "fifo"
+      ? fifoAllocations
+      : Object.entries(manualAllocs)
+          .filter(([, v]) => parseFloat(v) > 0)
+          .map(([tid, amt]) => ({ transferId: tid, amount: parseFloat(amt) }));
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -106,13 +107,20 @@ export function SettlementDialog({
         throw new Error(`المبلغ يتجاوز المستحقات (${formatCurrency(totalOutstanding)})`);
 
       const allocPayload =
-        mode === "single" ? singleAllocation.map(a => ({ transferId: a.transferId, amount: String(a.amount) })) :
-        mode === "manual"  ? Object.entries(manualAllocs).filter(([, v]) => parseFloat(v) > 0).map(([id, v]) => ({ transferId: id, amount: v })) :
-        undefined;
+        mode === "manual"
+          ? Object.entries(manualAllocs)
+              .filter(([, v]) => parseFloat(v) > 0)
+              .map(([id, v]) => ({ transferId: id, amount: v }))
+          : undefined;
 
       return apiRequest("POST", "/api/doctor-settlements", {
-        doctorName, paymentDate: date, amount: amt, paymentMethod: method,
-        settlementUuid: genUUID(), notes: notes.trim() || undefined,
+        doctorName,
+        paymentDate: date,
+        amount: amt,
+        paymentMethod: "cash",
+        settlementUuid: genUUID(),
+        treasuryId: treasuryId || undefined,
+        notes: notes.trim() || undefined,
         allocations: allocPayload,
       });
     },
@@ -131,7 +139,7 @@ export function SettlementDialog({
     setAmount(preselectedRemaining ?? "");
     setNotes("");
     setManualAllocs({});
-    setMode(preselectedTransferId ? "single" : "fifo");
+    setMode("fifo");
     onClose();
   }
 
@@ -139,7 +147,7 @@ export function SettlementDialog({
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) handleClose(); }}>
-      <DialogContent className="max-w-md" dir="rtl">
+      <DialogContent className="max-w-lg" dir="rtl">
         <DialogHeader>
           <DialogTitle className="text-sm font-bold flex items-center gap-2">
             <CheckCircle className="h-4 w-4 text-blue-600" />
@@ -153,7 +161,11 @@ export function SettlementDialog({
             <div className="bg-blue-50 border border-blue-200 rounded p-2 text-xs space-y-0.5">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">الفاتورة:</span>
-                <span className="font-medium">{preselected.invoiceId.slice(0, 8)}…</span>
+                <span className="font-medium">{(preselected as any).invoiceNumber || preselected.invoiceId.slice(0, 8)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">المريض:</span>
+                <span>{(preselected as any).patientName || "—"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">المستحق الأصلي:</span>
@@ -166,19 +178,46 @@ export function SettlementDialog({
             </div>
           )}
 
+          {/* ── المستحقات المعلقة (قائمة موجزة) ── */}
+          {!preselectedTransferId && outstanding.length > 0 && (
+            <div className="border rounded overflow-auto max-h-32">
+              <table className="w-full text-xs">
+                <thead className="bg-muted sticky top-0">
+                  <tr>
+                    <th className="text-right p-1.5 font-medium">فاتورة</th>
+                    <th className="text-right p-1.5 font-medium">مريض</th>
+                    <th className="text-left  p-1.5 font-medium">متبقي</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {outstanding.map(t => (
+                    <tr key={t.id} className="border-t hover:bg-muted/30">
+                      <td className="p-1.5 font-mono">{(t as any).invoiceNumber || t.invoiceId.slice(0, 8)}</td>
+                      <td className="p-1.5 text-muted-foreground max-w-[120px] truncate">{(t as any).patientName || "—"}</td>
+                      <td className="p-1.5 text-left text-destructive font-medium">{formatCurrency(parseFloat(t.remaining))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           {/* ── بيانات الدفع ── */}
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <Label className="text-xs">تاريخ الدفع</Label>
+              <Label className="text-xs">تاريخ الاستلام *</Label>
               <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-7 text-xs" />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">طريقة الدفع</Label>
-              <Select value={method} onValueChange={setMethod}>
-                <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+              <Label className="text-xs">الخزنة (للقيد المحاسبي)</Label>
+              <Select value={treasuryId} onValueChange={setTreasuryId}>
+                <SelectTrigger className="h-7 text-xs" data-testid="select-settlement-treasury">
+                  <SelectValue placeholder="اختر خزنة..." />
+                </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(METHOD_LABELS).map(([v, l]) => (
-                    <SelectItem key={v} value={v}>{l}</SelectItem>
+                  <SelectItem value="__none__">بدون قيد محاسبي</SelectItem>
+                  {treasuries.map(t => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -186,7 +225,7 @@ export function SettlementDialog({
           </div>
 
           <div className="space-y-1">
-            <Label className="text-xs">المبلغ *</Label>
+            <Label className="text-xs">المبلغ المستلم *</Label>
             <Input
               type="number" min="0.01" step="0.01"
               value={amount} onChange={e => setAmount(e.target.value)}
@@ -198,14 +237,14 @@ export function SettlementDialog({
             </p>
             {totalOpdDeductions > 0 && (
               <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1">
-                خصومات عيادات OPD مرحَّلة: <span className="font-bold">{formatCurrency(totalOpdDeductions)}</span>
+                خصومات عيادات OPD: <span className="font-bold">{formatCurrency(totalOpdDeductions)}</span>
                 {opdDeductionsData?.deductionCount ? ` (${opdDeductionsData.deductionCount} موعد)` : ""}
                 {" "}— للعلم عند التسوية
               </p>
             )}
           </div>
 
-          {/* ── وضع التوزيع ── */}
+          {/* ── وضع التوزيع (يدوي فقط إذا أكثر من حالة) ── */}
           {!preselectedTransferId && outstanding.length > 1 && (
             <div className="flex gap-2">
               {(["fifo", "manual"] as const).map(m => (
@@ -214,7 +253,7 @@ export function SettlementDialog({
                   onClick={() => { setMode(m); setManualAllocs({}); }}
                   className={`text-xs px-3 py-1 rounded border transition-colors ${mode === m ? "bg-blue-600 text-white border-blue-600" : "border-border hover:bg-muted"}`}
                 >
-                  {m === "fifo" ? "تلقائي FIFO" : "يدوي"}
+                  {m === "fifo" ? "تلقائي FIFO" : "يدوي لكل حالة"}
                 </button>
               ))}
             </div>
@@ -222,11 +261,12 @@ export function SettlementDialog({
 
           {/* ── جدول التوزيع اليدوي ── */}
           {mode === "manual" && outstanding.length > 0 && (
-            <div className="border rounded overflow-auto max-h-40">
+            <div className="border rounded overflow-auto max-h-36">
               <table className="w-full text-xs">
                 <thead className="bg-muted">
                   <tr>
                     <th className="text-right p-1.5">فاتورة</th>
+                    <th className="text-right p-1.5">مريض</th>
                     <th className="text-right p-1.5">متبقي</th>
                     <th className="text-right p-1.5">مبلغ</th>
                   </tr>
@@ -234,7 +274,8 @@ export function SettlementDialog({
                 <tbody>
                   {outstanding.map(t => (
                     <tr key={t.id} className="border-t">
-                      <td className="p-1.5 text-muted-foreground">{t.invoiceId.slice(0, 8)}…</td>
+                      <td className="p-1.5 font-mono">{(t as any).invoiceNumber || t.invoiceId.slice(0, 8)}</td>
+                      <td className="p-1.5 text-muted-foreground max-w-[80px] truncate">{(t as any).patientName || "—"}</td>
                       <td className="p-1.5 text-destructive">{formatCurrency(parseFloat(t.remaining))}</td>
                       <td className="p-1.5">
                         <Input
@@ -256,16 +297,22 @@ export function SettlementDialog({
             </div>
           )}
 
-          {/* ── معاينة التوزيع ── */}
-          {activeAllocations.length > 0 && mode !== "manual" && (
+          {/* ── معاينة FIFO ── */}
+          {mode === "fifo" && activeAllocations.length > 0 && (
             <div className="bg-muted/40 rounded p-2 text-xs space-y-1">
-              <p className="font-medium text-muted-foreground">معاينة التوزيع ({mode === "single" ? "هذه الفاتورة" : "FIFO"}):</p>
-              {activeAllocations.map((a, i) => (
-                <div key={i} className="flex justify-between">
-                  <span className="text-muted-foreground">{a.transferId.slice(0, 8)}…</span>
-                  <span className="font-medium">{formatCurrency(a.amount)}</span>
-                </div>
-              ))}
+              <p className="font-medium text-muted-foreground">توزيع تلقائي (FIFO):</p>
+              {activeAllocations.map((a, i) => {
+                const t = outstanding.find(o => o.id === a.transferId);
+                return (
+                  <div key={i} className="flex justify-between">
+                    <span className="text-muted-foreground">
+                      {(t as any)?.invoiceNumber || a.transferId.slice(0, 8)}
+                      {(t as any)?.patientName ? ` — ${(t as any).patientName}` : ""}
+                    </span>
+                    <span className="font-medium">{formatCurrency(a.amount)}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -279,6 +326,12 @@ export function SettlementDialog({
             <div className="flex items-center gap-2 text-xs text-amber-600">
               <AlertCircle className="h-3 w-3" /> لا توجد مستحقات معلقة لهذا الطبيب
             </div>
+          )}
+
+          {treasuryId && treasuryId !== "__none__" && (
+            <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2 py-1">
+              ✓ سيُسجَّل قيد محاسبي: مدين الخزنة — دائن ذمم مدينة من الأطباء
+            </p>
           )}
 
           <div className="space-y-1">
