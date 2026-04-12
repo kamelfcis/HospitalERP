@@ -46,7 +46,7 @@ export function registerSystemRoutes(app: Express) {
   });
 
   app.get("/api/settings", (_req, res) => {
-    res.set("Cache-Control", "private, max-age=60");
+    res.set("Cache-Control", "private, max-age=300, stale-while-revalidate=600");
     res.json(getAllSettings());
   });
 

@@ -10,24 +10,28 @@ import type { DatabaseStorage } from "./index";
 
 const methods = {
   async getDashboardStats(this: DatabaseStorage): Promise<any> {
-    const [accountCount] = await db.select({ count: sql<number>`count(*)` }).from(accounts);
-    const [costCenterCount] = await db.select({ count: sql<number>`count(*)` }).from(costCenters);
-    const [entryStats] = await db.select({
-      total: sql<number>`count(*)`,
-      draft: sql<number>`count(*) filter (where status = 'draft')`,
-      posted: sql<number>`count(*) filter (where status = 'posted')`,
-    }).from(journalEntries);
-
-    const [totals] = await db.select({
-      totalDebit: sql<string>`COALESCE(SUM(total_debit::numeric), 0)::text`,
-      totalCredit: sql<string>`COALESCE(SUM(total_credit::numeric), 0)::text`,
-    }).from(journalEntries).where(eq(journalEntries.status, 'posted'));
-
-    const currentPeriod = await this.getCurrentPeriod();
-
-    const recentEntries = await db.select().from(journalEntries)
-      .orderBy(desc(journalEntries.createdAt))
-      .limit(5);
+    const [
+      [accountCount],
+      [costCenterCount],
+      [entryStats],
+      [totals],
+      currentPeriod,
+      recentEntries,
+    ] = await Promise.all([
+      db.select({ count: sql<number>`count(*)` }).from(accounts),
+      db.select({ count: sql<number>`count(*)` }).from(costCenters),
+      db.select({
+        total: sql<number>`count(*)`,
+        draft: sql<number>`count(*) filter (where status = 'draft')`,
+        posted: sql<number>`count(*) filter (where status = 'posted')`,
+      }).from(journalEntries),
+      db.select({
+        totalDebit: sql<string>`COALESCE(SUM(total_debit::numeric), 0)::text`,
+        totalCredit: sql<string>`COALESCE(SUM(total_credit::numeric), 0)::text`,
+      }).from(journalEntries).where(eq(journalEntries.status, 'posted')),
+      this.getCurrentPeriod(),
+      db.select().from(journalEntries).orderBy(desc(journalEntries.createdAt)).limit(5),
+    ]);
 
     return {
       totalAccounts: accountCount?.count || 0,

@@ -789,7 +789,9 @@ export interface IStorage {
   // RPT refresh jobs
   refreshPatientVisitSummary(): Promise<{ upserted: number; durationMs: number; ranAt: string }>;
   refreshPatientVisitClassification(): Promise<{ upserted: number; durationMs: number; ranAt: string }>;
+  cleanupOrphanClassifications(): Promise<void>;
   refreshInventorySnapshot(): Promise<{ upserted: number; durationMs: number; ranAt: string }>;
+  cleanupOldInventorySnapshots(): Promise<void>;
   refreshItemMovementsSummary(): Promise<{ upserted: number; durationMs: number; ranAt: string }>;
 
   // Opening Stock (الرصيد الافتتاحي)

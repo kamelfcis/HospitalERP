@@ -16,15 +16,19 @@ import { insertAccountSchema } from "@shared/schema";
 export function registerAccountsCoreRoutes(app: Express) {
   app.get("/api/accounts", requireAuth, async (req, res) => {
     try {
-      const userId      = req.session.userId as string;
-      const allAccounts = await storage.getAccounts();
+      const userId = req.session.userId as string;
+      const [allAccounts, perms, visibleIds] = await Promise.all([
+        storage.getAccounts(),
+        storage.getUserEffectivePermissions(userId),
+        storage.getVisibleAccountIds(userId),
+      ]);
 
-      const perms = await storage.getUserEffectivePermissions(userId);
+      res.set("Cache-Control", "private, max-age=120, stale-while-revalidate=300");
+
       if (perms.includes(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS)) {
         return res.json(allAccounts);
       }
 
-      const visibleIds = await storage.getVisibleAccountIds(userId);
       if (visibleIds === null) {
         res.json(allAccounts);
       } else {

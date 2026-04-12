@@ -2,7 +2,7 @@ import { db } from "../db";
 import { departments, warehouses } from "@shared/schema";
 import { asc } from "drizzle-orm";
 
-const CACHE_TTL = 60_000;
+const CACHE_TTL = 5 * 60_000;
 
 let _departments: any[] = [];
 let _departmentsAt = 0;

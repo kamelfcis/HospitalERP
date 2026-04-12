@@ -74,6 +74,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // prefetchQuery آمن: لا يُعيد الجلب لو البيانات موجودة في الكاش
     queryClient.prefetchQuery({ queryKey: ["/api/departments"] });
     queryClient.prefetchQuery({ queryKey: ["/api/warehouses"] });
+    queryClient.prefetchQuery({ queryKey: ["/api/treasuries"] });
+    queryClient.prefetchQuery({ queryKey: ["/api/settings"] });
 
     // ── Prefetch مبكّر لبيانات الشاشة الافتتاحية (fire-and-forget) ──────────
     // الـ redirect يحدث فوراً بعد هذا الـ effect بدون انتظار اكتمال الـ prefetch

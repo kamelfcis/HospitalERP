@@ -8,7 +8,7 @@ export function registerItemsDepartments(app: Express, storage: any) {
   app.get("/api/departments", async (req, res) => {
     try {
       const departments = await getCachedDepartments();
-      res.set("Cache-Control", "private, max-age=30");
+      res.set("Cache-Control", "private, max-age=300, stale-while-revalidate=600");
       res.json(departments);
     } catch (error: unknown) {
       const _em = error instanceof Error ? error.message : String(error);

@@ -118,15 +118,17 @@ const methods = {
         refreshed_at          = EXCLUDED.refreshed_at
     `);
 
-    await db.execute(sql`
-      DELETE FROM rpt_inventory_snapshot
-      WHERE snapshot_date < CURRENT_DATE
-    `);
-
     const durationMs = Date.now() - start;
     const upserted   = Number((result as any).rowCount ?? 0);
 
     return { upserted, durationMs, ranAt: new Date().toISOString() };
+  },
+
+  async cleanupOldInventorySnapshots(): Promise<void> {
+    await db.execute(sql`
+      DELETE FROM rpt_inventory_snapshot
+      WHERE snapshot_date < CURRENT_DATE
+    `);
   },
 
   async refreshItemMovementsSummary(): Promise<RptRefreshResult> {

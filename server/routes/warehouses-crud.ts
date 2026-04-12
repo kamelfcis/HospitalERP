@@ -28,7 +28,7 @@ export function registerWarehousesCrudRoutes(app: Express) {
 
       if (!userId || fullAccessRoles.includes(role || "")) {
         const whs = await getCachedWarehouses();
-        res.set("Cache-Control", "private, max-age=30");
+        res.set("Cache-Control", "private, max-age=300, stale-while-revalidate=600");
         return res.json(whs);
       }
 
@@ -39,7 +39,7 @@ export function registerWarehousesCrudRoutes(app: Express) {
       }
 
       const whs = await getCachedWarehouses();
-      res.set("Cache-Control", "private, max-age=30");
+      res.set("Cache-Control", "private, max-age=300, stale-while-revalidate=600");
       res.json(whs);
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);

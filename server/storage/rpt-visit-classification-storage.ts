@@ -116,6 +116,11 @@ const methods = {
     `);
     totalUpserted += Number((invResult as any).rowCount ?? 0);
 
+    const durationMs = Date.now() - start;
+    return { upserted: totalUpserted, durationMs, ranAt: new Date().toISOString() };
+  },
+
+  async cleanupOrphanClassifications(): Promise<void> {
     await db.execute(sql`
       DELETE FROM rpt_patient_visit_classification rpc
       WHERE rpc.source_type = 'admission'
@@ -134,9 +139,6 @@ const methods = {
             AND pih.status = 'finalized'
         )
     `);
-
-    const durationMs = Date.now() - start;
-    return { upserted: totalUpserted, durationMs, ranAt: new Date().toISOString() };
   },
 };
 

@@ -8,6 +8,8 @@
  *  • Accounting Event Retry — كل 7 دقائق
  *  • RPT Refresh (patient visit + classification) — كل 15 دقيقة
  *  • Inventory Snapshot + Item Movements — كل 15 دقيقة
+ *  • Orphan Classification Cleanup — مرة عند الإقلاع (بعد 60ث) + كل 24 ساعة
+ *  • Old Inventory Snapshot Cleanup — مرة عند الإقلاع (بعد 60ث) + كل 24 ساعة
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -94,4 +96,22 @@ export function startCronJobs(log: LogFn): void {
   };
   setTimeout(runSnapRefresh("startup"), 12000);
   setInterval(runSnapRefresh("polling"), SNAP_REFRESH_MS);
+
+  // ── Daily Cleanup: orphan classifications + old snapshots ────────────────
+  // نُشغّل هذا بعد 60 ثانية من الإقلاع (الكاش الدافئ) ثم كل 24 ساعة
+  // السبب: استعلامات NOT EXISTS تستغرق 800ms على قاعدة بيانات باردة (cold planner cache)
+  const DAILY_CLEANUP_MS = 24 * 60 * 60 * 1000;
+  const runDailyCleanup = async () => {
+    try {
+      await Promise.all([
+        storage.cleanupOrphanClassifications(),
+        storage.cleanupOldInventorySnapshots(),
+      ]);
+      logger.info("[CRON] daily cleanup: orphan classifications + old snapshots done");
+    } catch (err: unknown) {
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, "[CRON] daily cleanup error");
+    }
+  };
+  setTimeout(runDailyCleanup, 60000);
+  setInterval(runDailyCleanup, DAILY_CLEANUP_MS);
 }
