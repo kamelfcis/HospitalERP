@@ -28,7 +28,7 @@ export const ServicesTab = memo(function ServicesTab({
     limit: 100,
     admissionId,
     visitId,
-    refetchInterval: isFinalClosed ? false : 20_000,
+    refetchInterval: isFinalClosed ? false : 45_000,
   });
 
   const departments = useMemo(() => {

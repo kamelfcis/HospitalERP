@@ -16,15 +16,12 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatDateShort, formatNumber } from "@/lib/formatters";
 import { purchaseInvoiceStatusLabels } from "@shared/schema";
-import type { Supplier, PurchaseInvoiceWithDetails } from "@shared/schema";
-
-interface Props {
-  suppliers: Supplier[];
-}
+import type { PurchaseInvoiceWithDetails } from "@shared/schema";
+import { SupplierCombobox } from "@/components/SupplierCombobox";
 
 const PAGE_SIZE = 20;
 
-export function InvoiceRegistry({ suppliers }: Props) {
+export function InvoiceRegistry() {
   const { toast }    = useToast();
   const [, navigate] = useLocation();
 
@@ -70,8 +67,6 @@ export function InvoiceRegistry({ suppliers }: Props) {
     },
   });
 
-  const supplierName = (id: string) => suppliers.find((s) => s.id === id)?.nameAr || "";
-
   return (
     <div className="p-4 space-y-2" dir="rtl">
 
@@ -98,12 +93,13 @@ export function InvoiceRegistry({ suppliers }: Props) {
         </div>
         <div className="flex items-center gap-1">
           <span className="text-xs font-medium">المورد:</span>
-          <select value={filterSupplierId}
-            onChange={(e) => { setFilterSupplierId(e.target.value); setPage(1); }}
-            className="peachtree-select min-w-[140px]" data-testid="select-filter-supplier">
-            <option value="all">الكل</option>
-            {suppliers.map((s) => <option key={s.id} value={s.id}>{s.nameAr}</option>)}
-          </select>
+          <div className="min-w-[200px]" data-testid="select-filter-supplier">
+            <SupplierCombobox
+              value={filterSupplierId === "all" ? "" : filterSupplierId}
+              onChange={(v) => { setFilterSupplierId(v || "all"); setPage(1); }}
+              placeholder="الكل"
+            />
+          </div>
         </div>
         <div className="flex items-center gap-1">
           <span className="text-xs font-medium">الحالة:</span>
@@ -154,7 +150,7 @@ export function InvoiceRegistry({ suppliers }: Props) {
                 <tr key={inv.id} className="peachtree-grid-row" data-testid={`row-invoice-${inv.id}`}>
                   <td className="py-0 px-2 h-7 text-center align-middle">{(page - 1) * PAGE_SIZE + i + 1}</td>
                   <td className="py-0 px-2 h-7 text-center align-middle font-mono">{inv.invoiceNumber}</td>
-                  <td className="py-0 px-2 h-7 text-center align-middle">{inv.supplier?.nameAr || supplierName(inv.supplierId)}</td>
+                  <td className="py-0 px-2 h-7 text-center align-middle">{inv.supplier?.nameAr || ""}</td>
                   <td className="py-0 px-2 h-7 text-center align-middle">{inv.supplierInvoiceNo}</td>
                   <td className="py-0 px-2 h-7 text-center align-middle">{formatDateShort(inv.invoiceDate)}</td>
                   <td className="py-0 px-2 h-7 text-center align-middle">

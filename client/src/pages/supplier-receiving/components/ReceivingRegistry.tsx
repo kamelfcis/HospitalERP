@@ -16,10 +16,10 @@ import { RotateCcw, Search, X, ChevronLeft, ChevronRight, Eye, Trash2 } from "lu
 import { Loader2 } from "lucide-react";
 import { formatDateShort } from "@/lib/formatters";
 import { receivingStatusLabels } from "@shared/schema";
-import type { ReceivingHeaderWithDetails, Supplier, Warehouse } from "@shared/schema";
+import type { ReceivingHeaderWithDetails, Warehouse } from "@shared/schema";
+import { SupplierCombobox } from "@/components/SupplierCombobox";
 
 interface Props {
-  suppliers: Supplier[];
   warehouses: Warehouse[];
   onOpen:   (id: string) => void;
   onDelete: (id: string) => void;
@@ -33,7 +33,7 @@ interface Props {
 const PAGE_SIZE = 20;
 
 export function ReceivingRegistry({
-  suppliers, warehouses,
+  warehouses,
   onOpen, onDelete, onConvert, onCorrect,
   deletePending, correctPending, convertPending,
 }: Props) {
@@ -115,15 +115,14 @@ export function ReceivingRegistry({
               className="h-7 text-[11px] px-1 w-[120px]" data-testid="filter-to-date" />
           </div>
           {/* مورد */}
-          <Select value={filterSupplierId || "all"} onValueChange={(v) => { setFilterSupplierId(v === "all" ? "" : v); setPage(1); }}>
-            <SelectTrigger className="h-7 text-[11px] px-1 w-[160px]" data-testid="filter-supplier">
-              <SelectValue placeholder="كل الموردين" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">كل الموردين</SelectItem>
-              {suppliers.map((s) => <SelectItem key={s.id} value={s.id}>{s.code} - {s.nameAr}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <div className="w-[200px]" data-testid="filter-supplier">
+            <SupplierCombobox
+              value={filterSupplierId}
+              onChange={(v) => { setFilterSupplierId(v); setPage(1); }}
+              placeholder="كل الموردين"
+              className="h-7 text-[11px]"
+            />
+          </div>
           {/* مستودع */}
           <Select value={filterWarehouseId || "all"} onValueChange={(v) => { setFilterWarehouseId(v === "all" ? "" : v); setPage(1); }}>
             <SelectTrigger className="h-7 text-[11px] px-1 w-[140px]" data-testid="filter-warehouse">

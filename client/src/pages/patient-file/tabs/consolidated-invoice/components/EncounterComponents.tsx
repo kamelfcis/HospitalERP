@@ -185,7 +185,7 @@ export const EncounterBreakdownView = memo(function EncounterBreakdownView({
     patientId,
     admissionId,
     visitId: outpatientVisitId,
-    refetchInterval: summary.invoice?.isFinalClosed ? false : 30_000,
+    refetchInterval: summary.invoice?.isFinalClosed ? false : 60_000,
   });
 
   const normalizedPayments: VisitInvoiceSummary["payments"] = (livePayments ?? summary.payments).map((p: any) => ({

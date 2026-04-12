@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Plus, Truck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth }  from "@/hooks/use-auth";
-import type { Warehouse, Supplier } from "@shared/schema";
+import type { Warehouse } from "@shared/schema";
 
 import { useReceivingForm }      from "./hooks/useReceivingForm";
 import { useReceivingLines }     from "./hooks/useReceivingLines";
@@ -164,15 +164,6 @@ export default function SupplierReceiving() {
 
   // ── بيانات مرجعية ────────────────────────────────────────────────────────
   const { data: warehouses = [] } = useQuery<Warehouse[]>({ queryKey: ["/api/warehouses"], staleTime: 5 * 60_000 });
-  const { data: suppliersData }   = useQuery<{ suppliers: Supplier[]; total: number }>({
-    queryKey: ["/api/suppliers", "all"],
-    staleTime: 5 * 60_000,
-    queryFn: async () => {
-      const res = await fetch("/api/suppliers?page=1&pageSize=500");
-      if (!res.ok) throw new Error("فشل جلب الموردين");
-      return res.json();
-    },
-  });
 
   return (
     <div className="p-2 space-y-2" dir="rtl">
@@ -197,7 +188,6 @@ export default function SupplierReceiving() {
         {/* ── السجل ───────────────────────────────────────────────────────── */}
         <TabsContent value="log" className="space-y-2">
           <ReceivingRegistry
-            suppliers={suppliersData?.suppliers || []}
             warehouses={warehouses}
             onOpen={loadReceivingForEditing}
             onDelete={(id) => mutations.deleteDraftMutation.mutate(id)}

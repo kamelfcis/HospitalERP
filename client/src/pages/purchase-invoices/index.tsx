@@ -10,7 +10,7 @@
 import { useState, useEffect } from "react";
 import { useSearch } from "wouter";
 import { useQuery }  from "@tanstack/react-query";
-import type { Supplier, PurchaseInvoiceWithDetails } from "@shared/schema";
+import type { PurchaseInvoiceWithDetails } from "@shared/schema";
 
 import { useInvoiceLines }    from "./hooks/useInvoiceLines";
 import { useInvoiceDiscount } from "./hooks/useInvoiceDiscount";
@@ -30,12 +30,6 @@ export default function PurchaseInvoices() {
       enabled:  !!editId,
     });
 
-  // ── قائمة الموردين (للـ registry) ────────────────────────────────────
-  const { data: suppliersData } = useQuery<{ suppliers: Supplier[]; total: number }>({
-    queryKey: ["/api/suppliers?page=1&pageSize=500"],
-    staleTime: 5 * 60_000,
-  });
-  const suppliers = suppliersData?.suppliers || [];
 
   // ── Hooks الحالة ─────────────────────────────────────────────────────
   const invoiceLines = useInvoiceLines();
@@ -75,7 +69,7 @@ export default function PurchaseInvoices() {
 
   // ── التوجيه ───────────────────────────────────────────────────────────
   if (!editId) {
-    return <InvoiceRegistry suppliers={suppliers} />;
+    return <InvoiceRegistry />;
   }
 
   return (
