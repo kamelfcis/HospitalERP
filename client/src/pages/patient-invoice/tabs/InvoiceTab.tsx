@@ -18,7 +18,6 @@ import { InvoiceHeaderBar } from "../components/InvoiceHeaderBar";
 import { TotalsSummaryCard } from "../components/TotalsSummaryCard";
 import { DoctorLookup } from "@/components/lookups";
 import { PaymentsTab } from "./PaymentsTab";
-import { ConsolidatedTab } from "./ConsolidatedTab";
 import { UnifiedLinesTab } from "../components/UnifiedLinesTab";
 import type { ContractResolved } from "@/components/shared/ContractSelectCombobox";
 
@@ -262,7 +261,6 @@ export function InvoiceTab({
           <TabsList className="w-full justify-start flex-wrap" data-testid="tabs-sub">
             <TabsTrigger value="lines" data-testid="tab-lines">بنود الفاتورة</TabsTrigger>
             <TabsTrigger value="payments" data-testid="tab-payments">سداد دفعات</TabsTrigger>
-            <TabsTrigger value="consolidated" data-testid="tab-consolidated">فاتورة مجمعة</TabsTrigger>
             {invoiceId && (
               <TabsTrigger value="diagnosis" data-testid="tab-diagnosis">
                 <FileCheck className="h-3 w-3 ml-1" />
@@ -306,15 +304,6 @@ export function InvoiceTab({
               addPayment={addPayment}
               updatePayment={updatePayment}
               removePayment={removePayment}
-            />
-          </TabsContent>
-
-          <TabsContent value="consolidated" className="mt-2">
-            <ConsolidatedTab
-              lines={lines}
-              payments={payments}
-              totals={totals}
-              getServiceRowClass={getServiceRowClass}
             />
           </TabsContent>
 
