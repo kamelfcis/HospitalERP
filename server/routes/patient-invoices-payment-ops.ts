@@ -52,10 +52,21 @@ export function registerPaymentOpsRoutes(app: Express) {
 
       const actualDate = paymentDate || new Date().toISOString().split("T")[0];
 
-      await db.execute(sql`
+      const paymentInsert = await db.execute(sql`
         INSERT INTO patient_invoice_payments (id, header_id, payment_date, amount, payment_method, treasury_id, reference_number, notes, created_at)
         VALUES (gen_random_uuid(), ${invoiceId}, ${actualDate}, ${Number(amount)}, ${paymentMethod || "cash"}, ${treasuryId || null}, ${referenceNumber}, ${notes || null}, NOW())
+        RETURNING id
       `);
+      const paymentId = (paymentInsert.rows[0] as Record<string, unknown>).id as string;
+
+      // تسجيل حركة الخزنة
+      if (treasuryId) {
+        await db.execute(sql`
+          INSERT INTO treasury_transactions (treasury_id, type, amount, description, source_type, source_id, transaction_date)
+          VALUES (${treasuryId}, 'in', ${Number(amount)}, ${"استلام دفعة مريض — " + referenceNumber}, 'patient_invoice_payment', ${paymentId}, ${actualDate})
+          ON CONFLICT (source_type, source_id, treasury_id) WHERE source_type IS NOT NULL AND source_id IS NOT NULL DO NOTHING
+        `);
+      }
 
       const sumRes = await db.execute(sql`
         SELECT COALESCE(SUM(amount), 0) AS total_paid
