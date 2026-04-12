@@ -6,7 +6,7 @@
  * - جدول سجل التحويلات مع فلاتر
  */
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -107,6 +107,16 @@ export default function CashTransfersPage() {
     defaultValues: { fromTreasuryId: "", toTreasuryId: "", amount: "", notes: "" },
   });
 
+  // عند تحميل الخزن، عيّن خزنة عهدة امين الخزنة (12127) كخزنة وجهة افتراضية
+  const CASHIER_ACCT_CODE = "12127";
+  useEffect(() => {
+    if (treasuries.length === 0) return;
+    const cashierTreasury = treasuries.find(t => t.glAccountCode === CASHIER_ACCT_CODE);
+    if (cashierTreasury && !form.getValues("toTreasuryId")) {
+      form.setValue("toTreasuryId", cashierTreasury.id, { shouldValidate: false });
+    }
+  }, [treasuries]);
+
   const fromId = form.watch("fromTreasuryId");
   const toId   = form.watch("toTreasuryId");
   const fromTreasury = treasuries.find(t => t.id === fromId);
@@ -125,7 +135,8 @@ export default function CashTransfersPage() {
     },
     onSuccess: (transfer) => {
       resetKey();
-      form.reset({ fromTreasuryId: "", toTreasuryId: "", amount: "", notes: "" });
+      const cashierTreasury = treasuries.find(t => t.glAccountCode === CASHIER_ACCT_CODE);
+      form.reset({ fromTreasuryId: "", toTreasuryId: cashierTreasury?.id ?? "", amount: "", notes: "" });
       queryClient.invalidateQueries({ queryKey: ["/api/treasuries"] });
       queryClient.invalidateQueries({ queryKey: ["/api/cash-transfers"] });
       setLastTransfer({
