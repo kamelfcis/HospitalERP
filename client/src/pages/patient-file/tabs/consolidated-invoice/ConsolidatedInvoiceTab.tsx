@@ -64,7 +64,7 @@ export const ConsolidatedInvoiceTab = memo(function ConsolidatedInvoiceTab({
       return r.json();
     },
     enabled: !!selectedVisitId,
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
   });
 
   const visitTotals = useMemo(() => {

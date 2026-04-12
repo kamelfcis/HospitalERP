@@ -16,6 +16,7 @@ import {
 import { insertWarehouseSchema } from "@shared/schema";
 import { runPilotTestSeed } from "../seeds/pilot-test";
 import { assertUserWarehousesAllowed } from "../lib/warehouse-guard";
+import { getCachedWarehouses, invalidateWarehousesCache } from "../lib/master-data-cache";
 
 export function registerWarehousesCrudRoutes(app: Express) {
   app.get("/api/warehouses", requireAuth, async (req, res) => {
@@ -26,7 +27,8 @@ export function registerWarehousesCrudRoutes(app: Express) {
       const fullAccessRoles = ["admin", "accountant", "manager"];
 
       if (!userId || fullAccessRoles.includes(role || "")) {
-        const whs = await storage.getWarehouses();
+        const whs = await getCachedWarehouses();
+        res.set("Cache-Control", "private, max-age=30");
         return res.json(whs);
       }
 
@@ -36,7 +38,8 @@ export function registerWarehousesCrudRoutes(app: Express) {
         return res.json(assigned);
       }
 
-      const whs = await storage.getWarehouses();
+      const whs = await getCachedWarehouses();
+      res.set("Cache-Control", "private, max-age=30");
       res.json(whs);
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
@@ -48,6 +51,7 @@ export function registerWarehousesCrudRoutes(app: Express) {
     try {
       const validated = insertWarehouseSchema.parse(req.body);
       const wh = await storage.createWarehouse(validated);
+      invalidateWarehousesCache();
       res.status(201).json(wh);
     } catch (error: unknown) {
       if (error instanceof z.ZodError) {
@@ -71,6 +75,7 @@ export function registerWarehousesCrudRoutes(app: Express) {
       if (isActive !== undefined) updateData.isActive = isActive;
       const wh = await storage.updateWarehouse(req.params.id as string, updateData);
       if (!wh) return res.status(404).json({ message: "المخزن غير موجود" });
+      invalidateWarehousesCache();
       res.json(wh);
     } catch (error: unknown) {
       if (error instanceof z.ZodError) {
@@ -83,6 +88,7 @@ export function registerWarehousesCrudRoutes(app: Express) {
   app.delete("/api/warehouses/:id", requireAuth, checkPermission(PERMISSIONS.WAREHOUSES_MANAGE), async (req, res) => {
     try {
       await storage.deleteWarehouse(req.params.id as string);
+      invalidateWarehousesCache();
       res.json({ success: true });
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);

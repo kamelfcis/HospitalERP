@@ -466,6 +466,20 @@ export async function runMigrations(log: LogFn): Promise<void> {
     ON admissions (patient_id, status, admission_date DESC)
   `);
 
+  // ㉔ inventory_lot_movements: covering index لتقرير حركة الأصناف
+  await p2("idx_ilm_txdate_lot", `
+    CREATE INDEX IF NOT EXISTS idx_ilm_txdate_lot
+    ON inventory_lot_movements (tx_date, lot_id)
+    INCLUDE (warehouse_id, qty_change_in_minor, tx_type)
+  `);
+
+  // ㉕ inventory_lots: covering index لتقرير المخزون اللحظي
+  await p2("idx_lots_item_wh_qty", `
+    CREATE INDEX IF NOT EXISTS idx_lots_item_wh_qty
+    ON inventory_lots (item_id, warehouse_id)
+    INCLUDE (qty_in_minor, expiry_date, purchase_price)
+  `);
+
   const ok  = p2Indexes.filter(([, s]) => s === "OK" || s === "EXISTS").length;
   const err = p2Indexes.filter(([, s]) => s.startsWith("ERR")).length;
   log(`[STARTUP] Compound & covering indexes (Phase II): ${ok} OK, ${err} errors`);

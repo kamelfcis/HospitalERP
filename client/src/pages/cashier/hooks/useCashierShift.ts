@@ -72,8 +72,8 @@ export function useCashierShift() {
       if (!res.ok) throw new Error("فشل جلب بيانات الوردية");
       return res.json();
     },
-    refetchInterval: 60_000,
-    staleTime: 30_000,
+    refetchInterval: 120_000,
+    staleTime: 60_000,
   });
 
   // ── حساب GL للمستخدم ─────────────────────────────────────
@@ -106,8 +106,8 @@ export function useCashierShift() {
       return data;
     },
     enabled: !!shiftId && (hasActiveShift || isStale),
-    refetchInterval: 20_000,
-    staleTime: 5_000,
+    refetchInterval: 30_000,
+    staleTime: 10_000,
   });
 
   // ── حسابات مالية ─────────────────────────────────────────

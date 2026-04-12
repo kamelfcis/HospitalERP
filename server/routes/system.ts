@@ -46,7 +46,7 @@ export function registerSystemRoutes(app: Express) {
   });
 
   app.get("/api/settings", (_req, res) => {
-    // تُخدَّم من الكاش الذاكرة (محمَّل عند بدء التشغيل) — لا DB hit
+    res.set("Cache-Control", "private, max-age=60");
     res.json(getAllSettings());
   });
 

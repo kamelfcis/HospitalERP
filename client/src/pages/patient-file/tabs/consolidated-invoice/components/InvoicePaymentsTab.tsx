@@ -40,7 +40,7 @@ export const InvoicePaymentsTab = memo(function InvoicePaymentsTab({
 
   const { data, isLoading } = usePaymentsList({
     patientId, admissionId, visitId,
-    refetchInterval: isFinalClosed ? false : 15_000,
+    refetchInterval: isFinalClosed ? false : 30_000,
   });
 
   const { treasuries, isLocked: treasuryLocked } = usePaymentTreasuries();

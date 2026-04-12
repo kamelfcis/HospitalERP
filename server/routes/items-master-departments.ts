@@ -2,11 +2,13 @@ import { Express } from "express";
 import { PERMISSIONS } from "@shared/permissions";
 import { requireAuth, checkPermission } from "./_shared";
 import { insertDepartmentSchema, insertItemDepartmentPriceSchema } from "@shared/schema";
+import { getCachedDepartments, invalidateDepartmentsCache } from "../lib/master-data-cache";
 
 export function registerItemsDepartments(app: Express, storage: any) {
   app.get("/api/departments", async (req, res) => {
     try {
-      const departments = await storage.getDepartments();
+      const departments = await getCachedDepartments();
+      res.set("Cache-Control", "private, max-age=30");
       res.json(departments);
     } catch (error: unknown) {
       const _em = error instanceof Error ? error.message : String(error);
@@ -31,6 +33,7 @@ export function registerItemsDepartments(app: Express, storage: any) {
     try {
       const parsed = insertDepartmentSchema.parse(req.body);
       const department = await storage.createDepartment(parsed);
+      invalidateDepartmentsCache();
       res.status(201).json(department);
     } catch (error: unknown) {
       const _em = error instanceof Error ? error.message : String(error);
@@ -45,6 +48,7 @@ export function registerItemsDepartments(app: Express, storage: any) {
       if (!department) {
         return res.status(404).json({ message: "القسم غير موجود" });
       }
+      invalidateDepartmentsCache();
       res.json(department);
     } catch (error: unknown) {
       const _em = error instanceof Error ? error.message : String(error);
@@ -55,6 +59,7 @@ export function registerItemsDepartments(app: Express, storage: any) {
   app.delete("/api/departments/:id", requireAuth, checkPermission(PERMISSIONS.DEPARTMENTS_MANAGE), async (req, res) => {
     try {
       await storage.deleteDepartment(req.params.id as string);
+      invalidateDepartmentsCache();
       res.status(204).send();
     } catch (error: unknown) {
       const _em = error instanceof Error ? error.message : String(error);

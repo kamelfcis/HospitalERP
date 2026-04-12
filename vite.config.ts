@@ -38,6 +38,11 @@ export default defineConfig({
           if (id.includes("/node_modules/@radix-ui/")) return "vendor-radix";
           if (id.includes("/node_modules/lucide-react")) return "vendor-icons";
           if (id.includes("/node_modules/wouter")) return "vendor-router";
+          if (id.includes("/node_modules/xlsx")) return "vendor-xlsx";
+          if (id.includes("/node_modules/recharts") || id.includes("/node_modules/d3-")) return "vendor-charts";
+          if (id.includes("/node_modules/date-fns")) return "vendor-date";
+          if (id.includes("/node_modules/react-hook-form") || id.includes("/node_modules/@hookform/")) return "vendor-form";
+          if (id.includes("/node_modules/zod")) return "vendor-zod";
         },
       },
     },

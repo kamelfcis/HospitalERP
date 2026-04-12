@@ -196,13 +196,13 @@ export default function AccountingEventsPage() {
   const { data, isLoading, refetch } = useQuery<{ events: AcctEvent[]; total: number }>({
     queryKey: eventsKey,
     queryFn: () => fetch(`/api/accounting/events?${buildQS()}`).then((r) => r.json()),
-    refetchInterval: autoRefresh ? 15_000 : false,
+    refetchInterval: autoRefresh ? 30_000 : false,
   });
 
   const { data: summaryData, refetch: refetchSummary } = useQuery<{ rows: SummaryRow[] }>({
     queryKey: ["/api/accounting/events/summary"],
     queryFn: () => fetch("/api/accounting/events/summary").then((r) => r.json()),
-    refetchInterval: autoRefresh ? 15_000 : 30_000,
+    refetchInterval: autoRefresh ? 30_000 : 60_000,
   });
 
   // Single-event retry
