@@ -13,6 +13,7 @@ import {
 } from "@shared/schema";
 import type { DatabaseStorage } from "./index";
 import { roundMoney, parseMoney } from "../finance-helpers";
+import { generateDoctorTransferGL } from "../lib/doctor-transfer-gl";
 
 const methods = {
 
@@ -23,7 +24,9 @@ const methods = {
   },
 
   async transferToDoctorPayable(this: DatabaseStorage, params: { invoiceId: string; doctorName: string; amount: string; clientRequestId: string; notes?: string }): Promise<DoctorTransfer> {
-    return await db.transaction(async (tx) => {
+    let glParams: { transferId: string; invoiceDate: string; invoiceNumber: string; departmentId: string | null } | null = null;
+
+    const transfer = await db.transaction(async (tx) => {
       const invRes = await tx.execute(sql`SELECT * FROM patient_invoice_headers WHERE id = ${params.invoiceId} FOR UPDATE`);
       const inv = invRes.rows[0] as any;
       if (!inv) throw Object.assign(new Error("الفاتورة غير موجودة"), { statusCode: 404 });
@@ -44,23 +47,47 @@ const methods = {
         return row;
       }
 
-      const [transfer] = await tx.insert(doctorTransfers).values({
-        invoiceId: params.invoiceId,
-        doctorName: params.doctorName,
-        amount: params.amount,
+      const [row] = await tx.insert(doctorTransfers).values({
+        invoiceId:       params.invoiceId,
+        doctorName:      params.doctorName,
+        amount:          params.amount,
         clientRequestId: params.clientRequestId,
-        notes: params.notes ?? null,
+        notes:           params.notes ?? null,
       }).returning();
 
       await tx.insert(auditLog).values({
         tableName: "doctor_transfers",
-        recordId: transfer.id,
-        action: "create",
+        recordId:  row.id,
+        action:    "create",
         newValues: JSON.stringify({ invoiceId: params.invoiceId, doctorName: params.doctorName, amount: params.amount }),
       });
 
-      return transfer;
+      // نحتفظ بمعلومات الفاتورة لتوليد القيد خارج الـ transaction
+      glParams = {
+        transferId:    row.id,
+        invoiceDate:   String(inv.invoice_date ?? new Date().toISOString().split("T")[0]),
+        invoiceNumber: String(inv.invoice_number ?? ""),
+        departmentId:  inv.department_id ? String(inv.department_id) : null,
+      };
+
+      return row;
     });
+
+    // ── توليد قيد التحويل — fire-and-forget ──────────────────────────────────
+    if (glParams) {
+      const p = glParams as { transferId: string; invoiceDate: string; invoiceNumber: string; departmentId: string | null };
+      generateDoctorTransferGL({
+        transferId:    p.transferId,
+        invoiceId:     params.invoiceId,
+        doctorName:    params.doctorName,
+        amount:        params.amount,
+        invoiceDate:   p.invoiceDate,
+        invoiceNumber: p.invoiceNumber,
+        departmentId:  p.departmentId,
+      }).catch(err => logger.warn({ err: err.message, transferId: p.transferId }, "[DoctorTransferGL] fire-and-forget error"));
+    }
+
+    return transfer;
   },
 
   async getDoctorSettlements(this: DatabaseStorage, params?: { doctorName?: string; dateFrom?: string; dateTo?: string; page?: number; pageSize?: number }): Promise<{ data: (DoctorSettlement & { allocations: DoctorSettlementAllocation[] })[]; total: number; page: number; pageSize: number }> {
