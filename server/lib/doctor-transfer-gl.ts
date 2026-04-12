@@ -44,20 +44,22 @@ export async function generateDoctorTransferGL(params: {
   }
   const creditAccountId = doctor.payableAccountId;
 
-  // ── ٢. حساب مصروف أتعاب الطبيب (مدين) من ربط الحسابات ───────────────────
-  const mappings = await storage.getMappingsForTransaction("patient_invoice", null, null, departmentId ?? null);
-  const doctorCostMapping = mappings.find(m => m.lineType === "doctor_cost");
+  // ── ٢. حساب تحويل الذمة (مدين) من ربط حسابات "تحويل مديونية لطبيب" ────────
+  // هذا الحساب يمثل ذمة المريض المحوَّلة للطبيب (أصول أو إيرادات — ليس مصروفاً)
+  // يُضبط من صفحة ربط الحسابات ← "تحويل مديونية لطبيب" ← "تحويل ذمة مريض لطبيب"
+  const mappings = await storage.getMappingsForTransaction("doctor_transfer", null, null, null);
+  const transferMapping = mappings.find(m => m.lineType === "payable_transfer");
 
-  if (!doctorCostMapping?.debitAccountId) {
-    logger.warn({ transferId, departmentId }, "[DoctorTransferGL] ربط doctor_cost غير موجود — تم تخطي القيد");
+  if (!transferMapping?.debitAccountId) {
+    logger.warn({ transferId }, "[DoctorTransferGL] ربط payable_transfer غير موجود — تم تخطي القيد");
     await logAcctEvent({
       sourceType: "doctor_transfer", sourceId: transferId,
       eventType: "doctor_transfer_journal", status: "needs_retry",
-      errorMessage: "ربط حساب مصروف أتعاب الطبيب (doctor_cost) غير مكتمل — أضفه من صفحة ربط الحسابات",
+      errorMessage: "ربط حساب تحويل ذمة مريض لطبيب (payable_transfer) غير مكتمل — أضفه من صفحة ربط الحسابات ← تحويل مديونية لطبيب",
     }).catch(() => {});
     return;
   }
-  const debitAccountId = doctorCostMapping.debitAccountId;
+  const debitAccountId = transferMapping.debitAccountId;
 
   // ── ٣. إنشاء القيد ─────────────────────────────────────────────────────────
   try {
@@ -114,7 +116,7 @@ export async function generateDoctorTransferGL(params: {
           accountId:      debitAccountId,
           debit:          amtStr,
           credit:         "0.00",
-          description:    `مصروف أتعاب طبيب: ${doctorName}`,
+          description:    `ذمة مريض محوَّلة للطبيب: ${doctorName} — فاتورة ${invoiceNumber}`,
         },
         {
           journalEntryId: entry.id,

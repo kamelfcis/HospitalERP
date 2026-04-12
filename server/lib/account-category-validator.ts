@@ -55,6 +55,7 @@ export const LINE_TYPE_CATEGORY_RULES: Record<string, AccountCategoryRule> = {
 
   doctor_payable:       { debit: ["liability"],            credit: ["asset"]            },
   receivable_clear:     { debit: ["asset"],                credit: ["asset"]            },
+  payable_transfer:     { debit: ["asset", "revenue"],     credit: []                   },
 
   stock_gain:           {                                  credit: ["revenue", "equity"] },
   stock_loss:           { debit: ["expense", "equity"]                                  },
