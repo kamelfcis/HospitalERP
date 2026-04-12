@@ -296,6 +296,12 @@ export const SCREEN_MATRIX: ScreenCategoryDef[] = [
         menuPermKey: "cashier.handover_view",
         actions:     [],
       },
+      {
+        id:          "cash-transfers",
+        label:       "توريد نقدية بين الخزن",
+        menuPermKey: "cash_transfer.view",
+        actions:     [],
+      },
     ],
   },
 

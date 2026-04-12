@@ -38,6 +38,7 @@ import { registerAccountingEventRoutes } from "./accounting-events";
 import { registerContractRoutes }           from "./contracts";
 import { registerContractsAnalyticsRoutes } from "./contracts-analytics";
 import { registerCashierHandoverRoutes }    from "./cashier-handover";
+import { registerCashTransferRoutes }       from "./cash-transfers";
 import { registerSupplierPaymentRoutes }   from "./supplier-payments";
 import { registerCustomerPaymentRoutes }  from "./customer-payments";
 import { registerPurchaseReturnRoutes }   from "./purchase-returns";
@@ -72,6 +73,7 @@ export async function registerRoutes(
   registerContractRoutes(app);
   registerContractsAnalyticsRoutes(app);
   registerCashierHandoverRoutes(app);
+  registerCashTransferRoutes(app);
   registerSupplierPaymentRoutes(app);
   registerCustomerPaymentRoutes(app);
   registerPurchaseReturnRoutes(app);

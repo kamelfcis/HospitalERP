@@ -26,6 +26,7 @@ const ROUTE_OPTIONS = [
   // ── الكاشير والمبيعات ───────────────────────────────────────────────────
   { label: "شاشة تحصيل الكاشير",         value: "/cashier-collection" },
   { label: "تقرير تسليم الدرج",           value: "/cashier-handover" },
+  { label: "توريد نقدية بين الخزن",       value: "/cash-transfers" },
   { label: "فواتير البيع",                value: "/sales-invoices" },
   { label: "مردودات المبيعات",            value: "/sales-returns" },
   { label: "تحصيل الآجل",               value: "/customer-payments" },

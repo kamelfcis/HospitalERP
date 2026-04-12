@@ -777,6 +777,9 @@ export interface IStorage {
   syncInvoiceHeaderJournalStatus(invoiceId: string): Promise<string>;
   getDistinctCashierNames(): Promise<string[]>;
   getDrawerHandoverSummary(filters: import("./cashier-handover-storage").HandoverFilters): Promise<import("./cashier-handover-storage").HandoverSummaryResult>;
+  createCashTransfer(data: import("@shared/schema").InsertCashTransfer, userId: string): Promise<import("@shared/schema").CashTransfer>;
+  getCashTransfers(params: { page?: number; pageSize?: number; dateFrom?: string; dateTo?: string; treasuryId?: string }): Promise<{ rows: import("@shared/schema").CashTransfer[]; total: number }>;
+  getCashTransferById(id: string): Promise<import("@shared/schema").CashTransfer | undefined>;
 
   // Receiving corrections
   createReceivingCorrection(receivingId: string, corrections?: Record<string, unknown>[]): Promise<Record<string, unknown>>;
@@ -939,6 +942,7 @@ import clinicIntakeMethods from "./clinic-intake-storage";
 import clinicDashboardMethods from "./clinic-dashboard-storage";
 import cashierHandoverMethods from "./cashier-handover-storage";
 import invoiceTemplatesMethods from "./invoice-templates-storage";
+import cashTransfersMethods from "./cash-transfers-storage";
 
 Object.assign(
   DatabaseStorage.prototype,
@@ -982,6 +986,7 @@ Object.assign(
   contractsApprovalsMethods,
   cashierHandoverMethods,
   invoiceTemplatesMethods,
+  cashTransfersMethods,
 );
 
 export const storage = new DatabaseStorage();

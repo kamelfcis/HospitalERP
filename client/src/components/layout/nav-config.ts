@@ -90,6 +90,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { title: "تحصيل التوصيل",      href: "/delivery-payments",    icon: Truck,        permission: "delivery_payment.view" },
       { title: "شاشة تحصيل الكاشير", href: "/cashier-collection",   icon: Banknote,     permission: "cashier.view" },
       { title: "تقرير تسليم الدرج",   href: "/cashier-handover",     icon: ClipboardList, permission: "cashier.handover_view" },
+      { title: "توريد نقدية بين الخزن", href: "/cash-transfers",       icon: ArrowLeftRight, permission: "cash_transfer.view" },
     ],
   },
 

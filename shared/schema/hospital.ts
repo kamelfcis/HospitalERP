@@ -65,6 +65,9 @@ import { companies } from "./companies";
 // ── تسلسل ترقيم إيصالات تسليم الدرج — يضمن ترقيماً قوياً للمحاسبة ──────────
 export const handoverReceiptNumSeq = pgSequence("handover_receipt_num_seq", { startWith: 1, increment: 1 });
 
+// ── تسلسل ترقيم إيصالات تحويل النقدية بين الخزن ─────────────────────────────
+export const cashTransferSerialSeq = pgSequence("cash_transfer_serial_seq", { startWith: 1, increment: 1 });
+
 // ─── المرضى ────────────────────────────────────────────────────────────────
 
 export const patients = pgTable("patients", {
@@ -512,6 +515,25 @@ export const treasuryTransactions = pgTable("treasury_transactions", {
   sourceIdx:   uniqueIndex("idx_treasury_txn_source").on(table.sourceType, table.sourceId, table.treasuryId),
 }));
 
+// ─── تحويل النقدية بين الخزن ───────────────────────────────────────────────
+
+export const cashTransfers = pgTable("cash_transfers", {
+  id:              varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  serialNumber:    integer("serial_number").notNull(),
+  fromTreasuryId:  varchar("from_treasury_id").notNull().references(() => treasuries.id),
+  toTreasuryId:    varchar("to_treasury_id").notNull().references(() => treasuries.id),
+  amount:          decimal("amount", { precision: 18, scale: 2 }).notNull(),
+  notes:           text("notes"),
+  idempotencyKey:  varchar("idempotency_key", { length: 100 }).notNull().unique(),
+  transferredAt:   timestamp("transferred_at").notNull().defaultNow(),
+  transferredById: varchar("transferred_by_id"),
+  createdAt:       timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  fromIdx: index("idx_cash_transfers_from").on(table.fromTreasuryId),
+  toIdx:   index("idx_cash_transfers_to").on(table.toTreasuryId),
+  dateIdx: index("idx_cash_transfers_at").on(table.transferredAt),
+}));
+
 // Insert schemas
 export const insertPatientSchema = createInsertSchema(patients).omit({ id: true, createdAt: true });
 export const insertDoctorSchema = createInsertSchema(doctors).omit({ id: true, createdAt: true });
@@ -590,6 +612,9 @@ export type Treasury = typeof treasuries.$inferSelect;
 export type InsertTreasury = z.infer<typeof insertTreasurySchema>;
 export type UserTreasury = typeof userTreasuries.$inferSelect;
 export type TreasuryTransaction = typeof treasuryTransactions.$inferSelect;
+export const insertCashTransferSchema = createInsertSchema(cashTransfers).omit({ id: true, serialNumber: true, createdAt: true });
+export type InsertCashTransfer = z.infer<typeof insertCashTransferSchema>;
+export type CashTransfer = typeof cashTransfers.$inferSelect;
 
 // Labels
 export const cashierShiftStatusLabels: Record<string, string> = {
@@ -605,5 +630,6 @@ export const sourceTypeLabels: Record<string, string> = {
   cashier_collection: "تحصيل كاشير",
   cashier_refund: "مرتجع كاشير",
   warehouse_transfer: "تحويلات مخزنية",
+  cash_transfer:      "تحويل نقدية بين الخزن",
   manual: "يدوي",
 };

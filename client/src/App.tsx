@@ -82,6 +82,7 @@ const ContractClaimsPage       = lazy(() => import("@/pages/contract-claims/inde
 const ApprovalsPage            = lazy(() => import("@/pages/approvals/index"));
 const ContractsAnalyticsPage   = lazy(() => import("@/pages/contracts-analytics/index"));
 const CashierHandoverPage      = lazy(() => import("@/pages/cashier-handover/index"));
+const CashTransfersPage        = lazy(() => import("@/pages/cash-transfers/index"));
 const ItemMovementReport       = lazy(() => import("@/pages/item-movement-report/index"));
 const WarehouseBalanceReport   = lazy(() => import("@/pages/warehouse-balance-report/index"));
 const ReceiptSettings          = lazy(() => import("@/pages/receipt-settings/index"));
@@ -205,6 +206,7 @@ function Router() {
           <Route path="/audit-log">{() => <G p="audit_log.view"><AuditLog /></G>}</Route>
           <Route path="/cashier-collection">{() => <G p="cashier.view"><CashierCollection /></G>}</Route>
           <Route path="/cashier-handover">{() => <G p="cashier.handover_view"><CashierHandoverPage /></G>}</Route>
+          <Route path="/cash-transfers">{() => <G p="cash_transfer.view"><CashTransfersPage /></G>}</Route>
           <Route path="/system-settings">{() => <G p="settings.account_mappings"><SystemSettings /></G>}</Route>
           <Route path="/account-mappings">{() => <G p="settings.account_mappings"><AccountMappings /></G>}</Route>
           <Route path="/drawer-passwords">{() => <G p="settings.drawer_passwords"><DrawerPasswords /></G>}</Route>
@@ -241,6 +243,7 @@ const ROUTE_REQUIRED_PERMISSION: Record<string, string | null> = {
   "/sales-invoices":         "sales.view",
   "/cashier-collection":     "cashier.view",
   "/cashier-handover":       "cashier.handover_view",
+  "/cash-transfers":         "cash_transfer.view",
   "/patient-invoices":       "patient_invoices.view",
   "/clinic-booking":         "clinic.book",
   "/bed-board":              "bed_board.view",
