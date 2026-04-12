@@ -38,7 +38,7 @@ export function useInvoiceLines({
       return r.json();
     },
     enabled: enabled && !!patientId,
-    staleTime: 15 * 1000,
+    staleTime: 0,
     refetchInterval,
   });
 }
@@ -77,7 +77,7 @@ export function usePaymentsList({
       return r.json();
     },
     enabled: enabled && !!patientId,
-    staleTime: 15 * 1000,
+    staleTime: 0,
     refetchInterval,
   });
 }

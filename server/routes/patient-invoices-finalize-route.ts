@@ -7,6 +7,7 @@ import { runRefresh, REFRESH_KEYS } from "../lib/rpt-refresh-orchestrator";
 import { sql, eq, inArray } from "drizzle-orm";
 import { PERMISSIONS } from "@shared/permissions";
 import { requireAuth, checkPermission, broadcastToUnit } from "./_shared";
+import { broadcastPatientInvoiceUpdate } from "./_sse";
 import {
   patientInvoiceHeaders,
   doctors,
@@ -272,7 +273,8 @@ export function registerFinalizePostRoute(app: Express) {
           type:         "patient_invoice",
         });
       }
-
+      const _ptId = String((result as any).patientId ?? (existing as any).patientId ?? "");
+      if (_ptId) broadcastPatientInvoiceUpdate(_ptId, "invoice_finalized", { invoiceId, ts: Date.now() });
       const hasContract = !!(result as any).companyId || !!(result as any).contractId;
       if (hasContract) {
         await db.update(patientInvoiceHeaders)

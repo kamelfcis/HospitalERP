@@ -1,11 +1,48 @@
-import type { Express } from "express";
+import type { Express, Response } from "express";
 import { storage } from "../storage";
 import { PERMISSIONS } from "@shared/permissions";
 import { requireAuth, checkPermission } from "./_shared";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { patientInvoiceClients } from "./_sse";
 
 export function registerPatientFinancialLinesRoutes(app: Express) {
+
+  // ── SSE: ملف المريض — قناة التحديثات الفورية ─────────────────
+  app.get("/api/patients/:id/invoice-stream", requireAuth, async (req, res: Response) => {
+    const { id: patientId } = req.params;
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+
+    if (!patientInvoiceClients.has(patientId)) {
+      patientInvoiceClients.set(patientId, new Set());
+    }
+    patientInvoiceClients.get(patientId)!.add(res);
+
+    res.write(`event: connected\ndata: ${JSON.stringify({ patientId, ts: Date.now() })}\n\n`);
+    (res as any).flush?.();
+
+    const keepAlive = setInterval(() => {
+      try {
+        res.write(`: ping\n\n`);
+        (res as any).flush?.();
+      } catch {
+        clearInterval(keepAlive);
+      }
+    }, 30_000);
+
+    req.on("close", () => {
+      clearInterval(keepAlive);
+      const set = patientInvoiceClients.get(patientId);
+      if (set) {
+        set.delete(res);
+        if (set.size === 0) patientInvoiceClients.delete(patientId);
+      }
+    });
+  });
 
   app.get("/api/patients/:id/invoice-lines", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {
     try {

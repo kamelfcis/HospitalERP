@@ -28,7 +28,7 @@ export const ServicesTab = memo(function ServicesTab({
     limit: 100,
     admissionId,
     visitId,
-    refetchInterval: isFinalClosed ? false : 30_000,
+    refetchInterval: isFinalClosed ? false : 20_000,
   });
 
   const departments = useMemo(() => {
@@ -86,9 +86,9 @@ export const ServicesTab = memo(function ServicesTab({
           <span>{filteredLines.length} خدمة</span>
         </div>
         {!isFinalClosed && (
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1 text-green-700">
             <RefreshCw className="h-3 w-3" />
-            تحديث تلقائي كل 15 ث
+            تحديث فوري
             {dataUpdatedAt ? ` — آخر تحديث: ${new Date(dataUpdatedAt).toLocaleTimeString("ar-EG")}` : ""}
           </span>
         )}

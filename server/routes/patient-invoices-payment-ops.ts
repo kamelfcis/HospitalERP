@@ -9,6 +9,7 @@ import { auditLog } from "../route-helpers";
 import { requireAuth, checkPermission } from "./_shared";
 import { resolveBusinessClassificationWithMeta } from "@shared/resolve-business-classification";
 import { assertNotFinalClosed } from "./patient-invoices-crud-queries";
+import { broadcastPatientInvoiceUpdate } from "./_sse";
 
 export function registerPaymentOpsRoutes(app: Express) {
   app.post("/api/patient-invoices/:id/add-payment", requireAuth, checkPermission(PERMISSIONS.PATIENT_PAYMENTS), async (req, res) => {
@@ -32,7 +33,7 @@ export function registerPaymentOpsRoutes(app: Express) {
       }
 
       const invRes = await db.execute(sql`
-        SELECT id, status, is_final_closed, net_amount, paid_amount
+        SELECT id, patient_id, status, is_final_closed, net_amount, paid_amount
         FROM patient_invoice_headers
         WHERE id = ${invoiceId}
         FOR UPDATE
@@ -80,6 +81,12 @@ export function registerPaymentOpsRoutes(app: Express) {
       });
 
       runRefresh(REFRESH_KEYS.PATIENT_VISIT, () => storage.refreshPatientVisitSummary(), "event-driven").catch(() => {});
+
+      const patientId = String(inv.patient_id ?? "");
+      if (patientId) {
+        broadcastPatientInvoiceUpdate(patientId, "payment_added", { invoiceId, amount, ts: Date.now() });
+      }
+
       const updated = await storage.getPatientInvoice(invoiceId);
       return res.json(updated);
     } catch (err) {

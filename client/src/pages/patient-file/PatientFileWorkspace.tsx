@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { useLocation } from "wouter";
 import { usePatientData, usePatientFinancialSummary } from "./hooks/usePatientFile";
 import { useConsolidatedView } from "./hooks/useConsolidatedView";
+import { usePatientInvoiceSSE } from "./hooks/usePatientInvoiceSSE";
 import { OverviewTab } from "./tabs/OverviewTab";
 import { HistoryTab } from "./tabs/HistoryTab";
 import { InvoicesTab } from "./tabs/InvoicesTab";
@@ -133,6 +134,8 @@ export const PatientFileWorkspace = memo(function PatientFileWorkspace({ patient
   const [sidebarEl, setSidebarEl] = useState<HTMLDivElement | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [visitHeader, setVisitHeader] = useState<VisitHeaderInfo | null>(null);
+
+  usePatientInvoiceSSE(patientId);
 
   const { data: patient,   isLoading: loadingPatient   } = usePatientData(patientId);
   const { data: financial, isLoading: loadingFinancial } = usePatientFinancialSummary(patientId);

@@ -116,3 +116,21 @@ export function broadcastTaskNotif(receiverId: string, data: unknown) {
     taskNotifSseClients.delete(receiverId);
   }
 }
+
+// ── ملف المريض — تحديثات الفاتورة المجمعة ────────────────────
+// مفتاح الاشتراك: patientId — يُبث عند إضافة خدمة أو دفعة أو اعتماد الفاتورة
+export const patientInvoiceClients = new Map<string, Set<Response>>();
+
+export function broadcastPatientInvoiceUpdate(patientId: string, event: string, data: unknown) {
+  const clients = patientInvoiceClients.get(patientId);
+  if (!clients || clients.size === 0) return;
+  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  clients.forEach((res) => {
+    try {
+      res.write(payload);
+      (res as any).flush?.();
+    } catch {
+      clients.delete(res);
+    }
+  });
+}

@@ -5,6 +5,7 @@
 import type { Express } from "express";
 import { requireAuth, checkPermission } from "./_shared";
 import { PERMISSIONS } from "@shared/permissions";
+import { broadcastPatientInvoiceUpdate } from "./_sse";
 import {
   createEncounter,
   completeEncounter,
@@ -173,6 +174,14 @@ export function registerEncounterRoutes(app: Express) {
       }
 
       void refreshVisitAggregationCache(visitId);
+
+      db.execute(sql`SELECT patient_id FROM patient_invoice_headers WHERE id = ${invoiceId} LIMIT 1`)
+        .then((r) => {
+          const ptId = String((r.rows[0] as Record<string,unknown>)?.patient_id ?? "");
+          if (ptId) broadcastPatientInvoiceUpdate(ptId, "invoice_finalized", { invoiceId, visitId, ts: Date.now() });
+        })
+        .catch(() => {});
+
       const summary = await getVisitInvoiceSummary(visitId);
       res.json({
         success: true,

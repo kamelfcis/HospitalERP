@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { PERMISSIONS } from "@shared/permissions";
 import { auditLog } from "../route-helpers";
 import { requireAuth, checkPermission } from "./_shared";
+import { broadcastPatientInvoiceUpdate } from "./_sse";
 
 export function registerFinalCloseRoute(app: Express) {
 
@@ -13,7 +14,7 @@ export function registerFinalCloseRoute(app: Express) {
       const userId = (req.session as any)?.userId as string | undefined;
 
       const invRes = await db.execute(sql`
-        SELECT id, status, is_consolidated, admission_id, net_amount, paid_amount, is_final_closed,
+        SELECT id, patient_id, status, is_consolidated, admission_id, net_amount, paid_amount, is_final_closed,
                patient_type, contract_id, company_id
         FROM patient_invoice_headers WHERE id = ${id}
       `);
@@ -94,6 +95,11 @@ export function registerFinalCloseRoute(app: Express) {
         SET is_final_closed = true, final_closed_at = NOW(), final_closed_by = ${userId || null}, updated_at = NOW()
         WHERE id = ${id}
       `);
+
+      const patientId = String(inv.patient_id ?? "");
+      if (patientId) {
+        broadcastPatientInvoiceUpdate(patientId, "invoice_final_closed", { invoiceId: id, ts: Date.now() });
+      }
 
       Promise.resolve().then(() => {
         auditLog({

@@ -5,6 +5,6 @@ export function useConsolidatedView(patientId: string) {
   return useQuery<AggregatedViewData>({
     queryKey: ["/api/patients", patientId, "invoices-aggregated"],
     enabled: !!patientId,
-    staleTime: 30 * 1000,
+    staleTime: 0,
   });
 }
