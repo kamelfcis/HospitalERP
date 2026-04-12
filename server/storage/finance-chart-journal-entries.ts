@@ -87,20 +87,26 @@ const methods = {
   },
 
   async getJournalEntry(this: DatabaseStorage, id: string): Promise<JournalEntryWithLines | undefined> {
-    const [entry] = await db.select().from(journalEntries).where(eq(journalEntries.id, id));
+    const [[entry], linesResult] = await Promise.all([
+      db.select().from(journalEntries).where(eq(journalEntries.id, id)),
+      db.select({
+        line: journalLines,
+        account: accounts,
+        costCenter: costCenters,
+      })
+        .from(journalLines)
+        .innerJoin(accounts, eq(journalLines.accountId, accounts.id))
+        .leftJoin(costCenters, eq(journalLines.costCenterId, costCenters.id))
+        .where(eq(journalLines.journalEntryId, id))
+        .orderBy(journalLines.lineNumber),
+    ]);
+
     if (!entry) return undefined;
 
-    const lines = await db.select().from(journalLines)
-      .where(eq(journalLines.journalEntryId, id))
-      .orderBy(journalLines.lineNumber);
-
-    const linesWithAccounts = await Promise.all(lines.map(async (line) => {
-      const [account] = await db.select().from(accounts).where(eq(accounts.id, line.accountId));
-      let costCenter;
-      if (line.costCenterId) {
-        [costCenter] = await db.select().from(costCenters).where(eq(costCenters.id, line.costCenterId));
-      }
-      return { ...line, account, costCenter };
+    const linesWithAccounts = linesResult.map(({ line, account, costCenter }) => ({
+      ...line,
+      account,
+      costCenter: costCenter?.id ? costCenter : undefined,
     }));
 
     let period;

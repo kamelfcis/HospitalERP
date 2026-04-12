@@ -226,6 +226,7 @@ export function registerReportsWarehouseQueryRoutes(app: Express) {
 
       const summary = summaryResult.rows[0] || {};
 
+      res.set("Cache-Control", "private, max-age=120, stale-while-revalidate=300");
       return res.json({
         rows:     result.rows.map(r => ({ ...r, _total: undefined })),
         total,

@@ -96,6 +96,7 @@ export function registerReportsItemsRoutes(app: Express) {
         ORDER BY pm.item_name, pm.warehouse_name
       `);
 
+      res.set("Cache-Control", "private, max-age=120, stale-while-revalidate=300");
       return res.json({
         fromDate,
         toDate,
@@ -147,6 +148,7 @@ export function registerReportsItemsRoutes(app: Express) {
         "[PERF] item-movement-detail"
       );
 
+      res.set("Cache-Control", "private, max-age=60, stale-while-revalidate=120");
       return res.json(result);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

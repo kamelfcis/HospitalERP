@@ -8,6 +8,7 @@ export function registerAccountSetupReports(app: Express) {
     try {
       const asOfDate = (req.query.asOfDate as string) || new Date().toISOString().split('T')[0];
       const report = await storage.getTrialBalance(asOfDate);
+      res.set("Cache-Control", "private, max-age=60, stale-while-revalidate=120");
       res.json(report);
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
@@ -22,6 +23,7 @@ export function registerAccountSetupReports(app: Express) {
       const startDate = (req.query.startDate as string) || firstDayOfMonth.toISOString().split('T')[0];
       const endDate = (req.query.endDate as string) || today.toISOString().split('T')[0];
       const report = await storage.getIncomeStatement(startDate, endDate);
+      res.set("Cache-Control", "private, max-age=60, stale-while-revalidate=120");
       res.json(report);
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
@@ -33,6 +35,7 @@ export function registerAccountSetupReports(app: Express) {
     try {
       const asOfDate = (req.query.asOfDate as string) || new Date().toISOString().split('T')[0];
       const report = await storage.getBalanceSheet(asOfDate);
+      res.set("Cache-Control", "private, max-age=60, stale-while-revalidate=120");
       res.json(report);
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
@@ -48,6 +51,7 @@ export function registerAccountSetupReports(app: Express) {
       const endDate = (req.query.endDate as string) || today.toISOString().split('T')[0];
       const costCenterId = req.query.costCenterId as string | undefined;
       const report = await storage.getCostCenterReport(startDate, endDate, costCenterId);
+      res.set("Cache-Control", "private, max-age=60, stale-while-revalidate=120");
       res.json(report);
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
@@ -70,6 +74,7 @@ export function registerAccountSetupReports(app: Express) {
       const startDate = (req.query.startDate as string) || firstDayOfMonth.toISOString().split('T')[0];
       const endDate = (req.query.endDate as string) || today.toISOString().split('T')[0];
       const report = await storage.getAccountLedger(accountId, startDate, endDate);
+      res.set("Cache-Control", "private, max-age=30, stale-while-revalidate=60");
       res.json(report);
     } catch (error: unknown) {
       const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);

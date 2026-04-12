@@ -127,6 +127,7 @@ export function registerShortageRoutes(app: Express): void {
           page, limit, sortBy, sortDir,
         });
 
+        res.set("Cache-Control", "private, max-age=60, stale-while-revalidate=120");
         return res.json({ rows, total, page, limit });
       } catch (err) {
         console.error("[shortage/dashboard]", err);
