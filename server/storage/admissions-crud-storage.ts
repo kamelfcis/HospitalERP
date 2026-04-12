@@ -35,7 +35,7 @@ const methods = {
       conds.push(sql`(a.patient_name ILIKE ${s} OR a.admission_number ILIKE ${s} OR a.patient_phone ILIKE ${s} OR a.doctor_name ILIKE ${s})`);
     }
     if (filters?.deptId) {
-      conds.push(sql`COALESCE(a.department_id, rpt.department_id) = ${filters.deptId}`);
+      conds.push(sql`(a.department_id = ${filters.deptId} OR (a.department_id IS NULL AND rpt.department_id = ${filters.deptId}))`);
     }
 
     const whereExpr = conds.length > 0
@@ -123,12 +123,15 @@ const methods = {
   },
 
   async createAdmission(this: DatabaseStorage, data: InsertAdmission): Promise<Admission> {
-    const maxNumResult = await db.execute(sql`SELECT COALESCE(MAX(CAST(NULLIF(regexp_replace(admission_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) as max_num FROM admissions`);
-    const nextNum = (parseInt(String((maxNumResult.rows[0] as any)?.max_num || "0")) || 0) + 1;
+    let admissionNumber = data.admissionNumber;
+    if (!admissionNumber) {
+      const seqResult = await db.execute(sql`SELECT nextval('admission_number_seq') AS num`);
+      admissionNumber = String((seqResult.rows[0] as any).num);
+    }
 
     const [a] = await db.insert(admissions).values({
       ...data,
-      admissionNumber: data.admissionNumber || String(nextNum),
+      admissionNumber,
     }).returning();
     return a;
   },

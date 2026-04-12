@@ -466,14 +466,35 @@ export async function runMigrations(log: LogFn): Promise<void> {
     ON admissions (patient_id, status, admission_date DESC)
   `);
 
-  // ㉔ inventory_lot_movements: covering index لتقرير حركة الأصناف
+  // ㉔ admissions: covering index لـ ORDER BY created_at (اللازم لعرض القائمة بالتسلسل)
+  await p2("idx_adm_created_at", `
+    CREATE INDEX IF NOT EXISTS idx_adm_created_at
+    ON admissions (created_at DESC)
+  `);
+
+  // ㉕ patient_invoice_headers: covering index لـ subquery inv_latest في شاشة الدخول
+  // يشمل admission_id + status + is_consolidated مع INCLUDE للحقول المطلوبة
+  await p2("idx_pih_adm_status_consolidated", `
+    CREATE INDEX IF NOT EXISTS idx_pih_adm_status_consolidated
+    ON patient_invoice_headers (admission_id, status, is_consolidated, created_at DESC)
+    INCLUDE (invoice_number, id)
+    WHERE admission_id IS NOT NULL
+  `);
+
+  // ㉖ admissions: GIN index لـ full-text search (pg_trgm) على patient_name و admission_number
+  await p2("idx_adm_patient_name_trgm", `
+    CREATE INDEX IF NOT EXISTS idx_adm_patient_name_trgm
+    ON admissions USING GIN (patient_name gin_trgm_ops)
+  `);
+
+  // ㉗ inventory_lot_movements: covering index لتقرير حركة الأصناف
   await p2("idx_ilm_txdate_lot", `
     CREATE INDEX IF NOT EXISTS idx_ilm_txdate_lot
     ON inventory_lot_movements (tx_date, lot_id)
     INCLUDE (warehouse_id, qty_change_in_minor, tx_type)
   `);
 
-  // ㉕ inventory_lots: covering index لتقرير المخزون اللحظي
+  // ㉘ inventory_lots: covering index لتقرير المخزون اللحظي
   await p2("idx_lots_item_wh_qty", `
     CREATE INDEX IF NOT EXISTS idx_lots_item_wh_qty
     ON inventory_lots (item_id, warehouse_id)

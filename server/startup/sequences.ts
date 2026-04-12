@@ -7,6 +7,7 @@
  *  • handover_receipt_num_seq
  *  • delivery_receipt_number_seq
  *  • customer_receipt_number_seq
+ *  • admission_number_seq
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -92,5 +93,26 @@ export async function syncSequences(log: LogFn): Promise<void> {
     log("[STARTUP] customer_receipt_number_seq synced");
   } catch (err: unknown) {
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] customer receipt seq error");
+  }
+
+  // ── Admission number sequence ──────────────────────────────────────────────
+  // يحل محل MAX() الذي يسبب race condition عند دخول متزامن من أقسام متعددة
+  try {
+    await db.execute(sql`
+      CREATE SEQUENCE IF NOT EXISTS admission_number_seq START WITH 1 INCREMENT BY 1
+    `);
+    await db.execute(sql`
+      SELECT setval(
+        'admission_number_seq',
+        COALESCE(
+          (SELECT MAX(CAST(NULLIF(regexp_replace(admission_number, '[^0-9]', '', 'g'), '') AS INTEGER)) FROM admissions),
+          0
+        ) + 1,
+        false
+      )
+    `);
+    log("[STARTUP] admission_number_seq synced");
+  } catch (err: unknown) {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] admission_number_seq error");
   }
 }
