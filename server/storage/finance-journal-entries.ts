@@ -87,8 +87,10 @@ const methods = {
   },
 
   async getJournalEntry(this: DatabaseStorage, id: string): Promise<JournalEntryWithLines | undefined> {
-    const [[entry], linesResult] = await Promise.all([
-      db.select().from(journalEntries).where(eq(journalEntries.id, id)),
+    const [entry] = await db.select().from(journalEntries).where(eq(journalEntries.id, id));
+    if (!entry) return undefined;
+
+    const [linesResult, period] = await Promise.all([
       db.select({
         line: journalLines,
         account: accounts,
@@ -99,20 +101,16 @@ const methods = {
         .leftJoin(costCenters, eq(journalLines.costCenterId, costCenters.id))
         .where(eq(journalLines.journalEntryId, id))
         .orderBy(journalLines.lineNumber),
+      entry.periodId
+        ? db.select().from(fiscalPeriods).where(eq(fiscalPeriods.id, entry.periodId)).then(r => r[0])
+        : Promise.resolve(undefined),
     ]);
-
-    if (!entry) return undefined;
 
     const linesWithAccounts = linesResult.map(({ line, account, costCenter }) => ({
       ...line,
       account,
       costCenter: costCenter?.id ? costCenter : undefined,
     }));
-
-    let period;
-    if (entry.periodId) {
-      [period] = await db.select().from(fiscalPeriods).where(eq(fiscalPeriods.id, entry.periodId));
-    }
 
     return { ...entry, lines: linesWithAccounts, period };
   },
