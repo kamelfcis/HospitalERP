@@ -2,7 +2,7 @@
  * server/db.ts — اتصال قاعدة البيانات
  *
  * Pool مُضبَّط بحدود واضحة:
- *  - max: 20 اتصال (يمنع استنزاف الموارد)
+ *  - max: 30 اتصال — يستوعب 20 مستخدم × 3 طلبات متزامنة في الذروة
  *  - idleTimeoutMillis: 30s (يُغلق الاتصالات الخاملة)
  *  - connectionTimeoutMillis: 5s (يفشل بسرعة إذا كان الـ pool ممتلئاً)
  *  - statement_timeout: 30s (يُلغي الاستعلامات البطيئة تلقائياً)
@@ -24,7 +24,7 @@ if (!process.env.DATABASE_URL) {
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  max:                    20,
+  max:                    30,
   idleTimeoutMillis:      30_000,
   connectionTimeoutMillis: 5_000,
 });

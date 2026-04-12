@@ -39,7 +39,7 @@ export function useTreasuriesLookup(options: UseTreasuriesLookupOptions = {}): U
     adapter: treasuryAdapter,
     mode: "client-filter",
     search,
-    staleTime: 0,
+    staleTime: 5 * 60 * 1000,
     enabled,
   });
 }

@@ -134,8 +134,9 @@ const PgSession = connectPgSimple(session);
 app.use(
   session({
     store: new PgSession({
-      conString:            process.env.DATABASE_URL,
+      pool,
       createTableIfMissing: true,
+      pruneSessionInterval: 60 * 60,
     }),
     secret:           process.env.SESSION_SECRET || KNOWN_DEFAULT_SECRET,
     resave:           false,

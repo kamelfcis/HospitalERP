@@ -87,9 +87,17 @@ export function registerDeliveryPaymentRoutes(app: Express) {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders();
+    res.write(`event: connected\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`);
     deliveryPaymentClients.add(res);
-    req.on("close", () => deliveryPaymentClients.delete(res));
+    const keepAlive = setInterval(() => {
+      try { res.write(": keep-alive\n\n"); (res as any).flush?.(); } catch { clearInterval(keepAlive); }
+    }, 15_000);
+    req.on("close", () => {
+      clearInterval(keepAlive);
+      deliveryPaymentClients.delete(res);
+    });
   });
 
   // ── GET /api/delivery-payments/report ────────────────────────────────────
