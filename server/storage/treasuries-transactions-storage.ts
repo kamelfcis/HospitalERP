@@ -20,8 +20,11 @@ const treasuriesTransactionsMethods = {
         a.code                AS gl_account_code,
         a.name                AS gl_account_name,
         COALESCE(a.opening_balance, 0) AS opening_balance,
-        COALESCE(SUM(CASE WHEN tt.type = 'in'  THEN tt.amount::numeric ELSE 0 END), 0) AS total_in,
-        COALESCE(SUM(CASE WHEN tt.type = 'out' THEN tt.amount::numeric ELSE 0 END), 0) AS total_out,
+        COALESCE(SUM(CASE WHEN tt.type IN ('in', 'receipt') THEN tt.amount::numeric ELSE 0 END), 0) AS total_in,
+        COALESCE(
+          SUM(CASE WHEN tt.type IN ('out', 'cash_out') THEN tt.amount::numeric ELSE 0 END)
+          + SUM(CASE WHEN tt.type = 'refund' THEN ABS(tt.amount::numeric) ELSE 0 END)
+        , 0) AS total_out,
         CASE WHEN dp.gl_account_id IS NOT NULL THEN true ELSE false END AS has_password
       FROM treasuries t
       JOIN accounts a ON a.id = t.gl_account_id
@@ -57,8 +60,11 @@ const treasuriesTransactionsMethods = {
 
     const aggResult = await db.execute(sql`
       SELECT
-        COALESCE(SUM(CASE WHEN tt.type = 'in'  THEN tt.amount::numeric ELSE 0 END), 0) AS total_in,
-        COALESCE(SUM(CASE WHEN tt.type != 'in' THEN tt.amount::numeric ELSE 0 END), 0) AS total_out
+        COALESCE(SUM(CASE WHEN tt.type IN ('in', 'receipt') THEN tt.amount::numeric ELSE 0 END), 0) AS total_in,
+        COALESCE(
+          SUM(CASE WHEN tt.type IN ('out', 'cash_out') THEN tt.amount::numeric ELSE 0 END)
+          + SUM(CASE WHEN tt.type = 'refund' THEN ABS(tt.amount::numeric) ELSE 0 END)
+        , 0) AS total_out
       FROM treasury_transactions tt
       WHERE tt.treasury_id = ${params.treasuryId}
         ${dateCondFrom}
@@ -69,7 +75,14 @@ const treasuriesTransactionsMethods = {
     const totalOut = parseFloat(agg?.total_out ?? "0");
 
     const openingResult = await db.execute(sql`
-      SELECT COALESCE(SUM(CASE WHEN type = 'in' THEN amount::numeric ELSE -amount::numeric END), 0) AS opening
+      SELECT COALESCE(SUM(
+        CASE
+          WHEN type IN ('in', 'receipt')         THEN  amount::numeric
+          WHEN type IN ('out', 'cash_out')        THEN -amount::numeric
+          WHEN type = 'refund'                    THEN  amount::numeric  -- already negative
+          ELSE 0
+        END
+      ), 0) AS opening
       FROM (
         SELECT type, amount
         FROM treasury_transactions
@@ -138,8 +151,10 @@ const treasuriesTransactionsMethods = {
       const desc = `${ref}تحصيل فاتورة مريض رقم ${invNum}${patientName ? ` - ${patientName}` : ""}`;
       await db.execute(sql`
         INSERT INTO treasury_transactions (treasury_id, type, amount, description, source_type, source_id, transaction_date)
-        VALUES (${p.treasury_id}, 'in', ${p.amount}, ${desc}, 'patient_invoice', ${p.id}, ${finalizationDate})
-        ON CONFLICT (source_type, source_id, treasury_id) DO NOTHING
+        VALUES (${p.treasury_id}, 'in', ${p.amount}, ${desc}, 'patient_invoice_payment', ${p.id}, ${finalizationDate})
+        ON CONFLICT (source_type, source_id, treasury_id)
+          WHERE source_type IS NOT NULL AND source_id IS NOT NULL
+        DO NOTHING
       `);
     }
   },
