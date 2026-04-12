@@ -200,6 +200,23 @@ export async function runIntegrityChecks(log: LogFn): Promise<void> {
         `[STARTUP] stay engine: ${activeSegs} active segment(s), last accrual OK`,
       );
     }
+
+    // Check for active segments whose invoices are no longer draft — accrual skips these
+    const { rows: frozenRows } = await pool.query<{ cnt: string; ids: string }>(`
+      SELECT COUNT(*)::text AS cnt,
+             string_agg(ss.id::text, ', ' ORDER BY ss.started_at) AS ids
+      FROM stay_segments ss
+      JOIN patient_invoice_headers pih ON pih.id = ss.invoice_id
+      WHERE ss.status = 'ACTIVE'
+        AND (pih.status != 'draft' OR COALESCE(pih.is_final_closed, false) = true)
+    `);
+    const frozenCount = parseInt(frozenRows[0]?.cnt || "0");
+    if (frozenCount > 0) {
+      logger.warn(
+        { frozenSegmentCount: frozenCount, segmentIds: frozenRows[0]?.ids },
+        `[STARTUP] stay engine: ${frozenCount} ACTIVE segment(s) linked to non-draft invoice(s) — accrual paused for these. Discharge the patient to close the segment.`,
+      );
+    }
   } catch (err: unknown) {
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] stay engine visibility check skipped");
   }
