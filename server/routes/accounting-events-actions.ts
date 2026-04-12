@@ -7,6 +7,7 @@ import { storage } from "../storage";
 import { logger } from "../lib/logger";
 import { MAX_RETRY_ATTEMPTS } from "../lib/accounting-event-logger";
 import { runAccountingRetryTick } from "../lib/accounting-retry-worker";
+import { generatePatientInvoiceGL } from "../lib/patient-invoice-gl-generator";
 
 export function registerAccountingEventsActionsRoutes(app: Express) {
   app.post(
@@ -127,26 +128,22 @@ export function registerAccountingEventsActionsRoutes(app: Express) {
         }
 
         if (sourceType === "patient_invoice") {
-          const invoiceData = await storage.getPatientInvoice(sourceId);
-          if (!invoiceData) return res.status(404).json({ message: "بيانات الفاتورة غير موجودة" });
-
-          const glLines = storage.buildPatientInvoiceGLLines(invoiceData, invoiceData.lines || []);
-          try {
-            const entry = await storage.generateJournalEntry({
-              sourceType:       "patient_invoice",
-              sourceDocumentId: sourceId,
-              reference:        `PI-${invoiceData.invoiceNumber}`,
-              description:      `قيد فاتورة مريض رقم ${invoiceData.invoiceNumber}`,
-              entryDate:        invoiceData.invoiceDate,
-              lines:            glLines,
-            });
-            await markCompleted(entry?.id);
-            return res.json({ success: true, journalEntryId: entry?.id });
-          } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            await markFailed(msg);
-            return res.status(422).json({ message: msg });
+          const result = await generatePatientInvoiceGL(sourceId);
+          if (result.ok) {
+            await markCompleted(result.entry.id);
+            return res.json({ success: true, journalEntryId: result.entry.id });
           }
+          const existingJE = await db.execute(sql`
+            SELECT id FROM journal_entries
+            WHERE source_type='patient_invoice' AND source_document_id=${sourceId} LIMIT 1
+          `);
+          const existingId = (existingJE as any).rows[0]?.id as string | undefined;
+          if (existingId) {
+            await markCompleted(existingId);
+            return res.json({ success: true, journalEntryId: existingId, message: "القيد موجود مسبقاً" });
+          }
+          await markFailed(result.reason);
+          return res.status(422).json({ message: result.reason });
         }
 
         if (sourceType === "purchase_receiving" || sourceType === "receiving") {
