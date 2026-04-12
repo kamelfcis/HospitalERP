@@ -151,9 +151,15 @@ export function registerFinalizePostRoute(app: Express) {
           .where(eq(patientInvoiceHeaders.id, invoiceId))
           .catch((err: any) => logger.warn({ err: err.message, invoiceId }, "[Snapshot] failed to save finalized snapshot to DB"));
 
-        // توليد قيد GL — fire-and-forget عبر الدالة المركزية المشتركة
-        generatePatientInvoiceGL(invoiceId)
-          .catch(err => logger.warn({ err: err.message, invoiceId }, "[GL] patient invoice finalize"));
+        // توليد قيد GL فقط للفواتير غير الداخلية (بدون admissionId)
+        // الفواتير الداخلية (قسم الداخلي) يُؤجَّل قيدها للحفظ النهائي
+        const isInpatient = !!(existing as any).admissionId;
+        if (!isInpatient) {
+          generatePatientInvoiceGL(invoiceId)
+            .catch(err => logger.warn({ err: err.message, invoiceId }, "[GL] patient invoice finalize (outpatient)"));
+        } else {
+          logger.info({ invoiceId }, "[GL] inpatient invoice — GL deferred to final-close");
+        }
       }
 
       storage.createTreasuryTransactionsForInvoice(invoiceId, result.finalizedAt

@@ -5,6 +5,8 @@ import { PERMISSIONS } from "@shared/permissions";
 import { auditLog } from "../route-helpers";
 import { requireAuth, checkPermission } from "./_shared";
 import { broadcastPatientInvoiceUpdate } from "./_sse";
+import { generatePatientInvoiceGL } from "../lib/patient-invoice-gl-generator";
+import { logger } from "../lib/logger";
 
 export function registerFinalCloseRoute(app: Express) {
 
@@ -14,9 +16,13 @@ export function registerFinalCloseRoute(app: Express) {
       const userId = (req.session as any)?.userId as string | undefined;
 
       const invRes = await db.execute(sql`
-        SELECT id, patient_id, status, is_consolidated, admission_id, net_amount, paid_amount, is_final_closed,
-               patient_type, contract_id, company_id
-        FROM patient_invoice_headers WHERE id = ${id}
+        SELECT pih.id, pih.patient_id, pih.status, pih.is_consolidated, pih.admission_id,
+               pih.net_amount, pih.paid_amount, pih.is_final_closed,
+               pih.patient_type, pih.contract_id, pih.company_id,
+               COALESCE((
+                 SELECT SUM(dt.amount::numeric) FROM doctor_transfers dt WHERE dt.invoice_id = pih.id
+               ), 0)::text AS doctor_transferred_amount
+        FROM patient_invoice_headers pih WHERE pih.id = ${id}
       `);
       const inv = invRes.rows[0] as Record<string,unknown> | undefined;
       if (!inv) return res.status(404).json({ message: "الفاتورة غير موجودة" });
@@ -24,9 +30,11 @@ export function registerFinalCloseRoute(app: Express) {
       if (inv.status === "cancelled") return res.status(409).json({ message: "لا يمكن إغلاق فاتورة ملغاة" });
       if (inv.status !== "finalized") return res.status(409).json({ message: "يجب اعتماد الفاتورة أولاً قبل الإغلاق النهائي" });
 
-      const netAmount  = parseFloat(String(inv.net_amount  || 0));
-      const paidAmount = parseFloat(String(inv.paid_amount || 0));
-      const isContractPatient = !!(inv.contract_id || inv.company_id);
+      const netAmount             = parseFloat(String(inv.net_amount  || 0));
+      const paidAmount            = parseFloat(String(inv.paid_amount || 0));
+      const doctorTransferred     = parseFloat(String(inv.doctor_transferred_amount || 0));
+      const isContractPatient     = !!(inv.contract_id || inv.company_id);
+      const isInpatient           = !!(inv.admission_id);
 
       if (isContractPatient) {
         const claimRes = await db.execute(sql`
@@ -69,9 +77,13 @@ export function registerFinalCloseRoute(app: Express) {
           });
         }
       } else {
-        const outstanding = netAmount - paidAmount;
+        // الفاتورة النقدية: الرصيد = صافي - مدفوع - محوّل لمديونية طبيب
+        const outstanding = netAmount - paidAmount - doctorTransferred;
         if (outstanding > 0.01) {
-          return res.status(409).json({ message: `لا يمكن الإغلاق النهائي — يوجد رصيد متبقي: ${outstanding.toFixed(2)} ج.م` });
+          const hint = doctorTransferred > 0
+            ? ` (مدفوع: ${paidAmount.toFixed(2)} + محوّل للطبيب: ${doctorTransferred.toFixed(2)} من أصل ${netAmount.toFixed(2)})`
+            : "";
+          return res.status(409).json({ message: `لا يمكن الإغلاق النهائي — يوجد رصيد متبقي: ${outstanding.toFixed(2)} ج.م${hint}` });
         }
       }
 
@@ -95,6 +107,12 @@ export function registerFinalCloseRoute(app: Express) {
         SET is_final_closed = true, final_closed_at = NOW(), final_closed_by = ${userId || null}, updated_at = NOW()
         WHERE id = ${id}
       `);
+
+      // توليد القيد المحاسبي للفواتير الداخلية هنا (عند الحفظ النهائي فقط)
+      if (isInpatient) {
+        generatePatientInvoiceGL(id)
+          .catch(err => logger.warn({ err: err.message, invoiceId: id }, "[GL] inpatient invoice final-close GL generation"));
+      }
 
       const patientId = String(inv.patient_id ?? "");
       if (patientId) {
