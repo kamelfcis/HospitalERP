@@ -164,6 +164,20 @@ export async function runMigrations(log: LogFn): Promise<void> {
       ON patient_invoice_lines (linked_line_id)
       WHERE linked_line_id IS NOT NULL
     `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_je_created_at
+      ON journal_entries (created_at DESC)
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_je_status_entry_date
+      ON journal_entries (status, entry_date DESC)
+      WHERE status = 'posted'
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_treasury_txn_treasury_date
+      ON treasury_transactions (treasury_id, transaction_date DESC)
+      INCLUDE (amount, type, description)
+    `);
     log("[STARTUP] Performance indexes ensured");
   } catch (err: unknown) {
     logger.error({ err: err instanceof Error ? err.message : String(err) }, "[STARTUP] performance index error");

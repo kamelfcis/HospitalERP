@@ -76,6 +76,7 @@ export function registerSystemRoutes(app: Express) {
   app.get("/api/announcements/active", requireAuth, async (_req, res) => {
     try {
       const rows = await db.execute(sql`SELECT id, message FROM announcements WHERE is_active = true ORDER BY created_at DESC`);
+      res.set("Cache-Control", "private, max-age=60, stale-while-revalidate=120");
       res.json(rows.rows);
     } catch (e: any) { res.status(500).json({ message: e.message }); }
   });

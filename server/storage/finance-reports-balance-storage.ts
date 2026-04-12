@@ -47,33 +47,43 @@ const methods = {
   },
 
   async getTrialBalance(this: DatabaseStorage, asOfDate: string): Promise<any> {
-    const rows = await db.select({
-      id: accounts.id,
-      code: accounts.code,
-      name: accounts.name,
-      accountType: accounts.accountType,
-      parentId: accounts.parentId,
-      level: accounts.level,
-      isActive: accounts.isActive,
-      requiresCostCenter: accounts.requiresCostCenter,
-      description: accounts.description,
-      openingBalance: accounts.openingBalance,
-      createdAt: accounts.createdAt,
-      txDebit: sql<string>`COALESCE(SUM(
-        CASE WHEN ${journalEntries.status} = 'posted'
-             AND ${journalEntries.entryDate} <= ${asOfDate}
-        THEN ${journalLines.debit}::numeric ELSE 0 END
-      ), 0)::text`,
-      txCredit: sql<string>`COALESCE(SUM(
-        CASE WHEN ${journalEntries.status} = 'posted'
-             AND ${journalEntries.entryDate} <= ${asOfDate}
-        THEN ${journalLines.credit}::numeric ELSE 0 END
-      ), 0)::text`,
-    })
-    .from(accounts)
-    .leftJoin(journalLines, eq(journalLines.accountId, accounts.id))
-    .leftJoin(journalEntries, eq(journalEntries.id, journalLines.journalEntryId))
-    .groupBy(accounts.id);
+    // Optimized: filter posted entries FIRST then join lines (uses idx_je_status_entry_date)
+    // Avoids scanning draft/cancelled journal_lines which grow without bound
+    const result = await db.execute(sql`
+      SELECT
+        a.id,
+        a.code,
+        a.name,
+        a.account_type   AS "accountType",
+        a.parent_id      AS "parentId",
+        a.level,
+        a.is_active      AS "isActive",
+        a.requires_cost_center AS "requiresCostCenter",
+        a.description,
+        a.opening_balance AS "openingBalance",
+        a.created_at     AS "createdAt",
+        COALESCE(agg.tx_debit,  0)::text AS "txDebit",
+        COALESCE(agg.tx_credit, 0)::text AS "txCredit"
+      FROM accounts a
+      LEFT JOIN (
+        SELECT
+          jl.account_id,
+          SUM(jl.debit::numeric)  AS tx_debit,
+          SUM(jl.credit::numeric) AS tx_credit
+        FROM journal_lines jl
+        JOIN journal_entries je ON je.id = jl.journal_entry_id
+        WHERE je.status    = 'posted'
+          AND je.entry_date <= ${asOfDate}
+        GROUP BY jl.account_id
+      ) agg ON agg.account_id = a.id
+    `);
+    const rows = result.rows as Array<{
+      id: string; code: string; name: string; accountType: string;
+      parentId: string | null; level: number; isActive: boolean;
+      requiresCostCenter: boolean; description: string | null;
+      openingBalance: string | null; createdAt: Date;
+      txDebit: string; txCredit: string;
+    }>;
 
     const items = rows.map((row) => {
       const txDebit    = parseFloat(row.txDebit);
@@ -122,27 +132,34 @@ const methods = {
   },
 
   async getBalanceSheet(this: DatabaseStorage, asOfDate: string): Promise<any> {
-    const rows = await db.select({
-      id: accounts.id,
-      code: accounts.code,
-      name: accounts.name,
-      accountType: accounts.accountType,
-      openingBalance: accounts.openingBalance,
-      txDebit: sql<string>`COALESCE(SUM(
-        CASE WHEN ${journalEntries.status} = 'posted'
-             AND ${journalEntries.entryDate} <= ${asOfDate}
-        THEN ${journalLines.debit}::numeric ELSE 0 END
-      ), 0)::text`,
-      txCredit: sql<string>`COALESCE(SUM(
-        CASE WHEN ${journalEntries.status} = 'posted'
-             AND ${journalEntries.entryDate} <= ${asOfDate}
-        THEN ${journalLines.credit}::numeric ELSE 0 END
-      ), 0)::text`,
-    })
-    .from(accounts)
-    .leftJoin(journalLines, eq(journalLines.accountId, accounts.id))
-    .leftJoin(journalEntries, eq(journalEntries.id, journalLines.journalEntryId))
-    .groupBy(accounts.id);
+    // Optimized: filter posted entries FIRST (uses idx_je_status_entry_date partial index)
+    const result = await db.execute(sql`
+      SELECT
+        a.id,
+        a.code,
+        a.name,
+        a.account_type   AS "accountType",
+        a.opening_balance AS "openingBalance",
+        COALESCE(agg.tx_debit,  0)::text AS "txDebit",
+        COALESCE(agg.tx_credit, 0)::text AS "txCredit"
+      FROM accounts a
+      LEFT JOIN (
+        SELECT
+          jl.account_id,
+          SUM(jl.debit::numeric)  AS tx_debit,
+          SUM(jl.credit::numeric) AS tx_credit
+        FROM journal_lines jl
+        JOIN journal_entries je ON je.id = jl.journal_entry_id
+        WHERE je.status    = 'posted'
+          AND je.entry_date <= ${asOfDate}
+        GROUP BY jl.account_id
+      ) agg ON agg.account_id = a.id
+    `);
+    const rows = result.rows as Array<{
+      id: string; code: string; name: string;
+      accountType: string; openingBalance: string | null;
+      txDebit: string; txCredit: string;
+    }>;
 
     const computeBalance = (
       txDebit: string,
