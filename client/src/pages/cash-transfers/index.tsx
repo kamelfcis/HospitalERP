@@ -107,15 +107,21 @@ export default function CashTransfersPage() {
     defaultValues: { fromTreasuryId: "", toTreasuryId: "", amount: "", notes: "" },
   });
 
-  // عند تحميل الخزن، عيّن خزنة عهدة امين الخزنة (12127) كخزنة وجهة افتراضية
+  // خزنة عهدة امين الخزنة الافتراضية (حساب 12127)
   const CASHIER_ACCT_CODE = "12127";
+  const cashierTreasury = treasuries.find(t => t.glAccountCode === CASHIER_ACCT_CODE);
+
   useEffect(() => {
     if (treasuries.length === 0) return;
-    const cashierTreasury = treasuries.find(t => t.glAccountCode === CASHIER_ACCT_CODE);
-    if (cashierTreasury && !form.getValues("toTreasuryId")) {
-      form.setValue("toTreasuryId", cashierTreasury.id, { shouldValidate: false });
+    const found = treasuries.find(t => t.glAccountCode === CASHIER_ACCT_CODE);
+    if (found) {
+      const current = form.getValues("toTreasuryId");
+      if (!current) {
+        form.setValue("toTreasuryId", found.id, { shouldValidate: false });
+      }
     }
-  }, [treasuries]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [treasuries.map(t => t.id).join(",")]);
 
   const fromId = form.watch("fromTreasuryId");
   const toId   = form.watch("toTreasuryId");
@@ -219,7 +225,14 @@ export default function CashTransfersPage() {
 
               {/* الخزنة الوجهة */}
               <div className="space-y-1">
-                <Label>الخزنة الوجهة <span className="text-destructive">*</span></Label>
+                <Label>
+                  الخزنة الوجهة <span className="text-destructive">*</span>
+                  {cashierTreasury && (
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400 font-normal mr-2">
+                      (الافتراضي: عهدة امين الخزنة)
+                    </span>
+                  )}
+                </Label>
                 <Select
                   value={form.watch("toTreasuryId")}
                   onValueChange={v => form.setValue("toTreasuryId", v, { shouldValidate: true })}
@@ -243,6 +256,11 @@ export default function CashTransfersPage() {
                   <div className="text-xs text-muted-foreground bg-muted rounded p-2 flex justify-between">
                     <span>الرصيد الحالي</span>
                     <span className="font-semibold tabular-nums">{formatMoney(toTreasury.balance)} ج.م</span>
+                  </div>
+                )}
+                {!loadingT && !cashierTreasury && (
+                  <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded p-2">
+                    ⚠ لا توجد خزنة مربوطة بحساب عهدة امين الخزنة (12127) — يرجى إضافتها من صفحة الخزن
                   </div>
                 )}
               </div>
