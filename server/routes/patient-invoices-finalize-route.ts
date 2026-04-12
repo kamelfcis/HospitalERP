@@ -13,7 +13,6 @@ import {
   doctors,
   services,
   companies,
-  treasuries,
 } from "@shared/schema";
 import { roundMoney, parseMoney } from "../finance-helpers";
 import { generateClaimsForInvoice } from "../lib/contract-claim-generator";
@@ -196,30 +195,29 @@ export function registerFinalizePostRoute(app: Express) {
           }
         }
 
-        if ((result as any).patientType === "cash") {
-          const treasuryPayments = await db.execute(sql`
-            SELECT t.gl_account_id, SUM(p.amount::numeric) AS total_amount
-            FROM patient_invoice_payments p
-            JOIN treasuries t ON t.id = p.treasury_id
-            WHERE p.header_id = ${invoiceId} AND p.treasury_id IS NOT NULL
-            GROUP BY t.gl_account_id
-          `);
-          const treasuryRows = treasuryPayments.rows as { gl_account_id: string; total_amount: string }[];
-          if (treasuryRows.length > 0) {
-            const cashIdx = glLines.findIndex(l => l.lineType === "cash");
-            if (cashIdx >= 0) glLines.splice(cashIdx, 1);
-            let treasuryTotal = 0;
-            for (const tr of treasuryRows) {
-              const amt = parseFloat(tr.total_amount);
-              if (amt > 0) {
-                glLines.unshift({ lineType: "cash", amount: roundMoney(amt), debitAccountId: tr.gl_account_id });
-                treasuryTotal += amt;
-              }
+        // تقسيم خزائن GL لجميع أنواع المرضى: نقدي→cash | تعاقد→cash(نصيبة)+receivables(شركة)
+        const patType = (result as any).patientType as string;
+        const primaryLineType = patType === "cash" ? "cash" : "receivables";
+        const tRes = await db.execute(sql`
+          SELECT t.gl_account_id, SUM(p.amount::numeric) AS total_amount
+          FROM patient_invoice_payments p JOIN treasuries t ON t.id = p.treasury_id
+          WHERE p.header_id = ${invoiceId} AND p.treasury_id IS NOT NULL GROUP BY t.gl_account_id
+        `);
+        const treasuryRows = tRes.rows as { gl_account_id: string | null; total_amount: string }[];
+        if (treasuryRows.length > 0) {
+          const pIdx = glLines.findIndex(l => l.lineType === primaryLineType);
+          if (pIdx >= 0) glLines.splice(pIdx, 1);
+          let tTotal = 0;
+          for (const tr of treasuryRows) {
+            const amt = parseFloat(tr.total_amount);
+            if (amt > 0) {
+              const gl: { lineType: string; amount: string; debitAccountId?: string | null } = { lineType: "cash", amount: roundMoney(amt) };
+              if (tr.gl_account_id) gl.debitAccountId = tr.gl_account_id;
+              glLines.unshift(gl); tTotal += amt;
             }
-            const totalNet = parseMoney(result.netAmount);
-            const remainder = totalNet - treasuryTotal;
-            if (remainder > 0.01) glLines.unshift({ lineType: "cash", amount: roundMoney(remainder) });
           }
+          const rem = parseMoney(result.netAmount) - tTotal;
+          if (rem > 0.01) glLines.unshift({ lineType: primaryLineType, amount: roundMoney(rem) });
         }
 
         if ((result as any).companyId && (result as any).patientType !== "cash") {
