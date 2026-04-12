@@ -121,6 +121,7 @@ const salesJournalRegenMethods = {
   },
 
   async retryFailedJournals(this: DatabaseStorage): Promise<{ attempted: number, succeeded: number, failed: number }> {
+    const MAX_JOURNAL_RETRIES = 10;
     const failedInvoices = await db.select({
       id: salesInvoiceHeaders.id,
       invoiceNumber: salesInvoiceHeaders.invoiceNumber,
@@ -128,7 +129,8 @@ const salesJournalRegenMethods = {
     }).from(salesInvoiceHeaders)
       .where(and(
         eq(salesInvoiceHeaders.status, "finalized"),
-        eq(salesInvoiceHeaders.journalStatus, "failed")
+        eq(salesInvoiceHeaders.journalStatus, "failed"),
+        sql`COALESCE(journal_retries, 0) < ${MAX_JOURNAL_RETRIES}`
       ))
       .limit(20);
 
@@ -162,7 +164,14 @@ const salesJournalRegenMethods = {
         }
       } catch (err: unknown) {
         failed++;
-        console.error(`[JOURNAL_RETRY] Invoice #${inv.invoiceNumber} - still failing: ${(err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err))}`);
+        const errTxt = err instanceof Error ? err.message : String(err);
+        console.error(`[JOURNAL_RETRY] Invoice #${inv.invoiceNumber} - still failing: ${errTxt}`);
+        // Increment retries so we stop trying after MAX_JOURNAL_RETRIES
+        await db.execute(sql`
+          UPDATE sales_invoice_headers
+          SET journal_retries = COALESCE(journal_retries, 0) + 1
+          WHERE id = ${inv.id}
+        `);
       }
     }
 

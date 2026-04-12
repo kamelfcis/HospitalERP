@@ -33,6 +33,7 @@ async function markPermanentlyFailed(id: string, reason: string): Promise<void> 
     SET  status            = 'failed',
          error_message     = ${`[تجاوز الحد الأقصى ${MAX_RETRY_ATTEMPTS} محاولات] ${reason}`},
          next_retry_at     = NULL,
+         attempt_count     = ${MAX_RETRY_ATTEMPTS},
          last_attempted_at = NOW(),
          updated_at        = NOW()
     WHERE id = ${id}
