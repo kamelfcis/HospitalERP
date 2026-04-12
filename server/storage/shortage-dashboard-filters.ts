@@ -3,6 +3,8 @@ import {
   buildQtyDisplayExpr,
   buildAvgDailyDisplayExpr,
   buildDisplayUnitNameExpr,
+  safeSortCol,
+  buildStatusFilter,
 } from "./shortage-helpers";
 
 export interface DashboardFilterResult {
@@ -36,7 +38,6 @@ export function buildDashboardFilters(params: DashboardParams): DashboardFilterR
     sortBy, sortDir,
   } = params;
 
-  const { safeSortCol, buildStatusFilter } = require("./shortage-helpers");
   const offset = (page - 1) * limit;
   const safeSort = safeSortCol(sortBy);
   const safeDir  = sortDir === "asc" ? "ASC" : "DESC";
