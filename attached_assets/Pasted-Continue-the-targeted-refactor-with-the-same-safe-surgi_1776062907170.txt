@@ -1,0 +1,111 @@
+Continue the targeted refactor with the same safe, surgical approach.
+
+Context:
+- This is a live hospital/ERP system.
+- Do not do any broad rewrite.
+- Preserve all current behavior, API contracts, calculations, posting logic, validation, and UI behavior.
+- No business behavior changes unless fixing an obvious confirmed bug.
+- Prefer extract-and-simplify only.
+
+What has already been done:
+1) Backend:
+- accounting-events-actions.ts refactored into a thin route + service
+- purchasing-receiving-post-routes.ts refactored from 283 -> 158 lines
+- server/services/purchasing-receiving-post-service.ts created
+- complex route logic moved into service successfully
+- simple CRUD-style routes were intentionally left as direct storage calls
+
+2) Frontend:
+- customer-payments/index.tsx first pass done (queries moved out)
+- delivery-payments/index.tsx first pass done:
+  - page reduced from 698 -> 644
+  - useDeliveryPaymentsData.ts created
+  - queries + SSE + types moved out
+- both pages still retain too much state/mutation/rendering complexity
+
+Next targets:
+1) Backend: opening-stock.ts
+2) Frontend: customer-payments/index.tsx second pass
+
+Primary objectives:
+- Continue the backend route -> service pattern
+- Start a true second-pass frontend cleanup pattern
+- Reduce complexity in main files without changing behavior
+- Improve boundaries, not just move code around
+
+Backend target: opening-stock.ts
+Goals:
+- Make the route thin
+- Move totals calculations, multi-step DB coordination, validations, and orchestration into a dedicated service
+- Keep the route responsible only for:
+  - parsing request
+  - calling service
+  - returning response / mapped errors
+- If useful, create a focused service such as:
+  - server/services/opening-stock-service.ts
+- Keep storage/repository usage intact unless a very small extraction is clearly justified
+- Do not do broad storage refactoring
+
+Backend constraints:
+- No API contract changes
+- No schema changes unless strictly needed for correctness
+- No endpoint renaming
+- Preserve inventory/accounting behavior exactly
+- If some route handlers are simple CRUD, they may remain direct storage calls if that keeps the design cleaner
+
+Frontend target: customer-payments/index.tsx (second pass)
+Goals:
+- Build on the first pass already completed
+- Move complex mutation/action logic out of the page if it materially improves clarity
+- Extract table/form/report sections into focused components only where this clearly reduces page complexity
+- Consider extracting:
+  - useCustomerPaymentsMutations.ts
+  - focused table or panel component(s)
+  - derived sorting/filtering logic only if it meaningfully reduces page complexity
+- Keep the page mainly as composition/rendering
+- Do not over-componentize tiny pieces
+- Do not create generic abstractions unless there is clear repeated use
+
+Frontend constraints:
+- No API contract changes
+- No visual/UI behavior changes
+- No business logic changes
+- No broad redesign
+- No unnecessary renaming
+- Avoid “misc/helpers/utils” dumping-ground files
+- Complexity must actually leave the page, not just be moved sideways
+
+Important quality rules:
+- A refactor is successful only if boundaries improve
+- Do not blindly move large code blocks into another file
+- Service/hook/component names must be use-case specific
+- Prefer one or two clear extractions over many shallow helper files
+- Keep the extracted files cohesive and understandable
+
+Success criteria:
+Backend:
+- opening-stock.ts becomes clearly thinner
+- business orchestration leaves the route
+- service owns the use-case flow
+
+Frontend:
+- customer-payments/index.tsx becomes materially smaller and clearer
+- mutation/action complexity leaves the page where appropriate
+- extracted UI sections are meaningful and reduce cognitive load
+- the page becomes closer to a composition layer
+
+Process:
+1) Inspect the two target files first
+2) Identify what complexity should be extracted
+3) Refactor the backend file first
+4) Then do the frontend second pass
+5) After finishing, report:
+   - exact files changed
+   - line count before/after
+   - what logic was extracted
+   - what behavior was preserved
+   - what complexity intentionally remains and why
+   - recommended next backend file
+   - recommended next frontend file
+
+Do not expand the refactor beyond these two targets.

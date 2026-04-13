@@ -24,16 +24,12 @@ import { Express } from "express";
 import multer from "multer";
 import { PERMISSIONS } from "@shared/permissions";
 import { requireAuth, checkPermission } from "./_shared";
-import { logger } from "../lib/logger";
-import { logAcctEvent } from "../lib/accounting-event-logger";
 import { storage } from "../storage";
+import { buildXlsxBuffer, parseXlsxBuffer, sendXlsxResponse } from "../lib/excel-helpers";
 import {
-  buildXlsxBuffer,
-  parseXlsxBuffer,
-  getVal,
-  parseDec,
-  sendXlsxResponse,
-} from "../lib/excel-helpers";
+  parseImportedOpeningStockRows,
+  executePostOpeningStock,
+} from "../services/opening-stock-service";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } }); // multer memory storage
 
@@ -212,37 +208,9 @@ export function registerOpeningStockRoutes(app: Express) {
     async (req, res) => {
       try {
         if (!req.file) return res.status(400).json({ message: "لم يتم رفع ملف" });
-
-        const rawRows = parseXlsxBuffer(req.file.buffer);
-        const parsed = rawRows
-          .filter((r) => getVal(r, "كود الصنف *", "كود الصنف", "itemCode").trim())
-          .map((r) => {
-            const itemCode     = getVal(r, "كود الصنف *", "كود الصنف", "itemCode");
-            const unitLevel    = (getVal(r, "الوحدة *", "الوحدة", "unitLevel") || "major").toLowerCase();
-            const qty          = parseDec(getVal(r, "الكمية *", "الكمية", "qtyInUnit")) ?? 0;
-            const purchasePrice= parseDec(getVal(r, "سعر الشراء (ج.م)", "سعر الشراء", "purchasePrice")) ?? 0;
-            const salePrice    = parseDec(getVal(r, "سعر البيع (ج.م)", "سعر البيع", "salePrice")) ?? 0;
-            const batchNo      = getVal(r, "رقم التشغيلة", "batchNo") || null;
-            const expiryMonthS = getVal(r, "شهر الصلاحية", "expiryMonth");
-            const expiryYearS  = getVal(r, "سنة الصلاحية", "expiryYear");
-            const lineNotes    = getVal(r, "ملاحظات", "lineNotes") || null;
-            return {
-              itemCode,
-              unitLevel,
-              qtyInUnit:     qty,
-              purchasePrice,
-              salePrice,
-              batchNo,
-              expiryMonth:   expiryMonthS ? parseInt(expiryMonthS) : null,
-              expiryYear:    expiryYearS  ? parseInt(expiryYearS)  : null,
-              lineNotes,
-            };
-          });
-
+        const parsed = parseImportedOpeningStockRows(parseXlsxBuffer(req.file.buffer));
         if (!parsed.length) return res.status(400).json({ message: "لم يتم العثور على أسطر بيانات في الملف" });
-
-        const result = await storage.importOpeningStockLines(req.params.id, parsed);
-        res.json(result);
+        res.json(await storage.importOpeningStockLines(req.params.id, parsed));
       } catch (e) {
         res.status(400).json({ message: e instanceof Error ? e.message : String(e) });
       }
@@ -253,44 +221,7 @@ export function registerOpeningStockRoutes(app: Express) {
   app.post("/api/opening-stock/:id/post", requireAuth, checkPermission(PERM), async (req, res) => {
     try {
       const userId = (req as any).session?.userId ?? null;
-      const { header, totalCost } = await storage.postOpeningStock(req.params.id, userId);
-
-      // GL journal — fire-and-forget بعد نجاح الترحيل
-      if (totalCost > 0) {
-        const headerId = header.id;
-        const postDate  = header.postDate;
-        setImmediate(async () => {
-          try {
-            const entry = await storage.generateJournalEntry({
-              sourceType:       "opening_stock",
-              sourceDocumentId: headerId,
-              reference:        `OS-${headerId.slice(0, 8).toUpperCase()}`,
-              description:      `رصيد افتتاحي للمخزون — ${postDate}`,
-              entryDate:        postDate,
-              lines: [
-                { lineType: "inventory",      amount: totalCost.toFixed(2) },
-                { lineType: "opening_equity", amount: totalCost.toFixed(2) },
-              ],
-            });
-            if (!entry) {
-              // generateJournalEntry returned null (e.g. no fiscal period, unmapped accounts)
-              // — accounting_event_log entry already written inside generateJournalEntry
-              logger.warn({ headerId }, "[OPENING_STOCK] GL journal not created — see accounting_event_log");
-            }
-          } catch (glErr: any) {
-            logger.warn({ glErr: glErr?.message }, "[OPENING_STOCK] GL journal failed — logged for retry");
-            logAcctEvent({
-              sourceType:   "opening_stock",
-              sourceId:     headerId,
-              eventType:    "opening_stock_journal_failed",
-              status:       "needs_retry",
-              errorMessage: `فشل إنشاء قيد الرصيد الافتتاحي: ${glErr?.message ?? String(glErr)}`,
-            }).catch(() => {});
-          }
-        });
-      }
-
-      res.json({ message: "تم الترحيل بنجاح", header });
+      res.json(await executePostOpeningStock(req.params.id, userId));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const status = msg.includes("مُرحَّلة مسبقاً") || msg.includes("مرة واحدة فقط") ? 409 : 400;
