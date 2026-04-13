@@ -1,0 +1,117 @@
+Continue the same targeted surgical refactor approach.
+
+Context:
+- This is a live hospital/ERP system.
+- Do not do any broad rewrite.
+- Preserve all current behavior, API contracts, calculations, accounting rules, inventory rules, validations, posting flows, and UI behavior.
+- No business behavior changes unless fixing an obvious confirmed bug.
+- Prefer extract-and-simplify only.
+
+What has already been completed:
+Frontend:
+- customer-payments/index.tsx has now completed a third pass:
+  - page reduced from 534 -> 362
+  - CustomerInvoicesTable.tsx created
+  - table-local sorting, keyboard navigation, refs, and invoice table JSX extracted
+  - the page is now a clean composition layer
+
+Backend:
+- patient-invoices-payment-ops.ts partially refactored:
+  - route reduced from 206 -> 150
+  - patient-invoice-payment-service.ts created
+  - recordPatientPayment(invoiceId, params, userId) now owns:
+    - FOR UPDATE row lock + status validation
+    - receipt reference generation
+    - payment insert
+    - treasury transaction insert (idempotent)
+    - paid amount recalculation
+    - header update
+    - audit log
+    - response payload
+  - route intentionally keeps broadcast + RPT refresh side effects
+
+Next targets only:
+1) Backend: patient-invoices-finalize-route.ts
+2) Frontend: patient-invoices page — extract the invoice lines table block only
+
+Backend target: patient-invoices-finalize-route.ts
+Goals:
+- Extract the finalize validation block only
+- The extracted function/service should own:
+  - status validation
+  - doctor cost validation
+  - doctor account validation
+- Keep this round intentionally narrow
+- Do not refactor the whole finalize flow in this round
+- The route should become clearer by delegating finalize precondition checks
+
+Suggested backend output:
+- a focused validation helper or service function such as:
+  - validateInvoiceForFinalize(...)
+  - or assertInvoiceCanBeFinalized(...)
+- Prefer the name that best matches the current error-handling style
+
+Backend rules:
+- No endpoint/API contract changes
+- No schema changes unless strictly required for correctness
+- No broader patient invoice refactor in this round
+- Do not move unrelated finalize logic
+- Preserve current finalize behavior exactly
+- Keep broadcast / refresh / side effects where they currently make architectural sense
+
+Backend success criteria:
+- the finalize validation block leaves the route
+- the extraction is cohesive and finalize-specific
+- the route becomes easier to read
+- no broader churn is introduced
+
+Frontend target: patient-invoices page
+Goals:
+- Extract the invoice lines table block only
+- This should be a table-focused extraction, not a broad page rewrite
+- Move table-local rendering and behavior out of the page where that clearly improves readability
+- Keep page-level orchestration, major state ownership, and cross-section coordination in the page if that is still the cleanest option
+- Use the same successful pattern used in CustomerInvoicesTable.tsx, but do not force identical structure if the patient invoice table needs a different boundary
+
+Suggested frontend output:
+- a focused component such as:
+  - PatientInvoiceLinesTable.tsx
+  - or another use-case-specific name if clearer
+
+Frontend rules:
+- Do not refactor the whole patient-invoices page
+- Extract only the invoice lines table block in this round
+- No API contract changes
+- No UI/visual behavior changes
+- No business logic changes
+- No broad redesign
+- Do not create generic reusable table abstractions
+- Keep the extracted component cohesive and page-specific
+
+Frontend success criteria:
+- the patient-invoices page becomes materially smaller and easier to read
+- the extracted invoice lines table component has clear props and responsibility
+- table-local complexity leaves the page
+- page-level orchestration remains understandable
+
+Important quality rules:
+- Successful refactor = clearer boundaries, not just moved code
+- Keep names use-case specific
+- Avoid misc/helpers dumping-ground files
+- Prefer one cohesive extraction per target over many shallow files
+- Keep direct/simple logic direct when extraction adds no value
+
+Process:
+1) Inspect both targets
+2) Backend first: extract only the finalize validation block
+3) Frontend second: extract only the patient invoice lines table block
+4) After finishing, report:
+   - files changed
+   - line count before/after
+   - what logic/UI block was extracted
+   - what behavior was preserved
+   - what intentionally remains and why
+   - recommended next patient-invoices backend step
+   - recommended next patient-invoices frontend step
+
+Do not expand the refactor beyond these two targets.

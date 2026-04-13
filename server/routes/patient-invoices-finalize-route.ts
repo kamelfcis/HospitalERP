@@ -7,11 +7,12 @@ import { eq } from "drizzle-orm";
 import { PERMISSIONS } from "@shared/permissions";
 import { requireAuth, checkPermission, broadcastToUnit } from "./_shared";
 import { broadcastPatientInvoiceUpdate } from "./_sse";
-import { patientInvoiceHeaders, doctors } from "@shared/schema";
+import { patientInvoiceHeaders } from "@shared/schema";
 import { generateClaimsForInvoice } from "../lib/contract-claim-generator";
-import { assertInvoiceScopeGuard, ScopeViolationError } from "../lib/scope-guard";
+import { ScopeViolationError } from "../lib/scope-guard";
 import { auditItemPriceDeviations } from "../lib/patient-invoice-helpers";
 import { generatePatientInvoiceGL } from "../lib/patient-invoice-gl-generator";
+import { assertInvoiceCanBeFinalized, FinalizeValidationError } from "../services/patient-invoice-finalize-service";
 
 export function registerFinalizePostRoute(app: Express) {
 
@@ -30,52 +31,7 @@ export function registerFinalizePostRoute(app: Express) {
         return res.status(409).json({ message: "لا يمكن اعتماد فاتورة ملغاة", code: "INVALID_STATUS" });
       }
 
-      const existingLines = (existing as any).lines ?? [];
-      const hasDoctorCostLines = existingLines.some((l: any) => l.lineType === "doctor_cost" && !l.isVoid);
-      const validationBillingMode = (existing as any).billingMode || "hospital_collect";
-
-      if (hasDoctorCostLines) {
-        const orphanCostLines = existingLines.filter((l: any) => l.lineType === "doctor_cost" && !l.isVoid && !l.doctorId);
-        if (orphanCostLines.length > 0) {
-          return res.status(400).json({
-            message: "يوجد سطور أجر طبيب بدون ربط بطبيب (doctor_id). يجب تحديد الطبيب أولاً.",
-            code: "DOCTOR_COST_NO_DOCTOR",
-          });
-        }
-      }
-
-      let doctorData: { payableAccountId: string | null; receivableAccountId: string | null; financialMode: string | null; costCenterId: string | null } | null = null;
-      if (existing.doctorId) {
-        const [doc] = await db.select({
-          payableAccountId:    doctors.payableAccountId,
-          receivableAccountId: doctors.receivableAccountId,
-          financialMode:       doctors.financialMode,
-          costCenterId:        doctors.costCenterId,
-        }).from(doctors).where(eq(doctors.id, existing.doctorId)).limit(1);
-        doctorData = doc ?? null;
-
-        if (validationBillingMode === "hospital_collect" && hasDoctorCostLines && !doctorData?.payableAccountId) {
-          return res.status(400).json({
-            message: "لا يمكن اعتماد فاتورة تحصيل مستشفى بدون تحديد حساب الدائنين (مستحقات الطبيب). عدّل بيانات الطبيب أولاً.",
-            code: "DOCTOR_NO_PAYABLE",
-          });
-        }
-        if (validationBillingMode === "doctor_collect" && !doctorData?.receivableAccountId) {
-          return res.status(400).json({
-            message: "لا يمكن اعتماد فاتورة تحصيل طبيب بدون تحديد حساب المدينين للطبيب. عدّل بيانات الطبيب أولاً.",
-            code: "DOCTOR_NO_RECEIVABLE",
-          });
-        }
-      }
-
-      await storage.assertPeriodOpen(existing.invoiceDate);
-
-      await assertInvoiceScopeGuard(
-        req.session.userId as string,
-        (existing as any).departmentId,
-        (existing as any).warehouseId,
-        "patient_invoice_finalize",
-      );
+      await assertInvoiceCanBeFinalized(existing, req.session.userId as string);
 
       void auditItemPriceDeviations(
         (existing as any).lines ?? [],
@@ -192,6 +148,9 @@ export function registerFinalizePostRoute(app: Express) {
       runRefresh(REFRESH_KEYS.PATIENT_VISIT, () => storage.refreshPatientVisitSummary(), "event-driven").catch(() => {});
       res.json(result);
     } catch (error: unknown) {
+      if (error instanceof FinalizeValidationError) {
+        return res.status(error.statusCode).json({ message: error.message, code: error.code });
+      }
       if (error instanceof ScopeViolationError) {
         return res.status(error.statusCode).json({ message: error.message });
       }
