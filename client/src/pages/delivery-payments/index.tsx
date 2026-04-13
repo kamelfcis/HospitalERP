@@ -6,23 +6,21 @@
  */
 
 import { useState, useMemo, useCallback, useRef, memo, KeyboardEvent } from "react";
-import { useMutation }                         from "@tanstack/react-query";
-import { useToast }                            from "@/hooks/use-toast";
-import { apiRequestJson, queryClient }         from "@/lib/queryClient";
 import {
   useDeliveryPaymentsData,
   type FilterStatus,
   type ActiveTab,
   type DeliveryInvoiceRow,
   type InvoicesResult,
-  type ReportRow,
 } from "./hooks/useDeliveryPaymentsData";
-import { formatCurrency, formatDateShort }     from "@/lib/formatters";
-import { Input }                               from "@/components/ui/input";
-import { Button }                              from "@/components/ui/button";
-import { Badge }                               from "@/components/ui/badge";
-import { Checkbox }                            from "@/components/ui/checkbox";
-import { Label }                               from "@/components/ui/label";
+import { useDeliveryPaymentsMutations } from "./useDeliveryPaymentsMutations";
+import { DeliveryReportPanel }          from "./DeliveryReportPanel";
+import { formatCurrency, formatDateShort } from "@/lib/formatters";
+import { Input }                        from "@/components/ui/input";
+import { Button }                       from "@/components/ui/button";
+import { Badge }                        from "@/components/ui/badge";
+import { Checkbox }                     from "@/components/ui/checkbox";
+import { Label }                        from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -33,8 +31,8 @@ import {
   Truck, RefreshCw, Save, FileText, Hash, Loader2,
   AlertTriangle, CircleDollarSign, ChevronUp, ChevronDown,
 } from "lucide-react";
-import { useTreasurySelector }                 from "@/hooks/use-treasury-selector";
-import { TreasurySelector }                    from "@/components/shared/TreasurySelector";
+import { useTreasurySelector }          from "@/hooks/use-treasury-selector";
+import { TreasurySelector }             from "@/components/shared/TreasurySelector";
 
 // ─── Local UI types ───────────────────────────────────────────────────────────
 
@@ -44,10 +42,6 @@ type SortDir = "asc" | "desc";
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const today = () => new Date().toISOString().split("T")[0];
-
-const PM_LABELS: Record<string, string> = {
-  cash: "نقدي", bank: "بنك", card: "بطاقة", check: "شيك",
-};
 
 function SortHead({
   label, sortKey: sk, current, dir, onSort,
@@ -175,8 +169,6 @@ const DeliveryRow = memo(function DeliveryRow({
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 export default function DeliveryPayments() {
-  const { toast } = useToast();
-
   const treasury = useTreasurySelector();
 
   const [receiptDate,   setReceiptDate]   = useState(today());
@@ -195,7 +187,7 @@ export default function DeliveryPayments() {
   const amountRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const rowIds     = useRef<string[]>([]);
 
-  // ── Data (queries + SSE) ──────────────────────────────────────────────────
+  // ── Data (queries) ────────────────────────────────────────────────────────
   const {
     invoicesData,
     isLoading,
@@ -205,7 +197,24 @@ export default function DeliveryPayments() {
     refetchReport,
   } = useDeliveryPaymentsData(filterStatus, activeTab);
 
-  // ── ترتيب الفواتير ────────────────────────────────────────────────────────
+  // ── Mutations ─────────────────────────────────────────────────────────────
+  const { saveMutation } = useDeliveryPaymentsMutations({
+    receiptDate,
+    totalAmount,
+    paymentMethod,
+    reference,
+    notes,
+    selectedGlAccountId: treasury.selectedGlAccountId,
+    amounts,
+    onSuccess: () => {
+      setAmounts({});
+      setTotalAmount("");
+      setReference("");
+      setSelected(new Set());
+    },
+  });
+
+  // ── ترتيب الفواتير ─────────────────────────────────────────────────────────
   const invoices = useMemo(() => {
     const raw = invoicesData?.rows ?? [];
     return [...raw].sort((a, b) => {
@@ -217,7 +226,7 @@ export default function DeliveryPayments() {
     });
   }, [invoicesData, sortKey, sortDir]);
 
-  // ── مجموع المحدد ─────────────────────────────────────────────────────────
+  // ── مجموع المحدد ──────────────────────────────────────────────────────────
   const selectedRemaining = useMemo(() => {
     if (selected.size === 0) return null;
     return invoices
@@ -279,36 +288,6 @@ export default function DeliveryPayments() {
     () => Object.values(amounts).reduce((s, v) => s + (parseFloat(v) || 0), 0),
     [amounts]
   );
-
-  // ── حفظ ───────────────────────────────────────────────────────────────────
-  const saveMutation = useMutation({
-    mutationFn: () => {
-      const lines = Object.entries(amounts)
-        .map(([invoiceId, v]) => ({ invoiceId, amountPaid: parseFloat(v) || 0 }))
-        .filter((l) => l.amountPaid > 0);
-
-      return apiRequestJson<{ receiptId: string; receiptNumber: number }>(
-        "POST", "/api/delivery-payments/receipts",
-        {
-          receiptDate,
-          totalAmount: parseFloat(totalAmount),
-          paymentMethod,
-          reference:   reference.trim() || null,
-          notes:       notes.trim() || null,
-          glAccountId: treasury.selectedGlAccountId,
-          shiftId:     null,
-          lines,
-        }
-      );
-    },
-    onSuccess: (data) => {
-      toast({ title: `تم حفظ إيصال التوصيل #${data.receiptNumber} بنجاح` });
-      queryClient.invalidateQueries({ queryKey: ["/api/delivery-payments/invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/delivery-payments/report"] });
-      setAmounts({}); setTotalAmount(""); setReference(""); setSelected(new Set());
-    },
-    onError: (e: any) => toast({ title: "خطأ في الحفظ", description: e.message, variant: "destructive" }),
-  });
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const canSave =
@@ -574,70 +553,11 @@ export default function DeliveryPayments() {
 
       {/* ═══════════════════════════════════════════════════════════════ */}
       {activeTab === "report" && (
-        <div className="border rounded-md overflow-auto">
-          <div className="flex items-center justify-between px-3 py-2 bg-muted/30 border-b">
-            <span className="text-[12px] font-semibold">إيصالات التوصيل</span>
-            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => refetchReport()}>
-              <RefreshCw className="h-3 w-3 ml-1" />
-              تحديث
-            </Button>
-          </div>
-          <Table className="text-[12px]">
-            <TableHeader>
-              <TableRow className="bg-muted/50">
-                <TableHead className="text-right px-2">#</TableHead>
-                <TableHead className="text-right px-2">التاريخ</TableHead>
-                <TableHead className="text-right px-2">المبلغ</TableHead>
-                <TableHead className="text-right px-2">طريقة الدفع</TableHead>
-                <TableHead className="text-right px-2">المرجع</TableHead>
-                <TableHead className="text-right px-2">الكاشير</TableHead>
-                <TableHead className="text-right px-2">عدد الفواتير</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {reportLoading && (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8">
-                    <Loader2 className="h-5 w-5 animate-spin inline" />
-                  </TableCell>
-                </TableRow>
-              )}
-              {!reportLoading && (!reportData || reportData.length === 0) && (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                    لا توجد إيصالات
-                  </TableCell>
-                </TableRow>
-              )}
-              {reportData?.map((r) => (
-                <TableRow key={r.receiptId} data-testid={`row-receipt-${r.receiptId}`}>
-                  <TableCell className="px-2 font-mono">
-                    <span className="flex items-center gap-1">
-                      <Hash className="h-3 w-3 text-muted-foreground" />
-                      {r.receiptNumber}
-                    </span>
-                  </TableCell>
-                  <TableCell className="px-2">{formatDateShort(r.receiptDate)}</TableCell>
-                  <TableCell className="px-2 text-right font-semibold">
-                    {formatCurrency(r.totalAmount)}
-                  </TableCell>
-                  <TableCell className="px-2">
-                    <Badge variant="outline" className="text-[9px]">
-                      {PM_LABELS[r.paymentMethod] ?? r.paymentMethod}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="px-2 text-muted-foreground">
-                    {r.reference ?? "—"}
-                  </TableCell>
-                  <TableCell className="px-2">{r.cashierName ?? "—"}</TableCell>
-                  <TableCell className="px-2 text-center">
-                    <Badge variant="secondary" className="text-[9px]">{r.invoiceCount}</Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <DeliveryReportPanel
+          reportData={reportData}
+          reportLoading={reportLoading}
+          refetchReport={refetchReport}
+        />
       )}
     </div>
   );

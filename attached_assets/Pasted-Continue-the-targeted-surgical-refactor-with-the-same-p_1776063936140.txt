@@ -1,0 +1,96 @@
+Continue the targeted surgical refactor with the same proven pattern.
+
+Context:
+- This is a live hospital/ERP system.
+- Do not do any broad rewrite.
+- Preserve all current behavior, API contracts, calculations, accounting logic, inventory behavior, validations, and UI behavior.
+- No business behavior changes unless fixing an obvious confirmed bug.
+- Prefer extract-and-simplify only.
+
+What has already been completed:
+Backend:
+- accounting-events-actions.ts refactored into thin route + service
+- purchasing-receiving-post-routes.ts refactored into thinner route + service
+- opening-stock.ts partially refactored:
+  - route reduced from 300 -> 231
+  - opening-stock-service.ts created
+  - import and post handlers are now thin
+  - simple CRUD handlers intentionally remain direct storage calls
+
+Frontend:
+- customer-payments/index.tsx:
+  - first pass: queries extracted
+  - second pass: page reduced from 750 -> 534
+  - CustomerStatementPanel.tsx extracted
+  - useCustomerPaymentsMutations.ts extracted
+- delivery-payments/index.tsx:
+  - first pass already done
+  - still needs second pass
+
+Next targets only:
+1) Backend: hospital-cashier-shifts.ts
+2) Frontend: delivery-payments/index.tsx second pass
+
+Backend target: hospital-cashier-shifts.ts
+Goals:
+- Identify repeated db.insert/db.select / orchestration logic inside handlers
+- Make complex handlers thinner
+- Extract business/use-case orchestration into a focused service if that materially improves clarity
+- Keep simple CRUD-style handlers direct if they are already clean enough
+- Avoid broad storage refactors
+- Preserve all cashier shift behavior exactly
+
+Suggested backend output:
+- a focused service only if justified, such as:
+  server/services/hospital-cashier-shift-service.ts
+
+Backend rules:
+- No endpoint/API contract changes
+- No schema changes unless strictly required for correctness
+- No broad renaming
+- No moving many files at once
+- Do not extract trivial handlers just for style
+- Refactor only where complexity clearly decreases
+
+Frontend target: delivery-payments/index.tsx second pass
+Goals:
+- Apply the same successful pattern used in customer-payments second pass
+- Extract mutation/action logic into a dedicated hook if it materially improves clarity
+- Extract large statement/report/table sections into focused components only where that clearly reduces page complexity
+- Keep local UI-only state/handlers in the page when that is the cleanest option
+- Do not over-componentize small fragments
+- Keep the page moving toward composition/rendering responsibility
+
+Suggested frontend outputs:
+- useDeliveryPaymentsMutations.ts if justified
+- extracted panel/component(s) for large blocks if justified
+
+Frontend rules:
+- No API contract changes
+- No visual/UI behavior changes
+- No business behavior changes
+- No broad redesign
+- Avoid generic helper dumping-ground files
+- Complexity must actually leave the page
+
+Important quality rules:
+- Successful refactor = clearer boundaries, not just code moved elsewhere
+- Keep names use-case specific
+- Prefer one or two cohesive extractions over many shallow files
+- Small UI helpers can remain inline if extraction adds no value
+- Simple direct storage calls may remain as-is on the backend if that keeps the design cleaner
+
+Process:
+1) Inspect the two target files
+2) Identify the exact complexity worth extracting
+3) Refactor backend first
+4) Then refactor delivery-payments second pass
+5) After finishing, report:
+   - files changed
+   - line count before/after
+   - what logic was extracted
+   - what behavior was preserved
+   - what complexity intentionally remains and why
+   - whether customer-payments table extraction should be the next frontend step
+
+Do not expand the refactor beyond these two targets.
