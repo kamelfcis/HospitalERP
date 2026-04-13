@@ -6,7 +6,7 @@
  */
 
 import { useState, useMemo, useCallback, useRef, KeyboardEvent } from "react";
-import { useQuery, useMutation }                   from "@tanstack/react-query";
+import { useMutation }                             from "@tanstack/react-query";
 import { useToast }                                from "@/hooks/use-toast";
 import { apiRequestJson, queryClient }             from "@/lib/queryClient";
 import { formatCurrency, formatDateShort }         from "@/lib/formatters";
@@ -31,57 +31,11 @@ import {
 } from "@/components/shared/CreditCustomerCombobox";
 import { useTreasurySelector }                     from "@/hooks/use-treasury-selector";
 import { TreasurySelector }                        from "@/components/shared/TreasurySelector";
-import type { CustomerCreditInvoiceRow }           from "@shared/schema/invoicing";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface BalanceResult {
-  customerId:     string;
-  name:           string;
-  phone:          string | null;
-  totalInvoiced:  string;
-  totalReturns:   string;
-  totalPaid:      string;
-  currentBalance: string;
-}
-
-interface ReportRow extends CustomerCreditInvoiceRow {
-  receiptId:   string | null;
-  receiptDate: string | null;
-  receiptRef:  string | null;
-}
-
-interface ReportResult {
-  rows:             ReportRow[];
-  totalNetInvoiced: string;
-  totalPaid:        string;
-  totalRemaining:   string;
-}
-
-interface CustomerStatementLine {
-  txnDate:      string;
-  sourceType:   string;
-  sourceLabel:  string;
-  sourceNumber: string;
-  sourceRef:    string | null;
-  description:  string;
-  debit:        number;
-  credit:       number;
-  balance:      number;
-}
-
-interface CustomerStatementResult {
-  customerId:     string;
-  name:           string;
-  phone:          string | null;
-  fromDate:       string;
-  toDate:         string;
-  openingBalance: number;
-  lines:          CustomerStatementLine[];
-  totalDebit:     number;
-  totalCredit:    number;
-  closingBalance: number;
-}
+import {
+  useCustomerPaymentsData,
+  type BalanceResult,
+  type CustomerStatementResult,
+}                                                  from "./useCustomerPaymentsData";
 
 type SortKey  = "invoiceNumber" | "invoiceDate" | "netTotal" | "totalPaid" | "remaining";
 type SortDir  = "asc" | "desc";
@@ -193,58 +147,22 @@ export default function CustomerPayments() {
   const amountRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const rowIds     = useRef<string[]>([]);
 
-  // ── Queries ───────────────────────────────────────────────────────────────
-  const { data: balanceData, refetch: refetchBalance } = useQuery<BalanceResult>({
-    queryKey: ["/api/customer-payments/balance", customerId],
-    queryFn:  async () => {
-      const r = await fetch(`/api/customer-payments/balance/${customerId}`, { credentials: "include" });
-      if (!r.ok) throw new Error("فشل جلب الرصيد");
-      return r.json();
-    },
-    enabled: !!customerId,
-  });
-
-  const { data: nextNumData } = useQuery<{ nextNumber: number }>({
-    queryKey: ["/api/customer-payments/next-number"],
-    queryFn:  async () => {
-      const r = await fetch("/api/customer-payments/next-number", { credentials: "include" });
-      return r.json();
-    },
-    enabled: !!customerId,
-  });
-
-  const { data: invoicesData, refetch: refetchInvoices } = useQuery<{ invoices: CustomerCreditInvoiceRow[] }>({
-    queryKey: ["/api/customer-payments/invoices", customerId, filterStatus],
-    queryFn:  async () => {
-      const r = await fetch(`/api/customer-payments/invoices/${customerId}?status=${filterStatus}`, { credentials: "include" });
-      return r.json();
-    },
-    enabled: !!customerId,
-  });
-
-  // ── كشف الحساب ─────────────────────────────────────────────────────────────
+  // ── كشف الحساب — dates ────────────────────────────────────────────────────
   const thisYear = new Date().getFullYear();
   const [stmtFrom, setStmtFrom] = useState(`${thisYear}-01-01`);
   const [stmtTo,   setStmtTo]   = useState(today());
 
-  const { data: statementData, isLoading: stmtLoading, refetch: refetchStatement } = useQuery<CustomerStatementResult>({
-    queryKey: ["/api/customer-payments/statement", customerId, stmtFrom, stmtTo],
-    queryFn:  async () => {
-      const r = await fetch(
-        `/api/customer-payments/statement/${customerId}?from=${stmtFrom}&to=${stmtTo}`,
-        { credentials: "include" }
-      );
-      if (!r.ok) throw new Error("فشل تحميل كشف الحساب");
-      return r.json();
-    },
-    enabled: !!customerId && activeTab === "statement",
-    staleTime: 10_000,
-  });
-
+  // ── API data (queries) ────────────────────────────────────────────────────
+  const {
+    balanceData, refetchBalance,
+    nextNumData,
+    rawInvoices, refetchInvoices,
+    statementData, stmtLoading, refetchStatement,
+  } = useCustomerPaymentsData({ customerId, filterStatus, activeTab, stmtFrom, stmtTo });
 
   // ── ترتيب الفواتير ────────────────────────────────────────────────────────
   const invoices = useMemo(() => {
-    const raw = invoicesData?.invoices ?? [];
+    const raw = rawInvoices;
     return [...raw].sort((a, b) => {
       let va: string | number = a[sortKey as keyof typeof a] as string;
       let vb: string | number = b[sortKey as keyof typeof b] as string;
@@ -252,7 +170,7 @@ export default function CustomerPayments() {
       const cmp = va < vb ? -1 : va > vb ? 1 : 0;
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [invoicesData, sortKey, sortDir]);
+  }, [rawInvoices, sortKey, sortDir]);
 
   // ── رصيد المحدد (استرشادي فقط) ───────────────────────────────────────────
   const selectedRemaining = useMemo(() => {
