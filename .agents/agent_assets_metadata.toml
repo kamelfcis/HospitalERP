@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "mNNq_yAKBgpGFyaqRTim9"
+uri = "file://DEVELOPER_HANDOFF.md"
+type = "text"
+title = "دليل تسليم المشروع — Developer Handoff Guide"
