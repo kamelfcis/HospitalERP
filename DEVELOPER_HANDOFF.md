@@ -603,6 +603,7 @@ draft → finalized → final_closed
 
 ### 11.1 خطوات الإعداد الكاملة (بالترتيب)
 
+#### الطريقة الأولى — الأسرع ✅ (بيانات كاملة جاهزة)
 ```bash
 # 1. تثبيت الـ packages
 npm install
@@ -611,17 +612,37 @@ npm install
 cp .env.example .env
 # عدّل DATABASE_URL و SESSION_SECRET
 
-# 3. إنشاء قاعدة البيانات وتطبيق الـ schema الرئيسي
+# 3. استيراد قاعدة البيانات الكاملة (هيكل + بيانات تجريبية)
+psql $DATABASE_URL < database_export.sql
+
+# 4. تشغيل التطبيق
+npm run dev
+```
+
+> `database_export.sql` يحتوي على كل الجداول (139 جدول) بما فيها رصيد المخزون والحسابات وبيانات الاختبار.
+
+---
+
+#### الطريقة الثانية — من الصفر (قاعدة بيانات فارغة)
+```bash
+# 1. تثبيت الـ packages
+npm install
+
+# 2. إنشاء ملف البيئة
+cp .env.example .env
+# عدّل DATABASE_URL و SESSION_SECRET
+
+# 3. إنشاء الجداول الرئيسية
 npm run db:push
 
-# 4. ⚠️ إنشاء الجداول الناقصة (خارج Drizzle) — لا تتخطَّ هذه الخطوة
+# 4. ⚠️ إنشاء الجداول الناقصة خارج Drizzle — لا تتخطَّ هذه الخطوة
 psql $DATABASE_URL -f setup_manual_tables.sql
 
-# 5. تطبيق migration ملفات OPD الاثنين
+# 5. تطبيق ملفات migration
 psql $DATABASE_URL -f migrations/0001_opd_gl_accounting.sql
 psql $DATABASE_URL -f migrations/0002_opd_engine_hardening.sql
 
-# 6. تشغيل التطبيق (يُنفّذ sequences + indexes تلقائياً عند الـ startup)
+# 6. تشغيل التطبيق (يُنفّذ seed + sequences تلقائياً)
 npm run dev
 ```
 
