@@ -1,0 +1,94 @@
+I want you to refactor and reorganize my existing codebase into a clean, scalable architecture with strict separation between frontend and backend.
+
+Project stack:
+- Frontend: React + TypeScript
+- Backend: Node.js + Express + TypeScript
+- Database layer: keep the current DB integration as-is unless a small safe refactor is needed
+- This is an existing live business system, so DO NOT rewrite from scratch and DO NOT break current behavior
+
+Main goals:
+1) Strong separation between frontend and backend
+2) Clear modular folder structure
+3) Thin route handlers
+4) Move business logic out of UI and out of Express routes
+5) Eliminate duplicated code
+6) Preserve all existing functionality
+7) Refactor incrementally and safely
+
+Target architecture:
+
+/client
+  /src
+    /components
+      /common
+      /features
+    /pages
+    /hooks
+    /services        // API calls only
+    /lib
+    /types
+    /utils
+
+/server
+  /routes            // thin route handlers only
+  /controllers       // optional if needed
+  /services          // business logic
+  /repositories      // DB access only
+  /validators
+  /middlewares
+  /utils
+  /types
+
+/shared
+  /types
+  /constants
+  /schemas           // shared zod or validation schemas if already used
+
+Refactoring rules:
+- Do NOT change business behavior unless required to fix an obvious bug
+- Do NOT rewrite the whole project
+- Do NOT mix database queries into React components
+- Do NOT keep business logic inside route files
+- Do NOT keep API calling logic scattered across pages/components
+- Do NOT duplicate types across frontend and backend when they can be shared safely
+- Keep routes thin: parse request, call service, return response
+- Keep repositories focused only on database access
+- Keep services responsible for business rules and orchestration
+- Keep frontend pages lean and move reusable logic into hooks/components/services
+- Split large files into smaller focused modules
+- Prefer safe incremental refactor over aggressive rewrites
+
+What I want from you:
+1) First, inspect the current project structure
+2) Identify architectural problems:
+   - mixed frontend/backend concerns
+   - oversized files
+   - duplicated logic
+   - business logic in wrong layer
+   - DB logic leaking into routes or UI
+3) Propose a refactor plan in phases
+4) Then start implementing the refactor phase by phase
+5) After each phase, summarize:
+   - what was moved
+   - what files were created
+   - what files were simplified
+   - what behavior was preserved
+   - any risks or follow-up items
+
+Important constraints:
+- Preserve imports and runtime behavior carefully
+- Avoid unnecessary renaming unless it improves clarity
+- Maintain compatibility with the existing project
+- If a file is too large, split it into focused modules
+- Prefer composition over massive utility files
+- Add comments only where they provide real architectural value
+
+Definition of success:
+- Frontend is clearly isolated from backend
+- API calls are centralized
+- Backend follows route -> service -> repository flow
+- Shared types are organized
+- Large files are reduced
+- Codebase becomes easier to maintain, extend, and test
+
+Start by analyzing the existing folders and produce Phase 1 refactor plan before making risky changes.
