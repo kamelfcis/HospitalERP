@@ -6,3 +6,9 @@ id = "mNNq_yAKBgpGFyaqRTim9"
 uri = "file://DEVELOPER_HANDOFF.md"
 type = "text"
 title = "دليل تسليم المشروع الكامل (739 سطر)"
+
+[[outputs]]
+id = "OMxHXoS4v6EHSsFxXpev9"
+uri = "file://REQUIREMENTS_FOR_DEVELOPER.md"
+type = "text"
+title = "متطلبات العمل للمبرمج الجديد (465 سطر)"
