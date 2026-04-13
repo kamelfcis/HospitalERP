@@ -5,23 +5,20 @@ import { logger } from "../lib/logger";
 import { runRefresh, REFRESH_KEYS } from "../lib/rpt-refresh-orchestrator";
 import { sql } from "drizzle-orm";
 import { PERMISSIONS } from "@shared/permissions";
-import { auditLog } from "../route-helpers";
 import { requireAuth, checkPermission } from "./_shared";
 import { resolveBusinessClassificationWithMeta } from "@shared/resolve-business-classification";
 import { assertNotFinalClosed } from "./patient-invoices-crud-queries";
 import { broadcastPatientInvoiceUpdate } from "./_sse";
+import { recordPatientPayment } from "../services/patient-invoice-payment-service";
 
 export function registerPaymentOpsRoutes(app: Express) {
   app.post("/api/patient-invoices/:id/add-payment", requireAuth, checkPermission(PERMISSIONS.PATIENT_PAYMENTS), async (req, res) => {
     try {
       const invoiceId = req.params.id as string;
-      const userId = (req.session as any)?.userId as string | undefined;
+      const userId    = (req.session as any)?.userId as string | undefined;
       const { amount, paymentMethod, treasuryId, paymentDate, notes } = req.body as {
-        amount: number;
-        paymentMethod: string;
-        treasuryId?: string;
-        paymentDate?: string;
-        notes?: string;
+        amount: number; paymentMethod: string;
+        treasuryId?: string; paymentDate?: string; notes?: string;
       };
 
       if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
@@ -32,75 +29,22 @@ export function registerPaymentOpsRoutes(app: Express) {
         return res.status(400).json({ message: "طريقة الدفع غير صحيحة" });
       }
 
-      const invRes = await db.execute(sql`
-        SELECT id, patient_id, status, is_final_closed, net_amount, paid_amount
-        FROM patient_invoice_headers
-        WHERE id = ${invoiceId}
-        FOR UPDATE
-      `);
-      const inv = invRes.rows[0] as Record<string, unknown> | undefined;
-      if (!inv) return res.status(404).json({ message: "الفاتورة غير موجودة" });
-      if (inv.is_final_closed) return res.status(409).json({ message: "لا يمكن إضافة دفعة على فاتورة مغلقة نهائيًا" });
-      if (inv.status !== "draft") return res.status(409).json({ message: "إضافة الدفعات تتم على الفواتير في حالة مسودة فقط" });
-
-      const refRes = await db.execute(sql`
-        SELECT COALESCE(MAX(CAST(NULLIF(regexp_replace(reference_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) AS max_num
-        FROM patient_invoice_payments WHERE reference_number LIKE 'RCP-%'
-      `);
-      const maxRef = parseInt(((refRes.rows[0] as Record<string, unknown>).max_num as string | null) || "0") || 0;
-      const referenceNumber = `RCP-${String(maxRef + 1).padStart(6, "0")}`;
-
-      const actualDate = paymentDate || new Date().toISOString().split("T")[0];
-
-      const paymentInsert = await db.execute(sql`
-        INSERT INTO patient_invoice_payments (id, header_id, payment_date, amount, payment_method, treasury_id, reference_number, notes, created_at)
-        VALUES (gen_random_uuid(), ${invoiceId}, ${actualDate}, ${Number(amount)}, ${paymentMethod || "cash"}, ${treasuryId || null}, ${referenceNumber}, ${notes || null}, NOW())
-        RETURNING id
-      `);
-      const paymentId = (paymentInsert.rows[0] as Record<string, unknown>).id as string;
-
-      // تسجيل حركة الخزنة
-      if (treasuryId) {
-        await db.execute(sql`
-          INSERT INTO treasury_transactions (treasury_id, type, amount, description, source_type, source_id, transaction_date)
-          VALUES (${treasuryId}, 'in', ${Number(amount)}, ${"استلام دفعة مريض — " + referenceNumber}, 'patient_invoice_payment', ${paymentId}, ${actualDate})
-          ON CONFLICT (source_type, source_id, treasury_id) WHERE source_type IS NOT NULL AND source_id IS NOT NULL DO NOTHING
-        `);
-      }
-
-      const sumRes = await db.execute(sql`
-        SELECT COALESCE(SUM(amount), 0) AS total_paid
-        FROM patient_invoice_payments
-        WHERE header_id = ${invoiceId}
-      `);
-      const totalPaid = parseFloat(((sumRes.rows[0] as Record<string, unknown>).total_paid as string) || "0");
-
-      await db.execute(sql`
-        UPDATE patient_invoice_headers
-        SET paid_amount = ${totalPaid},
-            version    = version + 1,
-            updated_at = NOW()
-        WHERE id = ${invoiceId}
-      `);
-
-      await auditLog({
-        tableName: "patient_invoice_headers",
-        recordId: invoiceId,
-        action: "add_payment",
+      const { updated, patientId } = await recordPatientPayment(
+        invoiceId,
+        { amount: Number(amount), paymentMethod, treasuryId, paymentDate, notes },
         userId,
-        newValues: JSON.stringify({ amount, paymentMethod, treasuryId, paymentDate: actualDate, referenceNumber }),
-      });
+      );
 
       runRefresh(REFRESH_KEYS.PATIENT_VISIT, () => storage.refreshPatientVisitSummary(), "event-driven").catch(() => {});
-
-      const patientId = String(inv.patient_id ?? "");
       if (patientId) {
         broadcastPatientInvoiceUpdate(patientId, "payment_added", { invoiceId, amount, ts: Date.now() });
       }
 
-      const updated = await storage.getPatientInvoice(invoiceId);
       return res.json(updated);
-    } catch (err) {
+    } catch (err: any) {
+      const code = err?.status as number | undefined;
+      if (code === 404) return res.status(404).json({ message: err.message });
+      if (code === 409) return res.status(409).json({ message: err.message });
       return res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
     }
   });

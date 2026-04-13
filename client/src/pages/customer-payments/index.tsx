@@ -5,39 +5,32 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useMemo, useCallback, useRef, KeyboardEvent } from "react";
-import { useCustomerPaymentsMutations }            from "./useCustomerPaymentsMutations";
-import { CustomerStatementPanel }                  from "./CustomerStatementPanel";
-import { formatCurrency, formatDateShort }         from "@/lib/formatters";
-import { Input }                                   from "@/components/ui/input";
-import { Button }                                  from "@/components/ui/button";
-import { Badge }                                   from "@/components/ui/badge";
-import { Checkbox }                                from "@/components/ui/checkbox";
-import { Label }                                   from "@/components/ui/label";
+import { useState, useMemo, useCallback }          from "react";
+import { useCustomerPaymentsMutations }             from "./useCustomerPaymentsMutations";
+import { CustomerStatementPanel }                   from "./CustomerStatementPanel";
+import { CustomerInvoicesTable }                    from "./CustomerInvoicesTable";
+import { formatCurrency }                           from "@/lib/formatters";
+import { Input }                                    from "@/components/ui/input";
+import { Button }                                   from "@/components/ui/button";
+import { Badge }                                    from "@/components/ui/badge";
+import { Label }                                    from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter,
-} from "@/components/ui/table";
-import {
-  CreditCard, AlertTriangle, FileText, Loader2, Save,
-  RefreshCw, CircleDollarSign, Hash, ChevronUp, ChevronDown, User,
+  CreditCard, AlertTriangle, FileText, RefreshCw, CircleDollarSign, Hash, User,
 } from "lucide-react";
 import {
   CreditCustomerCombobox,
   type CreditCustomer,
 } from "@/components/shared/CreditCustomerCombobox";
-import { useTreasurySelector }                     from "@/hooks/use-treasury-selector";
-import { TreasurySelector }                        from "@/components/shared/TreasurySelector";
+import { useTreasurySelector }                      from "@/hooks/use-treasury-selector";
+import { TreasurySelector }                         from "@/components/shared/TreasurySelector";
 import {
   useCustomerPaymentsData,
   type BalanceResult,
-  type CustomerStatementResult,
-}                                                  from "./useCustomerPaymentsData";
+} from "./useCustomerPaymentsData";
 
-type SortKey  = "invoiceNumber" | "invoiceDate" | "netTotal" | "totalPaid" | "remaining";
-type SortDir  = "asc" | "desc";
 type ActiveTab = "payment" | "statement";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -46,33 +39,6 @@ const today = () => new Date().toISOString().split("T")[0];
 
 function cx(...cls: (string | false | undefined | null)[]) {
   return cls.filter(Boolean).join(" ");
-}
-
-// ─── SortHead (مشترك بالمفهوم مع supplier-payments) ─────────────────────────
-function SortHead({
-  label, sortKey, current, dir, onSort,
-}: {
-  label: string; sortKey: SortKey;
-  current: SortKey; dir: SortDir;
-  onSort: (k: SortKey) => void;
-}) {
-  const active = current === sortKey;
-  return (
-    <TableHead
-      className="cursor-pointer select-none whitespace-nowrap text-right px-2"
-      onClick={() => onSort(sortKey)}
-    >
-      <span className="inline-flex items-center gap-0.5">
-        {label}
-        {active
-          ? (dir === "asc"
-            ? <ChevronUp   className="h-3 w-3 text-blue-600" />
-            : <ChevronDown className="h-3 w-3 text-blue-600" />)
-          : <ChevronDown className="h-3 w-3 opacity-20" />
-        }
-      </span>
-    </TableHead>
-  );
 }
 
 // ─── BalanceStrip ──────────────────────────────────────────────────────────────
@@ -132,17 +98,11 @@ export default function CustomerPayments() {
   const [notes,          setNotes]          = useState("");
   const [totalAmount,    setTotalAmount]    = useState("");
 
-  // ── حالة الجدول ──────────────────────────────────────────────────────────
+  // ── حالة التصفية والتبويب ─────────────────────────────────────────────────
   const [filterStatus,   setFilterStatus]   = useState<"unpaid" | "paid" | "all">("unpaid");
-  const [sortKey,        setSortKey]        = useState<SortKey>("invoiceDate");
-  const [sortDir,        setSortDir]        = useState<SortDir>("asc");
   const [selected,       setSelected]       = useState<Set<string>>(new Set());
   const [amounts,        setAmounts]        = useState<Record<string, string>>({});
   const [activeTab,      setActiveTab]      = useState<ActiveTab>("payment");
-
-  // refs للملاحة بلوحة المفاتيح
-  const amountRefs = useRef<Record<string, HTMLInputElement | null>>({});
-  const rowIds     = useRef<string[]>([]);
 
   // ── كشف الحساب — dates ────────────────────────────────────────────────────
   const thisYear = new Date().getFullYear();
@@ -157,33 +117,21 @@ export default function CustomerPayments() {
     statementData, stmtLoading, refetchStatement,
   } = useCustomerPaymentsData({ customerId, filterStatus, activeTab, stmtFrom, stmtTo });
 
-  // ── ترتيب الفواتير ────────────────────────────────────────────────────────
-  const invoices = useMemo(() => {
-    const raw = rawInvoices;
-    return [...raw].sort((a, b) => {
-      let va: string | number = a[sortKey as keyof typeof a] as string;
-      let vb: string | number = b[sortKey as keyof typeof b] as string;
-      if (sortKey !== "invoiceDate") { va = parseFloat(va as string); vb = parseFloat(vb as string); }
-      const cmp = va < vb ? -1 : va > vb ? 1 : 0;
-      return sortDir === "asc" ? cmp : -cmp;
-    });
-  }, [rawInvoices, sortKey, sortDir]);
-
-  // ── رصيد المحدد (استرشادي فقط) ───────────────────────────────────────────
+  // ── رصيد المحدد (استرشادي — يُمرَّر للجدول) ──────────────────────────────
   const selectedRemaining = useMemo(() => {
     if (selected.size === 0) return null;
-    return invoices
+    return rawInvoices
       .filter((inv) => selected.has(inv.invoiceId))
       .reduce((s, inv) => s + parseFloat(inv.remaining), 0);
-  }, [invoices, selected]);
+  }, [rawInvoices, selected]);
 
   // ── توزيع تلقائي للمبلغ ───────────────────────────────────────────────────
   const autoDistribute = useCallback(() => {
     const total = parseFloat(totalAmount);
-    if (!total || !invoices.length) return;
+    if (!total || !rawInvoices.length) return;
     let rem = total;
     const next: Record<string, string> = {};
-    for (const inv of invoices) {
+    for (const inv of rawInvoices) {
       if (rem <= 0) { next[inv.invoiceId] = "0"; continue; }
       const needed = parseFloat(inv.remaining);
       const give   = Math.min(needed, rem);
@@ -191,26 +139,7 @@ export default function CustomerPayments() {
       rem -= give;
     }
     setAmounts(next);
-  }, [totalAmount, invoices]);
-
-  // ── ترتيب الأعمدة ─────────────────────────────────────────────────────────
-  const handleSort = (k: SortKey) => {
-    if (sortKey === k) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(k); setSortDir("asc"); }
-  };
-
-  // ── ملاحة لوحة المفاتيح ───────────────────────────────────────────────────
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>, idx: number) => {
-    if (e.key === "ArrowDown" || e.key === "Enter") {
-      e.preventDefault();
-      const next = rowIds.current[idx + 1];
-      if (next) amountRefs.current[next]?.focus();
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      const prev = rowIds.current[idx - 1];
-      if (prev) amountRefs.current[prev]?.focus();
-    }
-  };
+  }, [totalAmount, rawInvoices]);
 
   // ── حفظ الإيصال (mutation) ────────────────────────────────────────────────
   const { saveMutation } = useCustomerPaymentsMutations({
@@ -235,7 +164,22 @@ export default function CustomerPayments() {
     [amounts]
   );
 
-  rowIds.current = invoices.map((inv) => inv.invoiceId);
+  // ── table callbacks ────────────────────────────────────────────────────────
+  const handleSelectAll = useCallback((all: boolean) => {
+    setSelected(all ? new Set(rawInvoices.map((i) => i.invoiceId)) : new Set());
+  }, [rawInvoices]);
+
+  const handleSelectToggle = useCallback((id: string, checked: boolean | string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      checked ? next.add(id) : next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const handleAmountChange = useCallback((id: string, value: string) => {
+    setAmounts((prev) => ({ ...prev, [id]: value }));
+  }, []);
 
   // ── الواجهة ───────────────────────────────────────────────────────────────
   return (
@@ -358,7 +302,7 @@ export default function CustomerPayments() {
               variant="outline"
               className="h-7 text-xs"
               onClick={autoDistribute}
-              disabled={!totalAmount || !invoices.length}
+              disabled={!totalAmount || !rawInvoices.length}
             >
               توزيع تلقائي
             </Button>
@@ -380,135 +324,19 @@ export default function CustomerPayments() {
             </div>
           </div>
 
-          {/* ── Table ───────────────────────────────────────────────────── */}
-          <div className="border rounded-md overflow-auto">
-            <Table className="text-[12px]">
-              <TableHeader>
-                <TableRow className="bg-muted/50">
-                  <TableHead className="w-8 px-2">
-                    <Checkbox
-                      checked={selected.size === invoices.length && invoices.length > 0}
-                      onCheckedChange={(v) => {
-                        setSelected(v ? new Set(invoices.map((i) => i.invoiceId)) : new Set());
-                      }}
-                      data-testid="checkbox-select-all"
-                    />
-                  </TableHead>
-                  <SortHead label="#"         sortKey="invoiceNumber" current={sortKey} dir={sortDir} onSort={handleSort} />
-                  <SortHead label="التاريخ"  sortKey="invoiceDate"   current={sortKey} dir={sortDir} onSort={handleSort} />
-                  <SortHead label="المبلغ"   sortKey="netTotal"      current={sortKey} dir={sortDir} onSort={handleSort} />
-                  <SortHead label="محصّل"    sortKey="totalPaid"     current={sortKey} dir={sortDir} onSort={handleSort} />
-                  <SortHead label="متبقّي"   sortKey="remaining"     current={sortKey} dir={sortDir} onSort={handleSort} />
-                  <TableHead className="text-right px-2">مبلغ التحصيل</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {invoices.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                      لا توجد فواتير
-                    </TableCell>
-                  </TableRow>
-                )}
-                {invoices.map((inv, idx) => {
-                  const isSelected = selected.has(inv.invoiceId);
-                  const remaining  = parseFloat(inv.remaining);
-                  const isPaid     = remaining <= 0.005;
-                  return (
-                    <TableRow
-                      key={inv.invoiceId}
-                      className={cx(
-                        isSelected && "bg-blue-50/50 dark:bg-blue-900/10",
-                        isPaid     && "opacity-60"
-                      )}
-                      data-testid={`row-invoice-${inv.invoiceId}`}
-                    >
-                      <TableCell className="px-2">
-                        <Checkbox
-                          checked={isSelected}
-                          onCheckedChange={(v) => {
-                            setSelected((prev) => {
-                              const next = new Set(prev);
-                              v ? next.add(inv.invoiceId) : next.delete(inv.invoiceId);
-                              return next;
-                            });
-                          }}
-                          data-testid={`checkbox-invoice-${inv.invoiceId}`}
-                        />
-                      </TableCell>
-                      <TableCell className="tabular-nums px-2">{inv.invoiceNumber}</TableCell>
-                      <TableCell className="tabular-nums px-2">{formatDateShort(inv.invoiceDate)}</TableCell>
-                      <TableCell className="tabular-nums text-left px-2">{formatCurrency(inv.netTotal)}</TableCell>
-                      <TableCell className="tabular-nums text-left text-green-700 px-2">{formatCurrency(inv.totalPaid)}</TableCell>
-                      <TableCell className={cx(
-                        "tabular-nums text-left px-2 font-semibold",
-                        remaining > 0 ? "text-red-600" : "text-green-600"
-                      )}>
-                        {formatCurrency(inv.remaining)}
-                      </TableCell>
-                      <TableCell className="px-2">
-                        <Input
-                          ref={(el) => { amountRefs.current[inv.invoiceId] = el; }}
-                          type="number"
-                          min={0}
-                          max={remaining}
-                          step={0.01}
-                          value={amounts[inv.invoiceId] ?? ""}
-                          onChange={(e) => setAmounts((prev) => ({ ...prev, [inv.invoiceId]: e.target.value }))}
-                          onKeyDown={(e) => handleKeyDown(e as any, idx)}
-                          placeholder="0.00"
-                          className="h-6 w-[90px] text-xs text-left ltr px-1"
-                          disabled={isPaid}
-                          data-testid={`input-amount-${inv.invoiceId}`}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-              {invoices.length > 0 && (
-                <TableFooter>
-                  {selected.size > 0 && selectedRemaining !== null && (
-                    <TableRow className="bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200">
-                      <TableCell colSpan={5} className="px-2 text-xs">
-                        المحدد ({selected.size} فاتورة) — إجمالي المتبقي:
-                      </TableCell>
-                      <TableCell className="tabular-nums text-left font-bold px-2" colSpan={2}>
-                        {formatCurrency(selectedRemaining.toFixed(2))}
-                      </TableCell>
-                    </TableRow>
-                  )}
-                  <TableRow className="bg-muted/40 font-semibold">
-                    <TableCell colSpan={6} className="px-2 text-left text-xs">
-                      إجمالي الموزَّع:
-                      <span className={cx(
-                        "mr-2 text-sm",
-                        totalAmount && Math.abs(distributedTotal - parseFloat(totalAmount)) > 0.01
-                          ? "text-red-600"
-                          : "text-green-600"
-                      )}>
-                        {formatCurrency(distributedTotal.toFixed(2))}
-                      </span>
-                    </TableCell>
-                    <TableCell className="px-2 text-left">
-                      <Button
-                        size="sm"
-                        onClick={() => saveMutation.mutate()}
-                        disabled={saveMutation.isPending || distributedTotal === 0}
-                        className="bg-green-600 hover:bg-green-700 text-white h-7 text-xs"
-                        data-testid="button-save-receipt"
-                      >
-                        {saveMutation.isPending
-                          ? <Loader2 className="h-3 w-3 animate-spin ml-1" />
-                          : <Save className="h-3 w-3 ml-1" />}
-                        حفظ الإيصال
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                </TableFooter>
-              )}
-            </Table>
-          </div>
+          {/* ── Invoices Table ───────────────────────────────────────────── */}
+          <CustomerInvoicesTable
+            rawInvoices={rawInvoices}
+            selected={selected}
+            onSelectAll={handleSelectAll}
+            onSelectToggle={handleSelectToggle}
+            amounts={amounts}
+            onAmountChange={handleAmountChange}
+            distributedTotal={distributedTotal}
+            totalAmount={totalAmount}
+            selectedRemaining={selectedRemaining}
+            saveMutation={saveMutation}
+          />
         </>
       )}
 

@@ -1,0 +1,112 @@
+Continue the same targeted surgical refactor approach.
+
+Context:
+- This is a live hospital/ERP system.
+- Do not do any broad rewrite.
+- Preserve all current behavior, API contracts, calculations, accounting rules, inventory rules, validations, and UI behavior.
+- No business behavior changes unless fixing an obvious confirmed bug.
+- Prefer extract-and-simplify only.
+
+What has already been completed:
+Backend:
+- accounting-events-actions.ts refactored into thin route + service
+- purchasing-receiving-post-routes.ts refactored into thinner route + service
+- opening-stock.ts partially refactored with opening-stock-service.ts
+- hospital-cashier-shifts.ts partially refactored:
+  - route reduced from 270 -> 213
+  - hospital-cashier-shift-service.ts created
+  - repeated actor/ownership/open-flow logic extracted
+  - simple direct storage handlers intentionally remain as-is
+
+Frontend:
+- customer-payments/index.tsx:
+  - first pass completed
+  - second pass completed
+  - page reduced from 750 -> 534
+  - CustomerStatementPanel extracted
+  - useCustomerPaymentsMutations extracted
+  - invoices table remains the last large block
+- delivery-payments/index.tsx:
+  - first pass completed
+  - second pass completed
+  - page reduced from 645 -> 564
+  - useDeliveryPaymentsMutations extracted
+  - DeliveryReportPanel extracted
+
+Next targets only:
+1) Frontend: customer-payments/index.tsx — extract the invoices table block
+2) Backend: patient-invoices-routes.ts — refactor only ONE high-complexity handler/use-case, not the whole file
+
+Frontend target: customer-payments/index.tsx
+Goals:
+- Extract the remaining invoices table block into a focused component
+- Reduce the page further toward a composition layer
+- Keep local page state where it makes sense
+- Do not over-abstract tiny UI helpers
+- Do not move unrelated logic into the table component
+- The new component should receive explicit props and encapsulate only the invoice table rendering/interaction that truly belongs to it
+
+Suggested frontend output:
+- a focused component such as CustomerInvoicesTable.tsx (name can vary if a better use-case-specific name is clearer)
+
+Frontend rules:
+- No API contract changes
+- No UI/visual behavior changes
+- No business logic changes
+- No broad redesign
+- Do not create generic table abstractions
+- Do not move half the page into the component; extract only the invoice-table-related block
+- Keep boundaries meaningful
+
+Frontend success criteria:
+- customer-payments/index.tsx becomes materially smaller and easier to read
+- the extracted table component is cohesive
+- the page becomes closer to composition/rendering responsibility
+
+Backend target: patient-invoices-routes.ts
+Goals:
+- Inspect the file and identify the single best high-complexity handler/use-case to refactor first
+- Refactor only that one handler/use-case in this round
+- Extract orchestration/business flow into a focused service
+- Keep the route thin for that handler only
+- Leave unrelated handlers untouched unless a tiny mechanical update is required
+
+Suggested backend output:
+- a focused service with a use-case-specific name, only if justified by the chosen handler
+
+Backend rules:
+- Do NOT attempt to refactor the whole patient-invoices-routes.ts file in one round
+- No endpoint/API contract changes
+- No schema changes unless strictly required for correctness
+- No broad renaming
+- No storage-layer rewrite
+- Preserve patient invoice behavior exactly
+- Choose the handler/use-case with the highest complexity and clearest extraction boundary
+
+Backend success criteria:
+- one meaningful handler/use-case becomes thinner and cleaner
+- business orchestration leaves the route for that handler
+- service boundaries are clearer
+- no wider churn is introduced
+
+Important quality rules:
+- Successful refactor = clearer boundaries, not just code moved elsewhere
+- Keep names use-case specific
+- Avoid misc/helpers dumping-ground files
+- Prefer one cohesive extraction over many shallow files
+- Keep direct/simple handlers direct when that is cleaner
+
+Process:
+1) Inspect both targets
+2) Frontend first: extract the customer-payments invoices table block
+3) Backend second: choose one high-complexity handler in patient-invoices-routes.ts and refactor only that one
+4) After finishing, report:
+   - files changed
+   - line count before/after
+   - what logic/UI block was extracted
+   - what behavior was preserved
+   - what intentionally remains and why
+   - recommended next frontend step
+   - recommended next patient-invoices handler for a later pass
+
+Do not expand the refactor beyond these two targets.
