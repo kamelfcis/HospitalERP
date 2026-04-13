@@ -1,0 +1,123 @@
+Continue the targeted refactor using the same safe pattern already applied.
+
+Context:
+- This is a live hospital/ERP system.
+- We are NOT doing a broad rewrite.
+- We are doing surgical refactoring only.
+- Preserve all current behavior, API contracts, calculations, posting logic, and validations.
+- No business behavior change unless fixing an obvious confirmed bug.
+- Prefer extract-and-simplify only.
+
+What has already been done:
+1) Backend:
+- accounting-events-actions.ts was refactored from 298 -> 68 lines
+- server/services/accounting-event-retry-service.ts was created
+- Route is now parse -> call service -> return response
+
+2) Frontend:
+- customer-payments/index.tsx was partially refactored from 831 -> 749 lines
+- useCustomerPaymentsData.ts hook was created
+- 4 queries moved out of the page
+- types moved to the hook
+- behavior preserved
+
+Next files to refactor:
+1) Backend: purchasing-receiving-post-routes.ts
+2) Frontend: delivery-payments/index.tsx
+
+Primary objectives:
+- Apply the same safe refactor pattern
+- Reduce business logic inside route/page
+- Improve maintainability without changing functionality
+- Create reusable patterns where justified
+- Keep changes incremental and easy to verify
+
+Backend target: purchasing-receiving-post-routes.ts
+Goals:
+- Convert the route into thin handlers only
+- Move business logic, posting orchestration, totals/calculations, and DB coordination into a dedicated service
+- Keep the route responsible only for:
+  - request parsing
+  - validation trigger
+  - calling the service
+  - returning response / errors
+- Remove raw business calculations from the route
+- Remove multi-step DB orchestration from the route
+- If helpful, create focused private helper functions inside the service
+- Do not duplicate logic already available elsewhere
+- Reuse existing storage/repository layer as-is unless a very small safe extraction is clearly useful
+
+Suggested backend output:
+- server/services/purchasing-receiving-post-service.ts
+- thin route handlers in purchasing-receiving-post-routes.ts
+
+Backend constraints:
+- No API contract change
+- No renaming of endpoints unless absolutely unnecessary
+- No schema changes unless required for compile/runtime correctness
+- No broad storage refactor
+- No moving many files at once
+- Preserve accounting/inventory posting behavior exactly
+
+Frontend target: delivery-payments/index.tsx
+Goals:
+- Refactor using the same pattern as customer-payments
+- Extract all fetch/query logic into a dedicated hook
+- If there are inline mutations/actions, consider extracting them into a second hook if it clearly improves clarity
+- If there is repeated UI/table/form logic, extract focused components only where it materially reduces page complexity
+- Keep the page as a composition/container layer as much as possible
+- Do not over-componentize small UI fragments
+- If this page duplicates customer-payments patterns, reuse shared logic carefully only if it is truly safe and improves maintainability
+
+Suggested frontend output:
+- client/src/pages/delivery-payments/hooks/useDeliveryPaymentsData.ts
+- optionally:
+  - useDeliveryPaymentsMutations.ts
+  - extracted table/form component(s) only if justified
+
+Frontend constraints:
+- No API contract change
+- No visual behavior change
+- No broad redesign
+- No unnecessary renaming
+- Do not move too many concerns at once
+- Keep all current sorting/filtering/export/mutation behavior intact
+
+Important refactor quality rules:
+- A refactor is successful only if complexity actually leaves the main file
+- Do not just move large blocks of code into another file without improving boundaries
+- Name services/hooks by use case, not generic utility names
+- Prefer one clear service/hook over many fragmented helpers
+- Keep file boundaries meaningful
+- Avoid creating “misc” or “helper” dumping-ground files
+- Avoid premature abstractions
+
+Success criteria:
+Backend:
+- purchasing-receiving-post-routes.ts becomes thin and easy to read
+- No business orchestration remains inline in the route
+- Service owns the use case flow
+
+Frontend:
+- delivery-payments/index.tsx is materially smaller and clearer
+- Query/data-loading logic is outside the page
+- If mutations are complex, move them out too
+- The page focuses mainly on composition/rendering
+
+Process:
+1) First inspect the two target files
+2) Identify what logic should be extracted
+3) Implement the backend refactor first
+4) Then implement the frontend refactor
+5) After finishing, report:
+   - exact files changed
+   - line count before/after
+   - what logic was extracted
+   - what behavior was preserved
+   - any remaining complexity that should be handled in a later pass
+
+Additional note:
+- customer-payments/index.tsx still needs a second pass later because moving queries alone was only phase 1.
+- If delivery-payments/index.tsx shares the same pattern, refactor it in a way that makes a later second-pass cleanup easier.
+
+Do not start any wider refactor beyond these two files.

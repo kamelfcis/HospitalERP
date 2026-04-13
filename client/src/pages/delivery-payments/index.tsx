@@ -5,10 +5,18 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useMemo, useCallback, useRef, useEffect, memo, KeyboardEvent } from "react";
-import { useQuery, useMutation }               from "@tanstack/react-query";
+import { useState, useMemo, useCallback, useRef, memo, KeyboardEvent } from "react";
+import { useMutation }                         from "@tanstack/react-query";
 import { useToast }                            from "@/hooks/use-toast";
 import { apiRequestJson, queryClient }         from "@/lib/queryClient";
+import {
+  useDeliveryPaymentsData,
+  type FilterStatus,
+  type ActiveTab,
+  type DeliveryInvoiceRow,
+  type InvoicesResult,
+  type ReportRow,
+} from "./hooks/useDeliveryPaymentsData";
 import { formatCurrency, formatDateShort }     from "@/lib/formatters";
 import { Input }                               from "@/components/ui/input";
 import { Button }                              from "@/components/ui/button";
@@ -28,43 +36,10 @@ import {
 import { useTreasurySelector }                 from "@/hooks/use-treasury-selector";
 import { TreasurySelector }                    from "@/components/shared/TreasurySelector";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Local UI types ───────────────────────────────────────────────────────────
 
-interface DeliveryInvoiceRow {
-  invoiceId:     string;
-  invoiceNumber: number;
-  invoiceDate:   string;
-  netTotal:      string;
-  totalPaid:     string;
-  remaining:     string;
-  status:        string;
-  customerName:  string | null;
-  pharmacyId:    string | null;
-}
-
-interface InvoicesResult {
-  rows:             DeliveryInvoiceRow[];
-  totalNetInvoiced: string;
-  totalPaid:        string;
-  totalRemaining:   string;
-}
-
-interface ReportRow {
-  receiptId:     string;
-  receiptNumber: number;
-  receiptDate:   string;
-  totalAmount:   string;
-  paymentMethod: string;
-  reference:     string | null;
-  createdBy:     string | null;
-  cashierName:   string | null;
-  invoiceCount:  number;
-}
-
-type FilterStatus = "unpaid" | "paid" | "all";
-type SortKey      = "invoiceNumber" | "invoiceDate" | "netTotal" | "totalPaid" | "remaining";
-type SortDir      = "asc" | "desc";
-type ActiveTab    = "payment" | "report";
+type SortKey = "invoiceNumber" | "invoiceDate" | "netTotal" | "totalPaid" | "remaining";
+type SortDir = "asc" | "desc";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -220,43 +195,15 @@ export default function DeliveryPayments() {
   const amountRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const rowIds     = useRef<string[]>([]);
 
-  // ── Queries ───────────────────────────────────────────────────────────────
+  // ── Data (queries + SSE) ──────────────────────────────────────────────────
   const {
-    data: invoicesData,
+    invoicesData,
     isLoading,
-    refetch: refetchInvoices,
-  } = useQuery<InvoicesResult>({
-    queryKey: ["/api/delivery-payments/invoices", filterStatus],
-    queryFn:  async () => {
-      const r = await fetch(`/api/delivery-payments/invoices?filter=${filterStatus}`, { credentials: "include" });
-      if (!r.ok) throw new Error("فشل جلب الفواتير");
-      return r.json();
-    },
-  });
-
-  const {
-    data: reportData,
-    refetch: refetchReport,
-    isLoading: reportLoading,
-  } = useQuery<ReportRow[]>({
-    queryKey: ["/api/delivery-payments/report"],
-    queryFn:  async () => {
-      const r = await fetch("/api/delivery-payments/report", { credentials: "include" });
-      if (!r.ok) throw new Error("فشل جلب التقرير");
-      return r.json();
-    },
-    enabled: activeTab === "report",
-  });
-
-  // ── SSE — تحديث تلقائي عند وصول تحصيل جديد ──────────────────────────────
-  useEffect(() => {
-    const es = new EventSource("/api/delivery-payments/sse", { withCredentials: true });
-    es.onmessage = () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/delivery-payments/invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/delivery-payments/report"] });
-    };
-    return () => es.close();
-  }, []);
+    refetchInvoices,
+    reportData,
+    reportLoading,
+    refetchReport,
+  } = useDeliveryPaymentsData(filterStatus, activeTab);
 
   // ── ترتيب الفواتير ────────────────────────────────────────────────────────
   const invoices = useMemo(() => {
