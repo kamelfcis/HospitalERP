@@ -579,31 +579,79 @@ draft → finalized → final_closed
 
 ## 11. دليل البدء السريع للمطور
 
-### 11.1 متطلبات البيئة
+### ⚠️ 11.0 تحذير حرج — جداول خارج Drizzle (يجب تنفيذها يدوياً)
+
+**المشكلة:** 11 جدول في النظام مستثنى من إدارة Drizzle ORM.  
+إذا شغّلت `npm run db:push` فقط، هذه الجداول لن تُنشأ والتطبيق سيعطي أخطاء.
+
+**الجداول الناقصة:**
+| الجدول | يُستخدم في |
+|--------|------------|
+| `announcements` | شاشة الإعلانات (`/announcements`) |
+| `rpt_patient_visit_summary` | استفسار المرضى (`/patient-inquiry`) |
+| `rpt_patient_visit_classification` | ملف المريض (`/patients/:id/file`) |
+| `rpt_patient_service_usage` | تقرير استخدام الخدمات |
+| `rpt_patient_revenue` | تقرير إيرادات المرضى |
+| `rpt_daily_revenue` | تقرير الإيرادات اليومية |
+| `rpt_department_activity` | تقرير نشاط الأقسام |
+| `rpt_inventory_snapshot` | لقطة المخزون |
+| `rpt_item_movements_summary` | ملخص حركة الأصناف |
+| `rpt_account_balances_by_period` | تقارير الميزانية والدخل |
+| `rpt_refresh_log` | سجل تحديث التقارير |
+
+**الحل — ملف `setup_manual_tables.sql`** مرفق في مجلد المشروع الجذر.
+
+### 11.1 خطوات الإعداد الكاملة (بالترتيب)
+
 ```bash
-Node.js 20+
-PostgreSQL 15+
+# 1. تثبيت الـ packages
 npm install
-cp .env.example .env  # أضف DATABASE_URL + SESSION_SECRET
-npm run db:push       # تطبيق الـ schema
-npm run dev           # يشغل Backend + Frontend معاً
+
+# 2. إنشاء ملف البيئة
+cp .env.example .env
+# عدّل DATABASE_URL و SESSION_SECRET
+
+# 3. إنشاء قاعدة البيانات وتطبيق الـ schema الرئيسي
+npm run db:push
+
+# 4. ⚠️ إنشاء الجداول الناقصة (خارج Drizzle) — لا تتخطَّ هذه الخطوة
+psql $DATABASE_URL -f setup_manual_tables.sql
+
+# 5. تطبيق migration ملفات OPD الاثنين
+psql $DATABASE_URL -f migrations/0001_opd_gl_accounting.sql
+psql $DATABASE_URL -f migrations/0002_opd_engine_hardening.sql
+
+# 6. تشغيل التطبيق (يُنفّذ sequences + indexes تلقائياً عند الـ startup)
+npm run dev
 ```
 
-### 11.2 متغيرات البيئة المطلوبة
-| المتغير | الوصف |
-|---------|-------|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `SESSION_SECRET` | سر جلسات Express (عشوائي، طويل) |
+**الدخول الافتراضي:** admin / admin123
 
-### 11.3 أوامر المشروع
+### 11.2 متغيرات البيئة المطلوبة
+| المتغير | الوصف | مثال |
+|---------|-------|------|
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:pass@localhost:5432/hospital` |
+| `SESSION_SECRET` | سر جلسات Express (64+ حرف عشوائي) | `openssl rand -hex 64` |
+| `NODE_ENV` | البيئة (اختياري) | `development` |
+
+### 11.3 ما يحدث تلقائياً عند بدء التشغيل (`npm run dev`)
+الـ server يُنفّذ هذا التسلسل أوتوماتيكي بدون أي تدخل يدوي:
+1. **runMigrations** — ينشئ indexes وenums وأعمدة جديدة (idempotent)
+2. **syncSequences** — يُنشئ ويُزامن تسلسلات الأرقام (فواتير، سندات، إدخال)
+3. **runPermissionBackfills** — يبذر مجموعات الصلاحيات الافتراضية
+4. **runBackfills** — يُكمل بيانات تاريخية (encounters, visits)
+5. **runIntegrityChecks** — فحوصات سلامة (غير موقفة)
+6. **startCronJobs** — يُشغّل الـ background workers (retry قيود + تحديث التقارير)
+
+### 11.4 أوامر المشروع
 ```bash
 npm run dev        # تشغيل development
 npm run build      # بناء للإنتاج
-npm run db:push    # تحديث schema في DB
-npm run db:studio  # Drizzle Studio (GUI للـ DB)
+npm run db:push    # تحديث schema في DB (Drizzle فقط)
+npm run db:studio  # Drizzle Studio — GUI لقاعدة البيانات
 ```
 
-### 11.4 أين تجد ماذا
+### 11.5 أين تجد ماذا
 | احتجت تعديل | اذهب لـ |
 |-------------|---------|
 | شاشة جديدة | `client/src/pages/` + سجّل في `client/src/App.tsx` |
