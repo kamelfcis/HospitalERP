@@ -1,0 +1,111 @@
+Continue the same targeted surgical refactor approach.
+
+Context:
+- This is a live hospital/ERP system.
+- Do not do any broad rewrite.
+- Preserve all current behavior, API contracts, calculations, accounting rules, inventory rules, validations, posting flows, snapshot behavior, audit behavior, and UI behavior.
+- No business behavior changes unless fixing an obvious confirmed bug.
+- Prefer extract-and-simplify only.
+
+What has already been completed:
+Backend:
+- patient-invoices-finalize-route.ts was partially refactored
+- route reduced from 205 -> 163
+- patient-invoice-finalize-service.ts created
+- assertInvoiceCanBeFinalized(existing, userId) now owns:
+  - doctor_cost lines without doctorId validation
+  - doctor lookup from DB
+  - payable/receivable account validation
+  - assertPeriodOpen()
+  - assertInvoiceScopeGuard()
+- route intentionally still keeps:
+  - tiny status/idempotency guards
+  - finalize side effects (broadcast, treasury, claims, GL, RPT refresh)
+
+Frontend:
+- InvoiceTab.tsx was partially refactored
+- tab reduced from 478 -> 389
+- DoctorTransferSection.tsx created
+- doctor transfer UI/state/history/form moved out successfully
+
+Next targets only:
+1) Backend: patient-invoices-finalize-route.ts — extract the snapshot/audit block only
+2) Frontend: InvoiceTab.tsx — extract the diagnosis tab block only
+
+Backend target: patient-invoices-finalize-route.ts
+Goals:
+- Extract only the finalize snapshot/audit block
+- The extracted function should own:
+  - classifications summary preparation
+  - finalize snapshot payload/json preparation
+  - audit/snapshot recording
+- Keep this round intentionally narrow
+- Do not refactor the full finalize route
+- Do not move unrelated finalize side effects
+
+Suggested backend output:
+- a focused function/service method such as:
+  - recordFinalizeSnapshot(...)
+  - or buildAndLogFinalizeSnapshot(...)
+- Prefer the name that best reflects whether it builds + records, not just logs
+
+Backend rules:
+- No endpoint/API contract changes
+- No schema changes unless strictly required for correctness
+- No broader finalize-flow refactor in this round
+- Preserve current finalize behavior exactly
+- Keep small route guards in the route
+- Keep unrelated side effects where they currently make architectural sense
+
+Backend success criteria:
+- the snapshot/audit block leaves the route
+- the extraction is cohesive and finalize-specific
+- the route becomes easier to scan and reason about
+- no broader churn is introduced
+
+Frontend target: InvoiceTab.tsx
+Goals:
+- Extract only the diagnosis tab block into a focused component
+- Keep this extraction narrow and feature-specific
+- Move textarea/save-button/rendering behavior out of InvoiceTab only if it clearly improves readability
+- Keep page/tab-level orchestration where it currently belongs
+- Do not broaden the refactor beyond this diagnosis section
+
+Suggested frontend output:
+- DiagnosisTab.tsx
+- or another use-case-specific name if clearer
+
+Frontend rules:
+- No API contract changes
+- No UI/visual behavior changes
+- No business logic changes
+- No broad redesign
+- Do not refactor unrelated InvoiceTab sections in this round
+- Keep the extracted component cohesive and page-specific
+
+Frontend success criteria:
+- InvoiceTab.tsx becomes smaller and easier to read
+- the diagnosis section becomes a self-contained, understandable unit
+- boundaries improve without over-componentizing tiny UI
+
+Important quality rules:
+- Successful refactor = clearer boundaries, not just moved code
+- Keep names use-case specific
+- Avoid misc/helpers dumping-ground files
+- Prefer one cohesive extraction per target
+- Keep direct/simple logic direct when extraction adds no value
+
+Process:
+1) Inspect both targets
+2) Backend first: extract only the finalize snapshot/audit block
+3) Frontend second: extract only the diagnosis tab block
+4) After finishing, report:
+   - files changed
+   - line count before/after
+   - what logic/UI block was extracted
+   - what behavior was preserved
+   - what intentionally remains and why
+   - recommended next finalize-route step
+   - recommended next InvoiceTab step
+
+Do not expand the refactor beyond these two targets.
