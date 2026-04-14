@@ -12,3 +12,9 @@ id = "OMxHXoS4v6EHSsFxXpev9"
 uri = "file://REQUIREMENTS_FOR_DEVELOPER.md"
 type = "text"
 title = "متطلبات العمل للمبرمج الجديد (465 سطر)"
+
+[[outputs]]
+id = "KHbWtPPriHdecZG4ADtXo"
+uri = "file://SYSTEM_CONTEXT_FOR_AI.md"
+type = "text"
+title = "ملف السياق الشامل للـ AI (907 سطر)"
