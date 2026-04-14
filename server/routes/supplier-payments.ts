@@ -23,6 +23,7 @@ import {
 } from "../storage/supplier-payments-storage";
 import { storage } from "../storage";
 import { logAcctEvent } from "../lib/accounting-event-logger";
+import { assertMappingsComplete } from "../lib/mapping-completeness";
 
 
 const createPaymentSchema = z.object({
@@ -90,6 +91,10 @@ export function registerSupplierPaymentRoutes(app: Express) {
   app.post("/api/supplier-payments", requireAuth, checkPermission(PERMISSIONS.SUPPLIER_PAYMENTS_VIEW), async (req, res) => {
     try {
       const body = createPaymentSchema.parse(req.body);
+
+      // ── فحص ربط الحسابات قبل تسجيل السداد ───────────────────────────────
+      await assertMappingsComplete("supplier_payment");
+
       const userId = req.session.userId ?? null;
       const result = await createSupplierPayment({
         ...body,
@@ -141,7 +146,11 @@ export function registerSupplierPaymentRoutes(app: Express) {
       if (err instanceof z.ZodError) {
         return res.status(422).json({ message: err.errors[0]?.message ?? "بيانات غير صالحة" });
       }
-      res.status(400).json({ message: err.message });
+      const status = typeof err?.status === "number" ? err.status : 400;
+      const payload: Record<string, unknown> = { message: err.message };
+      if (err?.code)            payload.code            = err.code;
+      if (err?.missingMappings) payload.missingMappings = err.missingMappings;
+      res.status(status).json(payload);
     }
   });
 

@@ -145,3 +145,53 @@ export async function getMissingRequiredMappings(
   const existing = new Set(rows.map(r => r.lineType));
   return required.filter(lt => !existing.has(lt));
 }
+
+// ── Arabic labels for error messages ──────────────────────────────────────
+const LINE_LABELS_AR: Record<string, string> = {
+  inventory:     "حساب المخزون",
+  payables:      "حساب ذمم الموردين",
+  receivables:   "حساب الذمم المدينة",
+  cash:          "حساب النقدية",
+  treasury:      "حساب الخزنة",
+  ap_settlement: "حساب تسوية الموردين",
+  ar_insurance:  "حساب ذمم شركات التأمين",
+  cogs:          "حساب تكلفة البضاعة المباعة",
+  revenue:       "حساب الإيراد",
+};
+
+const TX_LABELS_AR: Record<string, string> = {
+  receiving:           "ترحيل الاستلام",
+  purchase_invoice:    "اعتماد فاتورة الشراء",
+  sales_invoice:       "اعتماد فاتورة المبيعات",
+  cashier_shift_close: "إقفال وردية الكاشير",
+  supplier_payment:    "سداد الموردين",
+  patient_invoice:     "اعتماد فاتورة المريض",
+};
+
+/**
+ * Pre-flight guard: throws a structured 422-like Error if any required
+ * mappings are missing for the given transaction type.
+ *
+ * Usage:
+ *   await assertMappingsComplete("receiving");
+ *   await assertMappingsComplete("purchase_invoice");
+ */
+export async function assertMappingsComplete(
+  txType: string,
+  departmentId?: string | null,
+  warehouseId?: string | null,
+  pharmacyId?: string | null,
+): Promise<void> {
+  const missing = await getMissingRequiredMappings(txType, departmentId, warehouseId, pharmacyId);
+  if (missing.length === 0) return;
+
+  const txLabel = TX_LABELS_AR[txType] ?? txType;
+  const lines = missing.map(lt => `• ${LINE_LABELS_AR[lt] ?? lt}`).join("\n");
+  const err = new Error(
+    `لا يمكن إتمام (${txLabel}) لأن ربط الحسابات غير مكتمل:\n${lines}\n\nيرجى إضافة الربط في صفحة "ربط الحسابات بالعمليات" ثم إعادة المحاولة.`
+  );
+  (err as any).status = 422;
+  (err as any).code   = "MAPPING_INCOMPLETE";
+  (err as any).missingMappings = missing;
+  throw err;
+}

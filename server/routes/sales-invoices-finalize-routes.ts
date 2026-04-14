@@ -11,6 +11,7 @@ import {
   broadcastToUnit,
 } from "./_shared";
 import { salesInvoiceHeaders, warehouses } from "@shared/schema";
+import { assertMappingsComplete } from "../lib/mapping-completeness";
 
 export function registerSalesInvoicesFinalizeRoutes(app: Express) {
   app.get("/api/sales-invoices/journal-failures", requireAuth, checkPermission(PERMISSIONS.JOURNAL_POST), async (_req, res) => {
@@ -115,6 +116,9 @@ export function registerSalesInvoicesFinalizeRoutes(app: Express) {
       }
 
       await storage.assertPeriodOpen(existing.invoiceDate);
+
+      // ── فحص ربط الحسابات قبل الاعتماد ────────────────────────────────────
+      await assertMappingsComplete("sales_invoice");
 
       if (existing.customerType !== "cash" && !(existing as any).patientId) {
         return res.status(422).json({
@@ -226,15 +230,23 @@ export function registerSalesInvoicesFinalizeRoutes(app: Express) {
       }
       res.json(invoice);
     } catch (error: unknown) {
-      const _em = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
-      if (_em?.includes("الفترة المحاسبية")) return res.status(403).json({ message: (error instanceof Error ? error.message : String(error)) });
-      if ((error instanceof Error ? error.message : String(error)).includes("ليست مسودة") || (error instanceof Error ? error.message : String(error)).includes("نهائية")) {
-        return res.status(409).json({ message: (error instanceof Error ? error.message : String(error)) });
+      const msg = error instanceof Error ? error.message : String(error);
+      // Structured errors (assertMappingsComplete, etc.) carry a .status field
+      if (error instanceof Error && typeof (error as any).status === "number") {
+        const e = error as any;
+        const payload: Record<string, unknown> = { message: msg };
+        if (e.code)            payload.code            = e.code;
+        if (e.missingMappings) payload.missingMappings = e.missingMappings;
+        return res.status(e.status).json(payload);
       }
-      if ((error instanceof Error ? error.message : String(error)).includes("غير كاف") || (error instanceof Error ? error.message : String(error)).includes("يتطلب") || (error instanceof Error ? error.message : String(error)).includes("بدون أصناف")) {
-        return res.status(400).json({ message: (error instanceof Error ? error.message : String(error)) });
+      if (msg?.includes("الفترة المحاسبية")) return res.status(403).json({ message: msg });
+      if (msg.includes("ليست مسودة") || msg.includes("نهائية")) {
+        return res.status(409).json({ message: msg });
       }
-      res.status(500).json({ message: (error instanceof Error ? error.message : String(error)) });
+      if (msg.includes("غير كاف") || msg.includes("يتطلب") || msg.includes("بدون أصناف")) {
+        return res.status(400).json({ message: msg });
+      }
+      res.status(500).json({ message: msg });
     }
   });
 }

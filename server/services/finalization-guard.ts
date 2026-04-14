@@ -152,16 +152,24 @@ export async function runFinalizationGuard(visitId: string): Promise<Finalizatio
   const hasRevenueMapping    = REVENUE_TYPES.some(lt => mappedSet.has(lt));
   const accountMappingsExist = hasCollectionMapping && hasRevenueMapping;
 
+  // ── ربط الحسابات ناقص → خطأ يمنع الاعتماد (ليس مجرد تحذير) ─────────────
   if (!hasCollectionMapping && !hasRevenueMapping) {
-    warnings.push("لم يتم ضبط ربط الحسابات لفواتير المرضى — القيد المحاسبي لن يُنشأ تلقائياً. أضف ربط الحسابات في إعدادات ربط الحسابات.");
+    issues.push(
+      "ربط الحسابات غير مضبوط لفواتير المرضى — يجب إضافة حساب التحصيل (نقدية أو ذمم) وحسابات الإيراد في صفحة «ربط الحسابات بالعمليات» قبل الاعتماد."
+    );
   } else if (!hasCollectionMapping) {
-    warnings.push("ربط حساب التحصيل (نقدية أو ذمم) غير مضبوط لفواتير المرضى — سيُقتصر القيد على جانب الإيراد فقط.");
+    issues.push(
+      "ربط حساب التحصيل (نقدية أو ذمم مدينة) غير مضبوط لفواتير المرضى — يجب إضافته في صفحة «ربط الحسابات بالعمليات» قبل الاعتماد."
+    );
   } else if (!hasRevenueMapping) {
-    warnings.push("ربط حسابات الإيراد غير مضبوط لفواتير المرضى — سيُقتصر القيد على جانب التحصيل فقط.");
+    issues.push(
+      "ربط حسابات الإيراد غير مضبوط لفواتير المرضى — يجب إضافة حساب إيراد واحد على الأقل في صفحة «ربط الحسابات بالعمليات» قبل الاعتماد."
+    );
   }
 
   const canFinalize = hasInvoice && invoiceIsDraft && notAlreadyFinalizing && allLinesHaveEncounter
-    && noOrphanLines && totalsConsistent && noVoidedOnly && !inv.is_final_closed;
+    && noOrphanLines && totalsConsistent && noVoidedOnly && !inv.is_final_closed
+    && accountMappingsExist;
 
   return {
     canFinalize,

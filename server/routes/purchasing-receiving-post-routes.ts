@@ -15,6 +15,7 @@ import {
   executePostReceiving,
   executeApprovePurchaseInvoice,
 } from "../services/purchasing-receiving-post-service";
+import { assertMappingsComplete } from "../lib/mapping-completeness";
 
 // ─── Error helper ─────────────────────────────────────────────────────────────
 
@@ -25,6 +26,15 @@ function handleServiceError(err: unknown, res: Response): void {
       ...(err.code   ? { code:       err.code }   : {}),
       ...(err.extras ? { ...err.extras }           : {}),
     });
+    return;
+  }
+  // Handle structured errors thrown by assertMappingsComplete or similar helpers
+  if (err instanceof Error && typeof (err as any).status === "number") {
+    const e = err as any;
+    const payload: Record<string, unknown> = { message: e.message };
+    if (e.code)            payload.code            = e.code;
+    if (e.missingMappings) payload.missingMappings = e.missingMappings;
+    res.status(e.status).json(payload);
     return;
   }
   const msg = err instanceof Error ? err.message : String(err);
@@ -48,6 +58,7 @@ export function registerReceivingPostRoutes(app: Express) {
   // ── إذن الاستلام: ترحيل ────────────────────────────────────────────────────
   app.post("/api/receivings/:id/post", requireAuth, checkPermission(PERMISSIONS.RECEIVING_POST), async (req, res) => {
     try {
+      await assertMappingsComplete("receiving");
       res.json(await executePostReceiving(req.params.id));
     } catch (err) { handleServiceError(err, res); }
   });
@@ -137,6 +148,7 @@ export function registerReceivingPostRoutes(app: Express) {
   // ── فواتير الشراء: اعتماد ────────────────────────────────────────────────
   app.post("/api/purchase-invoices/:id/approve", requireAuth, checkPermission(PERMISSIONS.PURCHASE_INVOICES_APPROVE), async (req, res) => {
     try {
+      await assertMappingsComplete("purchase_invoice");
       res.json(await executeApprovePurchaseInvoice(req.params.id));
     } catch (err) { handleServiceError(err, res); }
   });

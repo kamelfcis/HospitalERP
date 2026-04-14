@@ -8,6 +8,7 @@ import {
   assertShiftOwnership,
   openShiftFlow,
 } from "../services/hospital-cashier-shift-service";
+import { assertMappingsComplete } from "../lib/mapping-completeness";
 
 export function registerCashierShiftRoutes(app: Express) {
   app.get("/api/cashier/my-open-shift", requireAuth, async (req, res) => {
@@ -80,6 +81,9 @@ export function registerCashierShiftRoutes(app: Express) {
           }
         }
       }
+
+      // ── فحص ربط الحسابات قبل الإقفال ─────────────────────────────────────
+      await assertMappingsComplete("cashier_shift_close");
 
       let preflight: Awaited<ReturnType<typeof storage.preflightShiftClose>>;
       try {
