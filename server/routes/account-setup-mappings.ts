@@ -10,8 +10,20 @@ import {
   mappingLineTypeLabels,
 } from "@shared/schema";
 import { validateAccountCategory } from "../lib/account-category-validator";
+import { getMappingCompleteness } from "../lib/mapping-completeness";
 
 export function registerAccountSetupMappingsRoutes(app: Express) {
+  // ── Completeness report (must be before /:id to avoid route conflict) ───────
+  app.get("/api/account-mappings/completeness", requireAuth, checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS), async (_req, res) => {
+    try {
+      const report = await getMappingCompleteness();
+      res.json(report);
+    } catch (error: unknown) {
+      const _em = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ message: _em });
+    }
+  });
+
   app.get("/api/account-mappings", requireAuth, checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS), async (req, res) => {
     try {
       const { transactionType } = req.query;

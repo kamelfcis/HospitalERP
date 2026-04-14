@@ -18,6 +18,7 @@ import { WarehouseTransferNotice }     from "./components/WarehouseTransferNotic
 import { MappingTable }                from "./components/MappingTable";
 import { SalesReturnJournalPreview }   from "./components/SalesReturnJournalPreview";
 import { JournalStructureSummary }     from "./components/JournalStructureSummary";
+import { MappingCompletenessOverview } from "./components/MappingCompletenessOverview";
 import type { MappingRow } from "./types";
 
 export default function AccountMappings() {
@@ -70,6 +71,9 @@ export default function AccountMappings() {
           </Button>
         </div>
       </div>
+
+      {/* ── Global completeness overview ── */}
+      <MappingCompletenessOverview onSelectTxType={data.setSelectedTxType} />
 
       {/* ── Filters + mapping editor card ── */}
       <Card>

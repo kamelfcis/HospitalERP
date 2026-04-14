@@ -48,6 +48,9 @@ export function useMappingSave(data: UseMappingRowsResult): UseMappingSaveResult
         }
       );
 
+      // Refresh global completeness overview after every successful save
+      queryClient.invalidateQueries({ queryKey: ["/api/account-mappings/completeness"] });
+
       // Clear the hasChanges flag — this unblocks the row-rebuild useEffect.
       // The effect will immediately rebuild from the updated mappings above.
       data.clearChanges();

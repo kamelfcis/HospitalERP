@@ -1,5 +1,6 @@
 import { db } from "../db";
-import { sql } from "drizzle-orm";
+import { sql, eq, and } from "drizzle-orm";
+import { accountMappings } from "@shared/schema";
 
 export type PaymentClassification = "fully_paid" | "accounts_receivable" | "refund_due";
 
@@ -129,12 +130,35 @@ export async function runFinalizationGuard(visitId: string): Promise<Finalizatio
     warnings.push(`مبلغ زائد ${Math.abs(remaining).toFixed(2)} جنيه — سيتم تسجيل مردود`);
   }
 
-  const mappingRes = await db.execute(sql`
-    SELECT COUNT(*) AS cnt FROM account_mappings
-    WHERE transaction_type = 'patient_invoice'
-  `);
-  const accountMappingsExist = parseInt(String((mappingRes.rows[0] as Record<string, unknown>)?.cnt ?? "0")) > 0;
-  if (!accountMappingsExist) warnings.push("لم يتم ضبط ربط الحسابات لفواتير المرضى — القيد المحاسبي لن يُنشأ تلقائياً");
+  // ── Account mappings completeness check for patient_invoice ────────────────
+  // Patient invoice requires at least ONE collection account (cash or receivables)
+  // AND at least ONE revenue account to generate a valid GL journal.
+  const COLLECTION_TYPES = ["cash", "receivables"];
+  const REVENUE_TYPES    = ["revenue_services", "revenue_drugs", "revenue_consumables",
+                             "revenue_equipment", "revenue_gas", "revenue_surgery", "revenue_admin"];
+
+  const mappedLineTypes = await db
+    .select({ lineType: accountMappings.lineType })
+    .from(accountMappings)
+    .where(
+      and(
+        eq(accountMappings.transactionType, "patient_invoice"),
+        eq(accountMappings.isActive, true),
+      )
+    );
+
+  const mappedSet = new Set(mappedLineTypes.map(r => r.lineType));
+  const hasCollectionMapping = COLLECTION_TYPES.some(lt => mappedSet.has(lt));
+  const hasRevenueMapping    = REVENUE_TYPES.some(lt => mappedSet.has(lt));
+  const accountMappingsExist = hasCollectionMapping && hasRevenueMapping;
+
+  if (!hasCollectionMapping && !hasRevenueMapping) {
+    warnings.push("لم يتم ضبط ربط الحسابات لفواتير المرضى — القيد المحاسبي لن يُنشأ تلقائياً. أضف ربط الحسابات في إعدادات ربط الحسابات.");
+  } else if (!hasCollectionMapping) {
+    warnings.push("ربط حساب التحصيل (نقدية أو ذمم) غير مضبوط لفواتير المرضى — سيُقتصر القيد على جانب الإيراد فقط.");
+  } else if (!hasRevenueMapping) {
+    warnings.push("ربط حسابات الإيراد غير مضبوط لفواتير المرضى — سيُقتصر القيد على جانب التحصيل فقط.");
+  }
 
   const canFinalize = hasInvoice && invoiceIsDraft && notAlreadyFinalizing && allLinesHaveEncounter
     && noOrphanLines && totalsConsistent && noVoidedOnly && !inv.is_final_closed;
