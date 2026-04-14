@@ -121,6 +121,7 @@ export function ReceivingRegistry({
               onChange={(v) => { setFilterSupplierId(v); setPage(1); }}
               placeholder="كل الموردين"
               className="h-7 text-[11px]"
+              clearable
             />
           </div>
           {/* مستودع */}

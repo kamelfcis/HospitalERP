@@ -98,6 +98,7 @@ export function InvoiceRegistry() {
               value={filterSupplierId === "all" ? "" : filterSupplierId}
               onChange={(v) => { setFilterSupplierId(v || "all"); setPage(1); }}
               placeholder="الكل"
+              clearable
             />
           </div>
         </div>

@@ -476,21 +476,12 @@ function ReceivingHeaderBar({
               </Button>
             )}
           </Label>
-          {headerDisabled ? (
-            <Input
-              type="text"
-              value={supplierId}
-              readOnly
-              className="h-7 text-[11px] px-1 bg-muted/30"
-              data-testid="select-supplier"
-            />
-          ) : (
-            <SupplierCombobox
-              value={supplierId}
-              onChange={setSupplierId}
-              placeholder="اختر المورد…"
-            />
-          )}
+          <SupplierCombobox
+            value={supplierId}
+            onChange={setSupplierId}
+            placeholder="اختر المورد…"
+            disabled={headerDisabled}
+          />
         </div>
 
         {/* رقم الإذن */}
