@@ -37,7 +37,7 @@ export function SupplierCombobox({
   const { data: suppliers = [], isLoading } = useQuery<SupplierItem[]>({
     queryKey: ["/api/suppliers/search", search],
     queryFn: () =>
-      fetch(`/api/suppliers/search?q=${encodeURIComponent(search)}&limit=40`, { credentials: "include" }).then(r => r.json()),
+      fetch(`/api/suppliers/search?q=${encodeURIComponent(search)}&limit=20`, { credentials: "include" }).then(r => r.json()),
     enabled: open && !disabled,
     staleTime: search ? 0 : 60_000,
   });
