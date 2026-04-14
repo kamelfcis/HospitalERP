@@ -4,9 +4,9 @@
  * تعرض قائمة مرقمة مع فلاتر (تاريخ، مورد، حالة) وتصفح صفحات.
  * عند النقر على فاتورة → navigate إلى ?id=...
  */
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation, keepPreviousData } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,17 +22,31 @@ import { SupplierCombobox } from "@/components/SupplierCombobox";
 const PAGE_SIZE = 20;
 
 export function InvoiceRegistry() {
-  const { toast }    = useToast();
-  const [, navigate] = useLocation();
+  const { toast }      = useToast();
+  const [, navigate]   = useLocation();
+  const searchString   = useSearch();
+
+  // ── تهيئة الفلاتر من URL (يُحافظ على قيمة المورد عند العودة من المحرر) ──
+  const urlParams = new URLSearchParams(searchString);
 
   const today = new Date().toISOString().split("T")[0];
-  const [filterDateFrom,     setFilterDateFrom]     = useState(today);
-  const [filterDateTo,       setFilterDateTo]       = useState(today);
-  const [filterSupplierId,   setFilterSupplierId]   = useState("all");
-  const [filterStatus,       setFilterStatus]       = useState("all");
+  const [filterDateFrom,      setFilterDateFrom]      = useState(today);
+  const [filterDateTo,        setFilterDateTo]        = useState(today);
+  const [filterSupplierId,    setFilterSupplierId]    = useState(urlParams.get("supplierId") || "all");
+  const [filterStatus,        setFilterStatus]        = useState("all");
   const [filterInvoiceNumber, setFilterInvoiceNumber] = useState("");
-  const [page,               setPage]               = useState(1);
-  const [confirmDeleteId,  setConfirmDeleteId]  = useState<string | null>(null);
+  const [page,                setPage]                = useState(1);
+  const [confirmDeleteId,     setConfirmDeleteId]     = useState<string | null>(null);
+
+  // ── مزامنة فلتر المورد مع URL ──────────────────────────────────────────
+  const handleSupplierChange = useCallback((v: string) => {
+    const p = new URLSearchParams(window.location.search);
+    if (v && v !== "all") { p.set("supplierId", v); } else { p.delete("supplierId"); }
+    const qs = p.toString();
+    navigate(qs ? `?${qs}` : window.location.pathname);
+    setFilterSupplierId(v || "all");
+    setPage(1);
+  }, [navigate]);
 
   // ── قائمة الفواتير ────────────────────────────────────────────────────────
   const qsParams = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
@@ -96,7 +110,7 @@ export function InvoiceRegistry() {
           <div className="min-w-[200px]" data-testid="select-filter-supplier">
             <SupplierCombobox
               value={filterSupplierId === "all" ? "" : filterSupplierId}
-              onChange={(v) => { setFilterSupplierId(v || "all"); setPage(1); }}
+              onChange={handleSupplierChange}
               placeholder="الكل"
               clearable
             />
@@ -168,7 +182,12 @@ export function InvoiceRegistry() {
                   <td className="py-0 px-2 h-7 text-center align-middle">
                     <div className="flex items-center justify-center gap-1">
                       <Button variant="ghost" size="icon"
-                        onClick={() => navigate(`/purchase-invoices?id=${inv.id}`)}
+                        onClick={() => {
+                          const p = new URLSearchParams();
+                          p.set("id", inv.id);
+                          if (filterSupplierId !== "all") p.set("supplierId", filterSupplierId);
+                          navigate(`/purchase-invoices?${p.toString()}`);
+                        }}
                         data-testid={`button-view-${inv.id}`}>
                         <Eye className="h-3 w-3" />
                       </Button>
