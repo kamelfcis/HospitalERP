@@ -20,6 +20,7 @@ import type { Warehouse, Supplier } from "@shared/schema";
 
 import { ReceivingLineTable } from "./ReceivingLineTable";
 import { QuickSupplierDialog } from "./QuickSupplierDialog";
+import { SupplierCombobox } from "@/components/SupplierCombobox";
 import type { ReceivingFormState } from "../hooks/useReceivingForm";
 import type { UseReceivingLinesReturn } from "../hooks/useReceivingLines";
 import type { AutoSaveStatus } from "../hooks/useAutoSave";
@@ -176,7 +177,6 @@ export function ReceivingEditor({
       {/* ── رأس الإذن (sticky) ────────────────────────────────────────────── */}
       <ReceivingHeaderBar
         form={form}
-        supplierSearch={supplierSearch}
         warehouses={warehouses}
         onOpenQuickSupplier={() => setQuickSupplierOpen(true)}
         headerLocked={isEditingPosted}
@@ -366,8 +366,7 @@ export function ReceivingEditor({
       <QuickSupplierDialog
         open={quickSupplierOpen}
         onClose={() => setQuickSupplierOpen(false)}
-        onSupplierCreated={supplierSearch.selectSupplier}
-        supplierCacheRef={supplierSearch.supplierCacheRef}
+        onSupplierCreated={(s) => form.setSupplierId(s.id)}
       />
     </div>
   );
@@ -390,10 +389,9 @@ function AutoSaveIndicator({ status }: { status: AutoSaveStatus }) {
 
 // ── رأس إذن الاستلام ────────────────────────────────────────────────────────
 function ReceivingHeaderBar({
-  form, supplierSearch, warehouses, onOpenQuickSupplier, headerLocked = false,
+  form, warehouses, onOpenQuickSupplier, headerLocked = false,
 }: {
   form: ReceivingFormState;
-  supplierSearch: UseSupplierSearchReturn;
   warehouses: Warehouse[];
   onOpenQuickSupplier: () => void;
   headerLocked?: boolean;
@@ -402,19 +400,10 @@ function ReceivingHeaderBar({
     isViewOnly, formStatus, receiveDate, setReceiveDate,
     warehouseId, setWarehouseId, supplierInvoiceNo, setSupplierInvoiceNo,
     formNotes, setFormNotes, formReceivingNumber, invoiceDuplicateError,
-    setSupplierId,
+    supplierId, setSupplierId,
   } = form;
 
-  // في وضع تعديل المُرحَّل: نقفل بيانات الرأس (المستودع، المورد، الفاتورة)
-  // لأن الـ API يُعدِّل السطور فقط
   const headerDisabled = isViewOnly || headerLocked;
-
-  const {
-    supplierSearchText, supplierResults, supplierDropdownOpen,
-    supplierHighlightIdx, supplierSearchLoading, supplierSearchRef,
-    handleSupplierSearchChange, handleSupplierKeyDown, selectSupplier,
-    setSupplierDropdownOpen,
-  } = supplierSearch;
 
   return (
     <fieldset className="peachtree-grid p-2 sticky top-0 z-50 bg-card">
@@ -476,8 +465,8 @@ function ReceivingHeaderBar({
           )}
         </div>
 
-        {/* المورد */}
-        <div className="space-y-1 flex-1 min-w-[200px] relative">
+        {/* المورد — SupplierCombobox يعرض قائمة فورية عند الفتح دون الحاجة للكتابة */}
+        <div className="space-y-1 flex-1 min-w-[200px]">
           <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
             المورد *
             {!headerDisabled && (
@@ -487,38 +476,20 @@ function ReceivingHeaderBar({
               </Button>
             )}
           </Label>
-          <div className="relative">
+          {headerDisabled ? (
             <Input
-              ref={supplierSearchRef}
               type="text"
-              value={supplierSearchText}
-              onChange={(e) => {
-                handleSupplierSearchChange(e.target.value);
-                if (form.supplierId) setSupplierId("");
-              }}
-              onKeyDown={(e) => handleSupplierKeyDown(e, selectSupplier)}
-              onFocus={() => { if (supplierResults.length > 0) setSupplierDropdownOpen(true); }}
-              onBlur={() => { setTimeout(() => setSupplierDropdownOpen(false), 400); }}
-              placeholder="ابحث بالكود أو الاسم..."
-              className="h-7 text-[11px] px-1" disabled={headerDisabled}
-              data-testid="select-supplier" />
-            {supplierSearchLoading && (
-              <Loader2 className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 animate-spin text-muted-foreground" />
-            )}
-          </div>
-          {supplierDropdownOpen && supplierResults.length > 0 && (
-            <div className="absolute top-full right-0 left-0 z-50 bg-card border rounded-md shadow-lg max-h-[200px] overflow-auto mt-1">
-              {supplierResults.map((s, idx) => (
-                <div key={s.id}
-                  className={`px-2 py-1.5 text-[11px] cursor-pointer hover:bg-muted/50 ${idx === supplierHighlightIdx ? "bg-muted" : ""}`}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => selectSupplier(s)}
-                  data-testid={`supplier-option-${s.id}`}>
-                  <span className="font-mono text-muted-foreground">{s.code}</span> - {s.nameAr}
-                  {s.nameEn ? ` (${s.nameEn})` : ""}
-                </div>
-              ))}
-            </div>
+              value={supplierId}
+              readOnly
+              className="h-7 text-[11px] px-1 bg-muted/30"
+              data-testid="select-supplier"
+            />
+          ) : (
+            <SupplierCombobox
+              value={supplierId}
+              onChange={setSupplierId}
+              placeholder="اختر المورد…"
+            />
           )}
         </div>
 

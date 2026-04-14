@@ -23,11 +23,10 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onSupplierCreated: (supplier: Supplier) => void;
-  supplierCacheRef: React.MutableRefObject<Map<string, Supplier[]>>;
 }
 
 // ===== Component =====
-export function QuickSupplierDialog({ open, onClose, onSupplierCreated, supplierCacheRef }: Props) {
+export function QuickSupplierDialog({ open, onClose, onSupplierCreated }: Props) {
   const { toast } = useToast();
 
   // ===== Form State =====
@@ -66,7 +65,7 @@ export function QuickSupplierDialog({ open, onClose, onSupplierCreated, supplier
     },
     onSuccess: (supplier: Supplier) => {
       queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
-      supplierCacheRef.current.clear();
+      queryClient.invalidateQueries({ queryKey: ["/api/suppliers/search"] });
       onSupplierCreated(supplier);
       toast({ title: "تم إضافة المورد بنجاح" });
       // Reset form
