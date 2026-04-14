@@ -205,10 +205,14 @@
   }
 
   body {
-    @apply font-sans antialiased bg-background text-foreground;
-    font-feature-settings: "ss01", "ss02";
+    @apply font-sans bg-background text-foreground;
+    font-feature-settings: "liga" 1, "calt" 1, "ss01" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-synthesis: none;
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 600;
     text-align: right;
   }
 
@@ -218,7 +222,7 @@
 
   th, td {
     text-align: right;
-    font-weight: 600;
+    font-weight: 700;
   }
 
   /* Accounting table styles */
@@ -229,7 +233,7 @@
 
   .accounting-table td {
     @apply py-2 px-3 text-sm border-b border-border/50;
-    font-weight: 600;
+    font-weight: 700;
   }
 
   .accounting-table tr:nth-child(even) {
@@ -240,35 +244,40 @@
     @apply bg-muted/40;
   }
 
-  /* Number formatting for accounting — bold + tabular */
+  /* Number formatting for accounting — bigger + bold + tabular */
   .accounting-number {
     font-variant-numeric: tabular-nums;
-    font-weight: 700;
+    font-weight: 800;
+    font-size: 15px;
     text-align: left;
     direction: ltr;
   }
 
   .accounting-number-rtl {
     font-variant-numeric: tabular-nums;
-    font-weight: 700;
+    font-weight: 800;
+    font-size: 15px;
     text-align: right;
   }
 
-  /* Tabular numbers (amounts, quantities) always bold */
+  /* Tabular numbers (amounts, quantities) — bigger and bold */
   .tabular-nums {
     font-variant-numeric: tabular-nums;
-    font-weight: 700;
+    font-weight: 800;
+    font-size: 15px;
   }
 
   /* Debit/Credit colors */
   .debit-amount {
     @apply text-primary;
-    font-weight: 700;
+    font-weight: 800;
+    font-size: 15px;
   }
 
   .credit-amount {
     @apply text-emerald-600;
-    font-weight: 700;
+    font-weight: 800;
+    font-size: 15px;
   }
 
   /* Form field styles */
