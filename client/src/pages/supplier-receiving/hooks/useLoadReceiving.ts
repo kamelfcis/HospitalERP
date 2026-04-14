@@ -4,7 +4,6 @@
  * يجلب البيانات من السيرفر ويملأ:
  *   - حالة النموذج (useReceivingForm)
  *   - السطور (useReceivingLines)
- *   - بحث المورد (useSupplierSearch)
  *
  * يُعيد دالة واحدة: loadReceivingForEditing(id)
  */
@@ -14,19 +13,17 @@ import { calculateQtyInMinor, getDefaultUnitLevel } from "../types";
 import type { ReceivingLineLocal } from "../types";
 import type { ReceivingFormState } from "./useReceivingForm";
 import type { UseReceivingLinesReturn } from "./useReceivingLines";
-import type { UseSupplierSearchReturn } from "./useSupplierSearch";
 import type { ReceivingHeaderWithDetails } from "@shared/schema";
 
 interface Params {
-  form:           ReceivingFormState;
-  lines:          UseReceivingLinesReturn;
-  supplierSearch: UseSupplierSearchReturn;
-  resetAutoSave:  () => void;
-  setActiveTab:   (tab: string) => void;
+  form:          ReceivingFormState;
+  lines:         UseReceivingLinesReturn;
+  resetAutoSave: () => void;
+  setActiveTab:  (tab: string) => void;
 }
 
 export function useLoadReceiving({
-  form, lines, supplierSearch, resetAutoSave, setActiveTab,
+  form, lines, resetAutoSave, setActiveTab,
 }: Params) {
   const { toast } = useToast();
 
@@ -48,13 +45,6 @@ export function useLoadReceiving({
       form.setFormCorrectionStatus((receiving as Record<string, unknown>).correctionStatus as string | null || null);
       form.setFormCorrectionOfId((receiving as Record<string, unknown>).correctionOfId as string | null || null);
       form.setFormConvertedToInvoiceId((receiving as Record<string, unknown>).convertedToInvoiceId as string | null || null);
-
-      if (receiving.supplier) {
-        supplierSearch.setSelectedSupplier(receiving.supplier);
-        supplierSearch.setSupplierSearchText(
-          `${receiving.supplier.code} - ${receiving.supplier.nameAr}`,
-        );
-      }
 
       // ── بناء سطور التحميل ─────────────────────────────────────────────────
       const loadedLines: ReceivingLineLocal[] = (receiving.lines || []).map((line) => {
@@ -139,7 +129,7 @@ export function useLoadReceiving({
       const _em = err instanceof Error ? err.message : String(err);
       toast({ title: "خطأ في تحميل إذن الاستلام", description: _em, variant: "destructive" });
     }
-  }, [form, lines, supplierSearch, resetAutoSave, setActiveTab, toast]);
+  }, [form, lines, resetAutoSave, setActiveTab, toast]);
 
   return { loadReceivingForEditing };
 }

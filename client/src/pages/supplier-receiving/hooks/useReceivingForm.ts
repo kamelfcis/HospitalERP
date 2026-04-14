@@ -40,7 +40,6 @@ export interface ReceivingFormState {
   resetForm: (
     resetLines: () => void,
     resetAutoSave: () => void,
-    resetSupplier: () => void,
   ) => void;
 }
 
@@ -74,7 +73,6 @@ export function useReceivingForm(): ReceivingFormState {
   const resetForm = (
     resetLines: () => void,
     resetAutoSave: () => void,
-    resetSupplier: () => void,
   ) => {
     setEditingReceivingId(null);
     setReceiveDate(today());
@@ -91,7 +89,6 @@ export function useReceivingForm(): ReceivingFormState {
     setIsEditingPosted(false);
     resetLines();
     resetAutoSave();
-    resetSupplier();
   };
 
   return {

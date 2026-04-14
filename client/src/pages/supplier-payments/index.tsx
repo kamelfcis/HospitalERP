@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import { CircleDollarSign, Banknote } from "lucide-react";
-import { SupplierCombobox } from "./components/SupplierCombobox";
+import { SupplierCombobox } from "@/components/SupplierCombobox";
 import { BalanceStrip } from "./components/BalanceStrip";
 import { PaymentTab } from "./components/PaymentTab";
 import { StatementTab } from "./components/StatementTab";
@@ -66,7 +66,14 @@ export default function SupplierPaymentsPage() {
       <div className="flex-1 flex flex-col min-h-0 px-4 py-2 gap-2">
 
         <div className="flex items-center gap-3 shrink-0 flex-wrap">
-          <SupplierCombobox value={supplierId} onChange={(id) => { setSupplierId(id); }} />
+          <div className="w-[300px]">
+            <SupplierCombobox
+              value={supplierId}
+              onChange={setSupplierId}
+              placeholder="اختر المورد…"
+              clearable
+            />
+          </div>
           {supplierId && <BalanceStrip supplierId={supplierId} />}
         </div>
 

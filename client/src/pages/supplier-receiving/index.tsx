@@ -21,7 +21,6 @@ import type { Warehouse } from "@shared/schema";
 import { useReceivingForm }      from "./hooks/useReceivingForm";
 import { useReceivingLines }     from "./hooks/useReceivingLines";
 import { useAutoSave }           from "./hooks/useAutoSave";
-import { useSupplierSearch }     from "./hooks/useSupplierSearch";
 import { useReceivingMutations } from "./hooks/useReceivingMutations";
 import { useLoadReceiving }      from "./hooks/useLoadReceiving";
 import { useStockStats }         from "./hooks/useStockStats";
@@ -41,10 +40,9 @@ export default function SupplierReceiving() {
   const [quickSupplierOpen, setQuickSupplierOpen] = useState(false);
 
   // ── Hooks الحالة ─────────────────────────────────────────────────────────
-  const form          = useReceivingForm();
-  const lines         = useReceivingLines();
-  const supplierSearch = useSupplierSearch(form.setSupplierId);
-  const stats          = useStockStats();
+  const form  = useReceivingForm();
+  const lines = useReceivingLines();
+  const stats = useStockStats();
 
   const autoSave = useAutoSave({
     formStatus:         form.formStatus,
@@ -63,7 +61,7 @@ export default function SupplierReceiving() {
 
   // ── تحميل إذن للتعديل ────────────────────────────────────────────────────
   const { loadReceivingForEditing } = useLoadReceiving({
-    form, lines, supplierSearch,
+    form, lines,
     resetAutoSave: autoSave.resetAutoSave,
     setActiveTab,
   });
@@ -133,7 +131,7 @@ export default function SupplierReceiving() {
 
   // ── Reset + Mutations ─────────────────────────────────────────────────────
   const handleNew = () => {
-    form.resetForm(lines.resetLines, autoSave.resetAutoSave, supplierSearch.resetSupplier);
+    form.resetForm(lines.resetLines, autoSave.resetAutoSave);
     if (user?.defaultPurchaseWarehouseId) {
       form.setWarehouseId(user.defaultPurchaseWarehouseId);
     }
@@ -204,7 +202,6 @@ export default function SupplierReceiving() {
           <ReceivingEditor
             form={form}
             lines={lines}
-            supplierSearch={supplierSearch}
             autoSaveStatus={autoSave.autoSaveStatus}
             grandTotal={lines.grandTotal}
             isPending={mutations.isPending}

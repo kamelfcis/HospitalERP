@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { RotateCcw, FileText, AlertTriangle, CheckCircle, Loader2 } from "lucide-react";
-import { SupplierCombobox } from "./SupplierCombobox";
+import { SupplierCombobox } from "@/components/SupplierCombobox";
 import { InvoiceCombobox } from "./InvoiceCombobox";
 import { ReturnLinesTable } from "./ReturnLinesTable";
 import { DetailModal } from "./DetailModal";

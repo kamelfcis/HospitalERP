@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { ItemFastSearch } from "@/components/ItemFastSearch";
 import { StockStatsDialog } from "@/components/StockStatsDialog";
 import { receivingStatusLabels } from "@shared/schema";
-import type { Warehouse, Supplier } from "@shared/schema";
+import type { Warehouse } from "@shared/schema";
 
 import { ReceivingLineTable } from "./ReceivingLineTable";
 import { QuickSupplierDialog } from "./QuickSupplierDialog";
@@ -24,14 +24,12 @@ import { SupplierCombobox } from "@/components/SupplierCombobox";
 import type { ReceivingFormState } from "../hooks/useReceivingForm";
 import type { UseReceivingLinesReturn } from "../hooks/useReceivingLines";
 import type { AutoSaveStatus } from "../hooks/useAutoSave";
-import type { UseSupplierSearchReturn } from "../hooks/useSupplierSearch";
 import type { ReceivingLineLocal } from "../types";
 
 interface Props {
   // ── حالة النموذج ──
   form:           ReceivingFormState;
   lines:          UseReceivingLinesReturn;
-  supplierSearch: UseSupplierSearchReturn;
   autoSaveStatus: AutoSaveStatus;
   grandTotal:     number;
   isPending:      boolean;
@@ -81,7 +79,7 @@ interface Props {
 }
 
 export function ReceivingEditor({
-  form, lines, supplierSearch, autoSaveStatus, grandTotal, isPending,
+  form, lines, autoSaveStatus, grandTotal, isPending,
   confirmPostOpen, setConfirmPostOpen,
   itemSearchOpen, setItemSearchOpen,
   statsItemId, statsData, statsLoading, setStatsItemId, openStats,
