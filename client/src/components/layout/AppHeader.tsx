@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { MarqueeTicker } from "./MarqueeTicker";
 import { NotificationBell } from "@/components/tasks/NotificationBell";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 
 interface Announcement {
   id: string;
@@ -18,13 +19,17 @@ export function AppHeader() {
 
   return (
     <header
-      className="flex items-center h-10 px-4 bg-sidebar shrink-0 no-print overflow-hidden border-b border-sidebar-border gap-2"
+      className="flex h-10 min-h-10 shrink-0 items-center gap-2 border-b border-sidebar-border bg-sidebar px-2 no-print sm:px-4 overflow-hidden"
       data-testid="app-header-ticker"
     >
+      <SidebarTrigger
+        className="shrink-0 text-sidebar-foreground hover:bg-sidebar-accent/80"
+        data-testid="button-app-header-sidebar"
+      />
       <MarqueeTicker
         messages={messages}
         speed={70}
-        className="flex-1 text-sidebar-foreground/90"
+        className="min-w-0 flex-1 text-sidebar-foreground/90"
       />
       <NotificationBell />
     </header>

@@ -1,0 +1,95 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// PostgreSQL schema name: sys  (System settings, tasks, chat, announcements)
+// Tables today: public.system_settings, chat_messages, tasks, task_*,
+//                public.announcements
+// Source: shared/schema/system.ts + database_export.announcements
+// ═══════════════════════════════════════════════════════════════════════════
+
+Project sys {
+  database_type: 'PostgreSQL'
+  Note: '''
+    مخطط مقترح: sys — إعدادات النظام والمهام والمحادثات والإعلانات
+    ext_users → المستخدمون (iam)
+  '''
+}
+
+Table ext_users {
+  Note: 'وهمي → المستخدمين'
+  id varchar [pk, note: 'معرّف المستخدم']
+}
+
+Table system_settings {
+  Note: 'إعدادات النظام (مفتاح/قيمة)'
+
+  key varchar(100) [pk, note: 'المفتاح']
+  value text [not null, note: 'القيمة']
+  updated_at timestamp [not null, note: 'آخر تحديث']
+}
+
+Table announcements {
+  Note: 'إعلانات النظام'
+
+  id uuid [pk, note: 'المعرّف']
+  message text [not null, note: 'نص الإعلان']
+  is_active boolean [not null, default: true, note: 'ظاهر']
+  created_at timestamptz [not null, note: 'تاريخ الإنشاء']
+  created_by varchar(100) [note: 'أنشأه']
+}
+
+Table chat_messages {
+  Note: 'رسائل الدردشة بين المستخدمين'
+
+  id varchar [pk, note: 'المعرّف']
+  sender_id varchar [not null, ref: > ext_users.id, note: 'المرسل']
+  receiver_id varchar [not null, ref: > ext_users.id, note: 'المستقبل']
+  body text [not null, note: 'نص الرسالة']
+  read_at timestamp [note: 'وقت القراءة']
+  created_at timestamp [not null, note: 'وقت الإرسال']
+}
+
+Table tasks {
+  Note: 'المهام'
+
+  id varchar [pk, note: 'المعرّف']
+  title text [not null, note: 'عنوان المهمة']
+  description text [note: 'الوصف']
+  priority varchar(20) [not null, note: 'الأولوية']
+  status varchar(30) [not null, note: 'الحالة']
+  created_by varchar [not null, ref: > ext_users.id, note: 'أنشأها']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+  due_date timestamp [note: 'تاريخ الاستحقاق']
+}
+
+Table task_assignees {
+  Note: 'المكلّفون بالمهام'
+
+  id varchar [pk, note: 'المعرّف']
+  task_id varchar [not null, ref: > tasks.id, note: 'المهمة']
+  user_id varchar [not null, ref: > ext_users.id, note: 'المستخدم']
+  status varchar(30) [not null, note: 'حالة الإسناد']
+}
+
+Table task_comments {
+  Note: 'تعليقات المهام'
+
+  id varchar [pk, note: 'المعرّف']
+  task_id varchar [not null, ref: > tasks.id, note: 'المهمة']
+  user_id varchar [not null, ref: > ext_users.id, note: 'المستخدم']
+  body text [not null, note: 'نص التعليق']
+  created_at timestamp [not null, note: 'تاريخ التعليق']
+}
+
+Table task_notifications {
+  Note: 'إشعارات المهام'
+
+  id varchar [pk, note: 'المعرّف']
+  user_id varchar [not null, ref: > ext_users.id, note: 'المستقبل']
+  actor_id varchar [not null, ref: > ext_users.id, note: 'من نفّذ الإجراء']
+  task_id varchar [not null, ref: > tasks.id, note: 'المهمة']
+  type varchar(50) [not null, note: 'نوع الإشعار']
+  is_read boolean [not null, default: false, note: 'مقروء']
+  created_at timestamp [not null, note: 'وقت الإنشاء']
+}
+
+Ref: task_assignees.task_id > tasks.id
+Ref: task_comments.task_id > tasks.id

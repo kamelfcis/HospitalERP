@@ -24,7 +24,9 @@ export async function setupVite(server: Server, app: Express) {
       ...viteLogger,
       error: (msg, options) => {
         viteLogger.error(msg, options);
-        process.exit(1);
+        // Never call process.exit here: Vite may route non-fatal diagnostics through
+        // `error`, and on Windows the process can exit before logs flush — leaving a
+        // silent failure right after early startup logs.
       },
     },
     server: serverOptions,

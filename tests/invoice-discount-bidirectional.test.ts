@@ -1,15 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
+import { liveCall as api } from "./live-session";
 
-const BASE = "http://localhost:5000";
 const UNIQUE = Date.now();
-
-async function api(method: string, path: string, body?: any) {
-  const opts: any = { method, headers: { "Content-Type": "application/json" } };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${BASE}${path}`, opts);
-  const data = await res.json().catch(() => null);
-  return { status: res.status, data };
-}
 
 let supplierId: string;
 let warehouseId: string;

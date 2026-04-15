@@ -1,13 +1,9 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll } from "vitest";
+import { liveCall as api, getLiveClient } from "./live-session";
 
-const BASE_URL = "http://localhost:5000";
-
-async function api(method: string, path: string, body?: any) {
-  const opts: RequestInit = { method, headers: { "Content-Type": "application/json" } };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${BASE_URL}${path}`, opts);
-  return { status: res.status, data: await res.json().catch(() => null) };
-}
+beforeAll(async () => {
+  await getLiveClient();
+}, 20_000);
 
 describe("UOM Master", () => {
   const uomCode = `TST-${Date.now().toString(36).toUpperCase()}`;

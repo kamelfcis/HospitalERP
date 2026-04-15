@@ -1,0 +1,142 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// PostgreSQL schema name: pur  (Purchasing & accounts payable)
+// Tables today: public.suppliers, receiving_*, purchase_invoice_*,
+//                supplier_payment*, purchase_return_*
+// Source: shared/schema/purchasing.ts
+// ═══════════════════════════════════════════════════════════════════════════
+
+Project pur {
+  database_type: 'PostgreSQL'
+  Note: '''
+    مخطط مقترح: pur — المشتريات وذمم الموردين والسداد
+    Proposed schema: pur — purchasing, receiving, AP, returns.
+    ext_* = جداول وهمية → inv
+  '''
+}
+
+Table ext_items {
+  Note: 'وهمي → public.items'
+  id varchar [pk, note: 'معرّف الصنف']
+}
+Table ext_warehouses {
+  Note: 'وهمي → public.warehouses'
+  id varchar [pk, note: 'معرّف المخزن']
+}
+Table ext_inventory_lots {
+  Note: 'وهمي → public.inventory_lots'
+  id varchar [pk, note: 'معرّف الدفعة']
+}
+
+Table suppliers {
+  Note: 'الموردون'
+
+  id varchar [pk, note: 'المعرّف']
+  code varchar(20) [not null, unique, note: 'رمز المورد']
+  name_ar text [not null, note: 'الاسم بالعربية']
+  supplier_type text [not null, default: 'drugs', note: 'نوع المورد (أدوية/مستلزمات/...)']
+  payment_mode text [not null, note: 'طريقة الدفع (نقد/آجل/مختلط)']
+  gl_account_id varchar [note: 'حساب ذمم مورد اختياري']
+  is_active boolean [not null, default: true, note: 'نشط']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table receiving_headers {
+  Note: 'رؤوس أذون الاستلام'
+
+  id varchar [pk, note: 'المعرّف']
+  receiving_number integer [not null, unique, note: 'رقم الاستلام']
+  supplier_id varchar [not null, ref: > suppliers.id, note: 'المورد']
+  warehouse_id varchar [not null, ref: > ext_warehouses.id, note: 'المخزن']
+  receive_date date [not null, note: 'تاريخ الاستلام']
+  status varchar [not null, note: 'الحالة']
+  total_cost decimal(18,2) [not null, note: 'إجمالي التكلفة']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table receiving_lines {
+  Note: 'سطور الاستلام'
+
+  id varchar [pk, note: 'المعرّف']
+  receiving_id varchar [not null, ref: > receiving_headers.id, note: 'رأس الاستلام']
+  item_id varchar [not null, ref: > ext_items.id, note: 'الصنف']
+  qty_in_minor decimal(18,4) [not null, note: 'الكمية بالصغرى']
+  purchase_price decimal(18,4) [not null, note: 'سعر الشراء']
+  line_total decimal(18,2) [not null, note: 'إجمالي السطر']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table purchase_invoice_headers {
+  Note: 'رؤوس فواتير المشتريات'
+
+  id varchar [pk, note: 'المعرّف']
+  invoice_number integer [not null, unique, note: 'رقم الفاتورة']
+  supplier_id varchar [not null, ref: > suppliers.id, note: 'المورد']
+  warehouse_id varchar [not null, ref: > ext_warehouses.id, note: 'المخزن']
+  receiving_id varchar [ref: > receiving_headers.id, note: 'أمر الاستلام']
+  invoice_date date [not null, note: 'تاريخ الفاتورة']
+  status varchar [not null, note: 'الحالة']
+  net_payable decimal(18,2) [not null, note: 'صافي المستحق']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table purchase_invoice_lines {
+  Note: 'سطور فاتورة المشتريات'
+
+  id varchar [pk, note: 'المعرّف']
+  invoice_id varchar [not null, ref: > purchase_invoice_headers.id, note: 'رأس الفاتورة']
+  item_id varchar [not null, ref: > ext_items.id, note: 'الصنف']
+  qty decimal(18,4) [not null, note: 'الكمية']
+  value_after_vat decimal(18,2) [not null, note: 'القيمة بعد الضريبة']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table supplier_payments {
+  Note: 'رؤوس سداد الموردين'
+
+  id varchar [pk, note: 'المعرّف']
+  payment_number integer [not null, note: 'رقم السداد']
+  supplier_id varchar [not null, ref: > suppliers.id, note: 'المورد']
+  payment_date date [not null, note: 'تاريخ السداد']
+  total_amount decimal(18,2) [not null, note: 'إجمالي المبلغ']
+  journal_entry_id varchar [note: 'قيد اليومية → fin']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table supplier_payment_lines {
+  Note: 'سطور السداد — توزيع على الفواتير'
+
+  id varchar [pk, note: 'المعرّف']
+  payment_id varchar [not null, ref: > supplier_payments.id, note: 'رأس السداد']
+  invoice_id varchar [not null, ref: > purchase_invoice_headers.id, note: 'فاتورة المشتريات']
+  amount_paid decimal(18,2) [not null, note: 'المبلغ المدفوع']
+}
+
+Table purchase_return_headers {
+  Note: 'رؤوس مرتجعات المشتريات'
+
+  id varchar [pk, note: 'المعرّف']
+  return_number integer [not null, unique, note: 'رقم المرتجع']
+  purchase_invoice_id varchar [not null, ref: > purchase_invoice_headers.id, note: 'فاتورة الشراء']
+  supplier_id varchar [not null, ref: > suppliers.id, note: 'المورد']
+  warehouse_id varchar [not null, ref: > ext_warehouses.id, note: 'المخزن']
+  return_date date [not null, note: 'تاريخ المرتجع']
+  grand_total decimal(18,2) [not null, note: 'الإجمالي']
+  journal_entry_id varchar [note: 'قيد اليومية → fin']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table purchase_return_lines {
+  Note: 'سطور مرتجع المشتريات'
+
+  id varchar [pk, note: 'المعرّف']
+  return_id varchar [not null, ref: > purchase_return_headers.id, note: 'رأس المرتجع']
+  purchase_invoice_line_id varchar [not null, ref: > purchase_invoice_lines.id, note: 'سطر فاتورة الشراء']
+  item_id varchar [not null, ref: > ext_items.id, note: 'الصنف']
+  lot_id varchar [not null, ref: > ext_inventory_lots.id, note: 'الدفعة']
+  qty_returned decimal(18,4) [not null, note: 'الكمية المرتجعة']
+  line_total decimal(18,2) [not null, note: 'إجمالي السطر']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Ref: receiving_lines.receiving_id > receiving_headers.id
+Ref: purchase_invoice_lines.invoice_id > purchase_invoice_headers.id

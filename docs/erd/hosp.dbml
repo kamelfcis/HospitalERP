@@ -1,0 +1,325 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// PostgreSQL schema name: hosp  (Hospital: patients, visits, beds, cashier, treasury)
+// Tables today: public.patients, admissions, patient_visits, encounters, stay_segments,
+//   floors/rooms/beds, doctors, cashier_*, treasuries, cash_transfers, doctor_* 
+// Source: shared/schema/hospital.ts
+// ═══════════════════════════════════════════════════════════════════════════
+
+Project hosp {
+  database_type: 'PostgreSQL'
+  Note: '''
+    مخطط مقترح: hosp — المستشفى والمرضى والكاشير والخزن
+    ext_* = وهمي → inv / fin / iam / bill / ref
+  '''
+}
+
+Table ext_accounts {
+  Note: 'وهمي → الحسابات'
+  id varchar [pk, note: 'معرّف الحساب']
+}
+Table ext_users {
+  Note: 'وهمي → المستخدمين'
+  id varchar [pk, note: 'معرّف المستخدم']
+}
+Table ext_departments {
+  Note: 'وهمي → الأقسام'
+  id varchar [pk, note: 'معرّف القسم']
+}
+Table ext_pharmacies {
+  Note: 'وهمي → الصيدليات'
+  id varchar [pk, note: 'معرّف الصيدلية']
+}
+Table ext_warehouses {
+  Note: 'وهمي → المخازن'
+  id varchar [pk, note: 'معرّف المخزن']
+}
+Table ext_sales_invoice_headers {
+  Note: 'وهمي → فواتير المبيعات'
+  id varchar [pk, note: 'معرّف الفاتورة']
+}
+Table ext_patient_invoice_headers {
+  Note: 'وهمي → فواتير المرضى'
+  id varchar [pk, note: 'معرّف الفاتورة']
+}
+Table ext_services {
+  Note: 'وهمي → الخدمات'
+  id varchar [pk, note: 'معرّف الخدمة']
+}
+Table ext_companies {
+  Note: 'وهمي → الشركات'
+  id varchar [pk, note: 'معرّف الشركة']
+}
+
+Table patients {
+  Note: 'المرضى — الملف الموحد'
+
+  id varchar [pk, note: 'المعرّف']
+  patient_code varchar(20) [unique, note: 'كود المريض']
+  full_name text [not null, note: 'الاسم الكامل']
+  phone varchar(20) [note: 'الهاتف']
+  national_id varchar(20) [note: 'الرقم القومي']
+  is_active boolean [not null, default: true, note: 'نشط']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table patient_aliases {
+  Note: 'أسماء وأكواد بديلة للمريض'
+
+  id varchar [pk, note: 'المعرّف']
+  patient_id varchar [not null, ref: > patients.id, note: 'المريض']
+  alias_type varchar(30) [not null, note: 'نوع الاسم البديل']
+  alias_value text [not null, note: 'القيمة']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table patient_merge_audit {
+  Note: 'سجل دمج المرضى'
+
+  id varchar [pk, note: 'المعرّف']
+  master_patient_id varchar [not null, note: 'المريض الرئيسي']
+  merged_patient_id varchar [not null, note: 'المريض المدمج']
+  merged_by_user_id varchar [not null, note: 'من نفّذ الدمج']
+  merged_at timestamp [not null, note: 'وقت الدمج']
+}
+
+Table doctors {
+  Note: 'الأطباء'
+
+  id varchar [pk, note: 'المعرّف']
+  name text [not null, note: 'الاسم']
+  payable_account_id varchar [ref: > ext_accounts.id, note: 'حساب المستحقات']
+  receivable_account_id varchar [ref: > ext_accounts.id, note: 'حساب المديونية']
+  is_active boolean [not null, default: true, note: 'نشط']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table cashier_shifts {
+  Note: 'ورديات الكاشير'
+
+  id varchar [pk, note: 'المعرّف']
+  cashier_id varchar [not null, note: 'معرّف الكاشير → users']
+  pharmacy_id varchar [ref: > ext_pharmacies.id, note: 'الصيدلية']
+  department_id varchar [ref: > ext_departments.id, note: 'القسم']
+  gl_account_id varchar [ref: > ext_accounts.id, note: 'حساب GL للوردية']
+  status varchar [not null, note: 'حالة الوردية']
+  opened_at timestamp [not null, note: 'وقت الفتح']
+  closed_at timestamp [note: 'وقت الإغلاق']
+}
+
+Table cashier_transfer_log {
+  Note: 'سجل نقل فواتير بين ورديات'
+
+  id varchar [pk, note: 'المعرّف']
+  from_shift_id varchar [not null, ref: > cashier_shifts.id, note: 'من وردية']
+  to_shift_id varchar [not null, ref: > cashier_shifts.id, note: 'إلى وردية']
+  transferred_at timestamp [not null, note: 'وقت النقل']
+}
+
+Table cashier_receipts {
+  Note: 'إيصالات التحصيل'
+
+  id varchar [pk, note: 'المعرّف']
+  shift_id varchar [not null, ref: > cashier_shifts.id, note: 'الوردية']
+  invoice_id varchar [not null, ref: > ext_sales_invoice_headers.id, note: 'فاتورة المبيعات']
+  amount decimal(18,2) [not null, note: 'المبلغ']
+  collected_at timestamp [not null, note: 'وقت التحصيل']
+}
+
+Table cashier_refund_receipts {
+  Note: 'إيصالات المرتجعات'
+
+  id varchar [pk, note: 'المعرّف']
+  shift_id varchar [not null, ref: > cashier_shifts.id, note: 'الوردية']
+  invoice_id varchar [not null, ref: > ext_sales_invoice_headers.id, note: 'الفاتورة']
+  amount decimal(18,2) [not null, note: 'المبلغ']
+  refunded_at timestamp [not null, note: 'وقت المرتجع']
+}
+
+Table cashier_audit_log {
+  Note: 'سجل تدقيق الكاشير'
+
+  id varchar [pk, note: 'المعرّف']
+  shift_id varchar [ref: > cashier_shifts.id, note: 'الوردية']
+  action text [not null, note: 'الإجراء']
+  performed_at timestamp [not null, note: 'وقت التنفيذ']
+}
+
+Table surgery_types {
+  Note: 'أنواع العمليات الجراحية'
+
+  id varchar [pk, note: 'المعرّف']
+  name_ar text [not null, note: 'الاسم']
+  category varchar(20) [not null, note: 'الفئة']
+  is_active boolean [not null, default: true, note: 'نشط']
+}
+
+Table surgery_category_prices {
+  Note: 'أسعار فئات العمليات'
+
+  category varchar(20) [pk, note: 'الفئة']
+  price decimal(12,2) [not null, note: 'السعر']
+  service_id varchar [note: 'خدمة الحزمة → bill.services']
+}
+
+Table admissions {
+  Note: 'قبول المرضى (داخلي)'
+
+  id varchar [pk, note: 'المعرّف']
+  admission_number varchar(30) [not null, unique, note: 'رقم القبول']
+  patient_id varchar [ref: > patients.id, note: 'المريض']
+  admission_date date [not null, note: 'تاريخ القبول']
+  status varchar [not null, note: 'حالة الإقامة']
+  department_id varchar [ref: > ext_departments.id, note: 'القسم']
+  surgery_type_id varchar [ref: > surgery_types.id, note: 'نوع العملية']
+  company_id varchar [ref: > ext_companies.id, note: 'شركة التأمين']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table patient_visits {
+  Note: 'سجل الزيارات (استقبال)'
+
+  id varchar [pk, note: 'المعرّف']
+  visit_number varchar(30) [not null, unique, note: 'رقم الزيارة']
+  patient_id varchar [not null, ref: > patients.id, note: 'المريض']
+  department_id varchar [ref: > ext_departments.id, note: 'القسم']
+  created_by varchar [ref: > ext_users.id, note: 'أنشأها']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table encounters {
+  Note: 'المقابلات الطبية'
+
+  id varchar [pk, note: 'المعرّف']
+  visit_id varchar [not null, ref: > patient_visits.id, note: 'الزيارة']
+  admission_id varchar [ref: > admissions.id, note: 'القبول']
+  department_id varchar [ref: > ext_departments.id, note: 'القسم']
+  encounter_type varchar [not null, note: 'نوع المقابلة']
+  status varchar [not null, note: 'الحالة']
+  started_at timestamptz [not null, note: 'بداية المقابلة']
+}
+
+Table visit_aggregation_cache {
+  Note: 'ذاكرة تجميع مبالغ الزيارة'
+
+  visit_id varchar [pk, ref: > patient_visits.id, note: 'الزيارة']
+  gross_amount numeric(14,2) [not null, note: 'الإجمالي']
+  net_amount numeric(14,2) [not null, note: 'الصافي']
+  last_refreshed_at timestamp [not null, note: 'آخر تحديث']
+}
+
+Table stay_segments {
+  Note: 'شرائح الإقامة'
+
+  id varchar [pk, note: 'المعرّف']
+  admission_id varchar [not null, ref: > admissions.id, note: 'القبول']
+  service_id varchar [ref: > ext_services.id, note: 'خدمة الإقامة']
+  invoice_id varchar [not null, ref: > ext_patient_invoice_headers.id, note: 'فاتورة المريض']
+  started_at timestamptz [not null, note: 'بداية الشريحة']
+  status varchar(10) [not null, note: 'الحالة']
+}
+
+Table floors {
+  Note: 'الطوابق'
+
+  id varchar [pk, note: 'المعرّف']
+  name_ar text [not null, note: 'الاسم']
+  department_id varchar [ref: > ext_departments.id, note: 'القسم']
+}
+
+Table rooms {
+  Note: 'الغرف'
+
+  id varchar [pk, note: 'المعرّف']
+  floor_id varchar [not null, ref: > floors.id, note: 'الطابق']
+  name_ar text [not null, note: 'اسم الغرفة']
+  service_id varchar [ref: > ext_services.id, note: 'خدمة الغرفة']
+}
+
+Table beds {
+  Note: 'الأسرة'
+
+  id varchar [pk, note: 'المعرّف']
+  room_id varchar [not null, ref: > rooms.id, note: 'الغرفة']
+  bed_number varchar(20) [not null, note: 'رقم السرير']
+  current_admission_id varchar [ref: > admissions.id, note: 'القبول الحالي']
+}
+
+Table doctor_transfers {
+  Note: 'تحويلات مستحقات الطبيب من فاتورة مريض'
+
+  id varchar [pk, note: 'المعرّف']
+  invoice_id varchar [not null, ref: > ext_patient_invoice_headers.id, note: 'فاتورة المريض']
+  amount decimal(18,2) [not null, note: 'المبلغ']
+  transferred_at timestamp [not null, note: 'وقت التحويل']
+}
+
+Table doctor_settlements {
+  Note: 'تسويات مستحقات الأطباء'
+
+  id varchar [pk, note: 'المعرّف']
+  doctor_name text [not null, note: 'اسم الطبيب']
+  amount decimal(18,2) [not null, note: 'المبلغ']
+  settlement_uuid varchar(100) [not null, unique, note: 'معرّف فريد للتسوية']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table doctor_settlement_allocations {
+  Note: 'توزيع التسوية على التحويلات'
+
+  id varchar [pk, note: 'المعرّف']
+  settlement_id varchar [not null, ref: > doctor_settlements.id, note: 'التسوية']
+  transfer_id varchar [not null, ref: > doctor_transfers.id, note: 'التحويل']
+  amount decimal(18,2) [not null, note: 'المبلغ']
+}
+
+Table drawer_passwords {
+  Note: 'كلمات سر أدراج الخزن'
+
+  id varchar [pk, note: 'المعرّف']
+  gl_account_id varchar [not null, ref: > ext_accounts.id, note: 'حساب GL']
+  password_hash text [not null, note: 'كلمة السر المُشفّرة']
+}
+
+Table treasuries {
+  Note: 'الخزن المالية'
+
+  id varchar [pk, note: 'المعرّف']
+  name text [not null, note: 'اسم الخزنة']
+  gl_account_id varchar [not null, ref: > ext_accounts.id, note: 'حساب GL']
+  is_active boolean [not null, default: true, note: 'نشطة']
+}
+
+Table user_treasuries {
+  Note: 'ربط المستخدم بالخزنة'
+
+  id varchar [pk, note: 'المعرّف']
+  user_id varchar [not null, unique, ref: > ext_users.id, note: 'المستخدم']
+  treasury_id varchar [not null, ref: > treasuries.id, note: 'الخزنة']
+}
+
+Table treasury_transactions {
+  Note: 'حركات الخزن'
+
+  id varchar [pk, note: 'المعرّف']
+  treasury_id varchar [not null, ref: > treasuries.id, note: 'الخزنة']
+  type text [not null, note: 'نوع الحركة']
+  amount decimal(18,2) [not null, note: 'المبلغ']
+  transaction_date date [not null, note: 'تاريخ الحركة']
+  source_type text [note: 'نوع المصدر']
+  source_id varchar [note: 'معرّف المصدر']
+}
+
+Table cash_transfers {
+  Note: 'تحويل النقدية بين الخزن'
+
+  id varchar [pk, note: 'المعرّف']
+  serial_number integer [not null, note: 'الرقم التسلسلي']
+  from_treasury_id varchar [not null, ref: > treasuries.id, note: 'من خزنة']
+  to_treasury_id varchar [not null, ref: > treasuries.id, note: 'إلى خزنة']
+  amount decimal(18,2) [not null, note: 'المبلغ']
+  transferred_at timestamp [not null, note: 'وقت التحويل']
+}
+
+Ref: encounters.visit_id > patient_visits.id
+Ref: rooms.floor_id > floors.id
+Ref: beds.room_id > rooms.id

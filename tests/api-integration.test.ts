@@ -1,21 +1,16 @@
-import { describe, it, expect, beforeAll } from 'vitest';
-
-const BASE_URL = "http://localhost:5000";
-
-async function api(method: string, path: string, body?: any) {
-  const opts: RequestInit = { method, headers: { "Content-Type": "application/json" } };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${BASE_URL}${path}`, opts);
-  return { status: res.status, data: await res.json().catch(() => null) };
-}
+import { describe, it, expect, beforeAll } from "vitest";
+import { liveCall as api } from "./live-session";
 
 function makeLine(itemId: string, qty: string, price: string) {
+  const pp = parseFloat(price) || 0;
+  const sale = pp > 0 ? String(Math.max(pp, 1)) : "1";
   return {
     itemId,
     unitLevel: "minor",
     qtyEntered: qty,
     qtyInMinor: qty,
     purchasePrice: price,
+    salePrice: sale,
     lineTotal: String(parseFloat(qty) * parseFloat(price)),
     bonusQty: "0",
     bonusQtyInMinor: "0",
@@ -245,6 +240,7 @@ describe("Purchase Invoice Immutability", () => {
     const result = await api("PATCH", `/api/purchase-invoices/${invoiceId}`, {
       lines: invoice.data.lines || [],
       notes: "Test update",
+      claimNumber: (invoice.data as any).claimNumber?.trim() || `CLM-LIVE-${Date.now()}`,
     });
     expect(result.status).toBe(200);
   });
@@ -302,13 +298,16 @@ describe("Major Unit Defaulting", () => {
       },
       lines: [{
         itemId: itemWithMajor.id,
-        unitLevel: "",
         qtyEntered: "1",
         qtyInMinor: "1",
         purchasePrice: "10",
+        salePrice: "12",
         lineTotal: "10",
         bonusQty: "0",
         bonusQtyInMinor: "0",
+        ...(itemWithMajor.hasExpiry
+          ? { expiryMonth: 6, expiryYear: 2028 }
+          : {}),
       }],
     });
     expect(result.status).toBe(201);

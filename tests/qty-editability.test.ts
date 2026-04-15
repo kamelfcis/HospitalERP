@@ -1,21 +1,16 @@
-import { describe, it, expect } from 'vitest';
-
-const BASE_URL = "http://localhost:5000";
-
-async function api(method: string, path: string, body?: any) {
-  const opts: RequestInit = { method, headers: { "Content-Type": "application/json" } };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${BASE_URL}${path}`, opts);
-  return { status: res.status, data: await res.json().catch(() => null) };
-}
+import { describe, it, expect } from "vitest";
+import { liveCall as api } from "./live-session";
 
 function makeLine(itemId: string, qty: string, price: string) {
+  const pp = parseFloat(price) || 0;
+  const sale = pp > 0 ? String(Math.max(pp, 1)) : "1";
   return {
     itemId,
     unitLevel: "minor",
     qtyEntered: qty,
     qtyInMinor: qty,
     purchasePrice: price,
+    salePrice: sale,
     lineTotal: String(parseFloat(qty) * parseFloat(price)),
     bonusQty: "0",
     bonusQtyInMinor: "0",

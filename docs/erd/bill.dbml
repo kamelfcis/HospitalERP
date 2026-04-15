@@ -1,0 +1,266 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// PostgreSQL schema name: bill  (Billing: services, prices, invoices)
+// Tables today: public.services, price_*, sales_invoice_*, patient_invoice_*,
+//   customer_receipt*, delivery_receipt*, invoice_template*, pharmacy_credit_customers, ...
+// Source: shared/schema/invoicing.ts
+// ═══════════════════════════════════════════════════════════════════════════
+
+Project bill {
+  database_type: 'PostgreSQL'
+  Note: '''
+    مخطط مقترح: bill — الخدمات والأسعار والفوترة
+    ext_* = جداول وهمية → inv / fin / ref / iam
+  '''
+}
+
+Table ext_departments {
+  Note: 'وهمي → الأقسام'
+  id varchar [pk, note: 'معرّف القسم']
+}
+Table ext_warehouses {
+  Note: 'وهمي → المخازن'
+  id varchar [pk, note: 'معرّف المخزن']
+}
+Table ext_pharmacies {
+  Note: 'وهمي → الصيدليات'
+  id varchar [pk, note: 'معرّف الصيدلية']
+}
+Table ext_items {
+  Note: 'وهمي → الأصناف'
+  id varchar [pk, note: 'معرّف الصنف']
+}
+Table ext_accounts {
+  Note: 'وهمي → الحسابات'
+  id varchar [pk, note: 'معرّف الحساب']
+}
+Table ext_cost_centers {
+  Note: 'وهمي → مراكز التكلفة'
+  id varchar [pk, note: 'المعرّف']
+}
+Table ext_companies {
+  Note: 'وهمي → الشركات'
+  id varchar [pk, note: 'معرّف الشركة']
+}
+Table ext_users {
+  Note: 'وهمي → المستخدمين'
+  id varchar [pk, note: 'معرّف المستخدم']
+}
+
+Table services {
+  Note: 'الخدمات الطبية'
+
+  id varchar [pk, note: 'المعرّف']
+  code varchar(30) [not null, unique, note: 'رمز الخدمة']
+  name_ar text [not null, note: 'الاسم بالعربية']
+  department_id varchar [not null, ref: > ext_departments.id, note: 'القسم']
+  revenue_account_id varchar [not null, ref: > ext_accounts.id, note: 'حساب الإيراد']
+  cost_center_id varchar [not null, ref: > ext_cost_centers.id, note: 'مركز التكلفة']
+  default_warehouse_id varchar [ref: > ext_warehouses.id, note: 'المخزن الافتراضي']
+  base_price decimal(18,2) [not null, note: 'السعر الأساسي']
+  is_active boolean [not null, default: true, note: 'نشطة']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table price_lists {
+  Note: 'قوائم الأسعار'
+
+  id varchar [pk, note: 'المعرّف']
+  code varchar(30) [not null, unique, note: 'رمز القائمة']
+  name text [not null, note: 'اسم القائمة']
+  price_list_type text [not null, note: 'نوع القائمة (خدمات/صيدلية)']
+  is_default boolean [not null, default: false, note: 'افتراضية للنوع']
+  department_id varchar [ref: > ext_departments.id, note: 'القسم']
+  is_active boolean [not null, default: true, note: 'نشطة']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table price_list_items {
+  Note: 'بنود قائمة الأسعار'
+
+  id varchar [pk, note: 'المعرّف']
+  price_list_id varchar [not null, ref: > price_lists.id, note: 'قائمة الأسعار']
+  service_id varchar [not null, ref: > services.id, note: 'الخدمة']
+  price decimal(18,2) [not null, note: 'السعر']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table price_adjustments_log {
+  Note: 'سجل تعديلات الأسعار الجماعية'
+
+  id varchar [pk, note: 'المعرّف']
+  price_list_id varchar [not null, ref: > price_lists.id, note: 'قائمة الأسعار']
+  action_type text [not null, note: 'نوع الإجراء']
+  affected_count integer [not null, note: 'عدد السجلات المتأثرة']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table service_consumables {
+  Note: 'مستهلكات الخدمة'
+
+  id varchar [pk, note: 'المعرّف']
+  service_id varchar [not null, ref: > services.id, note: 'الخدمة']
+  item_id varchar [not null, ref: > ext_items.id, note: 'الصنف المستهلك']
+  quantity decimal(10,4) [not null, note: 'الكمية']
+}
+
+Table item_consumables {
+  Note: 'مستهلكات الصنف (أصناف فئة خدمة)'
+
+  id varchar [pk, note: 'المعرّف']
+  item_id varchar [not null, ref: > ext_items.id, note: 'الصنف الرئيسي']
+  consumable_item_id varchar [not null, ref: > ext_items.id, note: 'الصنف المستهلك']
+  quantity decimal(10,4) [not null, note: 'الكمية']
+}
+
+Table pharmacy_credit_customers {
+  Note: 'عملاء الآجل بالصيدلية'
+
+  id varchar [pk, note: 'المعرّف']
+  name text [not null, note: 'اسم العميل']
+  pharmacy_id varchar [ref: > ext_pharmacies.id, note: 'الصيدلية']
+  gl_account_id varchar [ref: > ext_accounts.id, note: 'حساب الذمة']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table sales_invoice_headers {
+  Note: 'رؤوس فواتير المبيعات (صيدلية)'
+
+  id varchar [pk, note: 'المعرّف']
+  invoice_number integer [not null, unique, note: 'رقم الفاتورة']
+  invoice_date date [not null, note: 'تاريخ الفاتورة']
+  warehouse_id varchar [not null, ref: > ext_warehouses.id, note: 'المخزن']
+  pharmacy_id varchar [ref: > ext_pharmacies.id, note: 'الصيدلية']
+  customer_type varchar [not null, note: 'نوع العميل']
+  customer_id varchar [ref: > pharmacy_credit_customers.id, note: 'عميل الآجل']
+  company_id varchar [ref: > ext_companies.id, note: 'شركة التعاقد']
+  patient_id varchar [note: 'المريض → hosp.patients']
+  status varchar [not null, note: 'حالة الفاتورة']
+  net_total decimal(18,2) [not null, note: 'الصافي']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table sales_invoice_lines {
+  Note: 'سطور فاتورة المبيعات'
+
+  id varchar [pk, note: 'المعرّف']
+  invoice_id varchar [not null, ref: > sales_invoice_headers.id, note: 'رأس الفاتورة']
+  line_no integer [not null, note: 'رقم السطر']
+  item_id varchar [ref: > ext_items.id, note: 'الصنف']
+  service_id varchar [ref: > services.id, note: 'الخدمة']
+  qty decimal(18,4) [not null, note: 'الكمية']
+  line_total decimal(18,2) [not null, note: 'إجمالي السطر']
+  company_id varchar [ref: > ext_companies.id, note: 'الشركة']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table customer_receipts {
+  Note: 'إيصالات تحصيل عملاء الآجل'
+
+  id varchar [pk, note: 'المعرّف']
+  customer_id varchar [not null, ref: > pharmacy_credit_customers.id, note: 'العميل']
+  receipt_date date [not null, note: 'تاريخ الإيصال']
+  total_amount decimal(18,2) [not null, note: 'إجمالي المبلغ']
+  gl_account_id varchar [ref: > ext_accounts.id, note: 'حساب التحصيل']
+  journal_entry_id varchar [note: 'قيد اليومية → fin']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table customer_receipt_lines {
+  Note: 'سطور تحصيل الآجل'
+
+  id varchar [pk, note: 'المعرّف']
+  receipt_id varchar [not null, ref: > customer_receipts.id, note: 'الإيصال']
+  invoice_id varchar [not null, ref: > sales_invoice_headers.id, note: 'فاتورة المبيعات']
+  amount_paid decimal(18,2) [not null, note: 'المبلغ المدفوع']
+}
+
+Table delivery_receipts {
+  Note: 'إيصالات تحصيل التوصيل المنزلي'
+
+  id varchar [pk, note: 'المعرّف']
+  receipt_date date [not null, note: 'تاريخ الإيصال']
+  total_amount decimal(18,2) [not null, note: 'الإجمالي']
+  gl_account_id varchar [ref: > ext_accounts.id, note: 'حساب GL']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table delivery_receipt_lines {
+  Note: 'سطور تحصيل التوصيل'
+
+  id varchar [pk, note: 'المعرّف']
+  receipt_id varchar [not null, ref: > delivery_receipts.id, note: 'الإيصال']
+  invoice_id varchar [not null, ref: > sales_invoice_headers.id, note: 'فاتورة المبيعات']
+  amount_paid decimal(18,2) [not null, note: 'المبلغ المدفوع']
+}
+
+Table patient_invoice_headers {
+  Note: 'رؤوس فواتير المرضى'
+
+  id varchar [pk, note: 'المعرّف']
+  invoice_number varchar(30) [not null, unique, note: 'رقم الفاتورة']
+  invoice_date date [not null, note: 'تاريخ الفاتورة']
+  patient_name text [not null, note: 'اسم المريض']
+  department_id varchar [ref: > ext_departments.id, note: 'القسم']
+  warehouse_id varchar [ref: > ext_warehouses.id, note: 'المخزن']
+  patient_id varchar [note: 'المريض → hosp.patients']
+  visit_id varchar [note: 'الزيارة → hosp.patient_visits']
+  company_id varchar [ref: > ext_companies.id, note: 'شركة التأمين']
+  status varchar [not null, note: 'حالة الفاتورة']
+  net_amount decimal(18,2) [not null, note: 'صافي المبلغ']
+  final_closed_by varchar [ref: > ext_users.id, note: 'أغلقها نهائياً']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table patient_invoice_lines {
+  Note: 'سطور فاتورة المريض'
+
+  id varchar [pk, note: 'المعرّف']
+  header_id varchar [not null, ref: > patient_invoice_headers.id, note: 'رأس الفاتورة']
+  line_type varchar [not null, note: 'نوع السطر']
+  service_id varchar [ref: > services.id, note: 'الخدمة']
+  item_id varchar [ref: > ext_items.id, note: 'الصنف']
+  description text [not null, note: 'الوصف']
+  total_price decimal(18,2) [not null, note: 'إجمالي السعر']
+  company_id varchar [ref: > ext_companies.id, note: 'الشركة']
+  encounter_id varchar [note: 'المقابلة → hosp.encounters']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table patient_invoice_payments {
+  Note: 'مدفوعات فاتورة المريض'
+
+  id varchar [pk, note: 'المعرّف']
+  header_id varchar [not null, ref: > patient_invoice_headers.id, note: 'رأس الفاتورة']
+  payment_date date [not null, note: 'تاريخ الدفع']
+  amount decimal(18,2) [not null, note: 'المبلغ']
+  payment_method varchar [not null, note: 'طريقة الدفع']
+  treasury_id varchar [note: 'الخزنة → hosp.treasuries']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table invoice_templates {
+  Note: 'نماذج فاتورة المريض'
+
+  id varchar [pk, note: 'المعرّف']
+  name varchar(200) [not null, note: 'اسم النموذج']
+  is_active boolean [not null, default: true, note: 'نشط']
+  created_by varchar [ref: > ext_users.id, note: 'أنشأه']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table invoice_template_lines {
+  Note: 'سطور نماذج الفاتورة'
+
+  id varchar [pk, note: 'المعرّف']
+  template_id varchar [not null, ref: > invoice_templates.id, note: 'النموذج']
+  sort_order integer [not null, note: 'ترتيب العرض']
+  line_type text [not null, note: 'نوع السطر']
+  service_id varchar [ref: > services.id, note: 'الخدمة']
+  item_id varchar [ref: > ext_items.id, note: 'الصنف']
+  description_snapshot text [not null, note: 'وصف محفوظ']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Ref: price_list_items.price_list_id > price_lists.id
+Ref: sales_invoice_lines.invoice_id > sales_invoice_headers.id
+Ref: patient_invoice_lines.header_id > patient_invoice_headers.id

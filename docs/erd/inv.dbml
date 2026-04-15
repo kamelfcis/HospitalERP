@@ -1,0 +1,324 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// PostgreSQL schema name: inv  (Inventory & item master)
+// Tables today: public.item_*, departments, pharmacies, warehouses, lots,
+//   transfers, stock_movement_*, stock_count_*, opening_stock_*, purchase_transactions, sales_transactions
+// Source: shared/schema/inventory.ts
+// ═══════════════════════════════════════════════════════════════════════════
+
+Project inv {
+  database_type: 'PostgreSQL'
+  Note: '''
+    مخطط مقترح: inv — المخزون والأصناف والمخازن والدفعات والتحويلات
+    Proposed schema: inv — inventory master, lots, transfers, counts.
+    ext_* = جداول وهمية → iam / fin
+  '''
+}
+
+Table ext_users {
+  Note: 'وهمي → public.users'
+  id varchar [pk, note: 'معرّف المستخدم']
+}
+Table ext_accounts {
+  Note: 'وهمي → public.accounts'
+  id varchar [pk, note: 'معرّف الحساب']
+}
+Table ext_cost_centers {
+  Note: 'وهمي → public.cost_centers'
+  id varchar [pk, note: 'معرّف مركز التكلفة']
+}
+Table ext_journal_entries {
+  Note: 'وهمي → public.journal_entries'
+  id varchar [pk, note: 'معرّف القيد']
+}
+
+Table item_form_types {
+  Note: 'أشكال الأصناف الدوائية'
+
+  id varchar [pk, note: 'المعرّف']
+  name_ar text [not null, note: 'الاسم بالعربية']
+  sort_order integer [not null, default: 0, note: 'ترتيب العرض']
+  is_active boolean [not null, default: true, note: 'نشط']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table item_uoms {
+  Note: 'وحدات القياس'
+
+  id varchar [pk, note: 'المعرّف']
+  code varchar(20) [not null, unique, note: 'رمز الوحدة']
+  name_ar text [not null, note: 'الاسم بالعربية']
+  name_en text [note: 'الاسم بالإنجليزية']
+  description text [note: 'الوصف']
+  is_active boolean [not null, default: true, note: 'نشط']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table items {
+  Note: 'بطاقة الصنف الرئيسية'
+
+  id varchar [pk, note: 'المعرّف']
+  item_code varchar(50) [not null, unique, note: 'كود الصنف']
+  name_ar text [not null, note: 'الاسم بالعربية']
+  category varchar [not null, note: 'فئة الصنف (دواء/مستلزم/خدمة)']
+  form_type_id varchar [ref: > item_form_types.id, note: 'شكل الدواء']
+  purchase_price_last decimal(18,2) [not null, note: 'آخر سعر شراء']
+  sale_price_current decimal(18,2) [not null, note: 'سعر البيع الحالي']
+  is_active boolean [not null, default: true, note: 'نشط']
+  allow_oversell boolean [not null, default: false, note: 'السماح بالصرف بدون رصيد']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+  updated_at timestamp [not null, note: 'آخر تحديث']
+}
+
+Table purchase_transactions {
+  Note: 'حركات الشراء التاريخية'
+
+  id varchar [pk, note: 'المعرّف']
+  item_id varchar [not null, ref: > items.id, note: 'الصنف']
+  tx_date date [not null, note: 'تاريخ الحركة']
+  qty decimal(18,4) [not null, note: 'الكمية']
+  purchase_price decimal(18,2) [not null, note: 'سعر الشراء']
+  total decimal(18,2) [not null, note: 'الإجمالي']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table sales_transactions {
+  Note: 'حركات البيع التاريخية'
+
+  id varchar [pk, note: 'المعرّف']
+  item_id varchar [not null, ref: > items.id, note: 'الصنف']
+  tx_date date [not null, note: 'تاريخ الحركة']
+  qty decimal(18,4) [not null, note: 'الكمية']
+  sale_price decimal(18,2) [not null, note: 'سعر البيع']
+  total decimal(18,2) [not null, note: 'الإجمالي']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table departments {
+  Note: 'الأقسام'
+
+  id varchar [pk, note: 'المعرّف']
+  code varchar(20) [not null, unique, note: 'رمز القسم']
+  name_ar text [not null, note: 'اسم القسم']
+  is_active boolean [not null, default: true, note: 'نشط']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table user_departments {
+  Note: 'ربط المستخدمين بالأقسام'
+
+  id varchar [pk, note: 'المعرّف']
+  user_id varchar [not null, ref: > ext_users.id, note: 'المستخدم']
+  department_id varchar [not null, ref: > departments.id, note: 'القسم']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table user_clinics {
+  Note: 'ربط المستخدمين بالعيادات'
+
+  id varchar [pk, note: 'المعرّف']
+  user_id varchar [not null, ref: > ext_users.id, note: 'المستخدم']
+  clinic_id varchar [not null, note: 'العيادة → clinic.clinic_clinics']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table item_department_prices {
+  Note: 'أسعار الأصناف حسب القسم'
+
+  id varchar [pk, note: 'المعرّف']
+  item_id varchar [not null, ref: > items.id, note: 'الصنف']
+  department_id varchar [not null, ref: > departments.id, note: 'القسم']
+  sale_price decimal(18,2) [not null, note: 'سعر البيع']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+  updated_at timestamp [not null, note: 'آخر تحديث']
+}
+
+Table pharmacies {
+  Note: 'الصيدليات'
+
+  id varchar [pk, note: 'المعرّف']
+  code varchar(20) [not null, unique, note: 'رمز الصيدلية']
+  name_ar text [not null, note: 'الاسم']
+  is_active boolean [not null, default: true, note: 'نشطة']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table warehouses {
+  Note: 'المخازن'
+
+  id varchar [pk, note: 'المعرّف']
+  warehouse_code varchar(20) [not null, unique, note: 'رمز المخزن']
+  name_ar text [not null, note: 'الاسم']
+  department_id varchar [ref: > departments.id, note: 'القسم']
+  pharmacy_id varchar [ref: > pharmacies.id, note: 'الصيدلية']
+  gl_account_id varchar [ref: > ext_accounts.id, note: 'حساب المخزون GL']
+  cost_center_id varchar [ref: > ext_cost_centers.id, note: 'مركز التكلفة']
+  is_active boolean [not null, default: true, note: 'نشط']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table user_warehouses {
+  Note: 'ربط المستخدمين بالمخازن'
+
+  id varchar [pk, note: 'المعرّف']
+  user_id varchar [not null, ref: > ext_users.id, note: 'المستخدم']
+  warehouse_id varchar [not null, ref: > warehouses.id, note: 'المخزن']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table inventory_lots {
+  Note: 'دفعات المخزون (FEFO)'
+
+  id varchar [pk, note: 'المعرّف']
+  item_id varchar [not null, ref: > items.id, note: 'الصنف']
+  warehouse_id varchar [ref: > warehouses.id, note: 'المخزن']
+  received_date date [not null, note: 'تاريخ الاستلام']
+  purchase_price decimal(18,4) [not null, note: 'سعر التكلفة']
+  qty_in_minor decimal(18,4) [not null, default: 0, note: 'الكمية بالوحدة الصغرى']
+  is_active boolean [not null, default: true, note: 'نشط']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+  updated_at timestamp [not null, note: 'آخر تحديث']
+}
+
+Table inventory_lot_movements {
+  Note: 'حركات الدفعات'
+
+  id varchar [pk, note: 'المعرّف']
+  lot_id varchar [not null, ref: > inventory_lots.id, note: 'الدفعة']
+  warehouse_id varchar [ref: > warehouses.id, note: 'المخزن']
+  tx_type varchar [not null, note: 'نوع الحركة']
+  qty_change_in_minor decimal(18,4) [not null, note: 'تغيير الكمية']
+  reference_type text [note: 'نوع المرجع']
+  reference_id varchar [note: 'معرّف المرجع']
+  created_at timestamp [not null, note: 'وقت الحركة']
+}
+
+Table store_transfers {
+  Note: 'التحويلات المخزنية — الرأس'
+
+  id varchar [pk, note: 'المعرّف']
+  transfer_number integer [not null, unique, note: 'رقم التحويل']
+  transfer_date date [not null, note: 'تاريخ التحويل']
+  source_warehouse_id varchar [not null, ref: > warehouses.id, note: 'مخزن المصدر']
+  destination_warehouse_id varchar [not null, ref: > warehouses.id, note: 'مخزن الوجهة']
+  status varchar [not null, note: 'الحالة']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table transfer_lines {
+  Note: 'سطور التحويل المخزني'
+
+  id varchar [pk, note: 'المعرّف']
+  transfer_id varchar [not null, ref: > store_transfers.id, note: 'التحويل']
+  item_id varchar [not null, ref: > items.id, note: 'الصنف']
+  qty_in_minor decimal(18,4) [not null, note: 'الكمية بالصغرى']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table transfer_line_allocations {
+  Note: 'توزيع سطر التحويل على الدفعات'
+
+  id varchar [pk, note: 'المعرّف']
+  line_id varchar [not null, ref: > transfer_lines.id, note: 'سطر التحويل']
+  source_lot_id varchar [not null, ref: > inventory_lots.id, note: 'دفعة المصدر']
+  qty_out_in_minor decimal(18,4) [not null, note: 'الكمية الصادرة']
+  destination_lot_id varchar [ref: > inventory_lots.id, note: 'دفعة الوجهة']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table item_barcodes {
+  Note: 'باركودات الأصناف'
+
+  id varchar [pk, note: 'المعرّف']
+  item_id varchar [not null, ref: > items.id, note: 'الصنف']
+  barcode_value varchar(50) [not null, unique, note: 'قيمة الباركود']
+  is_active boolean [not null, default: true, note: 'نشط']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table stock_movement_headers {
+  Note: 'رؤوس حركات المخزون (ترحيل)'
+
+  id varchar [pk, note: 'المعرّف']
+  operation_type varchar(50) [not null, note: 'نوع العملية']
+  reference_type varchar(50) [not null, note: 'نوع المرجع']
+  reference_id varchar [not null, note: 'معرّف المرجع']
+  warehouse_id varchar [ref: > warehouses.id, note: 'المخزن']
+  total_cost decimal(18,2) [not null, note: 'إجمالي التكلفة']
+  status varchar(20) [not null, note: 'الحالة']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table stock_movement_allocations {
+  Note: 'توزيع حركة المخزون على الدفعات'
+
+  id varchar [pk, note: 'المعرّف']
+  movement_header_id varchar [not null, ref: > stock_movement_headers.id, note: 'رأس الحركة']
+  lot_id varchar [not null, ref: > inventory_lots.id, note: 'الدفعة']
+  qty_allocated_minor decimal(18,4) [not null, note: 'الكمية الموزعة']
+  cost_allocated decimal(18,2) [not null, note: 'التكلفة الموزعة']
+  source_id varchar [not null, unique, note: 'معرّف فريد للمصدر']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table stock_count_sessions {
+  Note: 'جلسات جرد المخزون'
+
+  id varchar [pk, note: 'المعرّف']
+  session_number integer [not null, unique, note: 'رقم الجلسة']
+  warehouse_id varchar [not null, ref: > warehouses.id, note: 'المخزن']
+  count_date date [not null, note: 'تاريخ الجرد']
+  status text [not null, note: 'الحالة']
+  created_by varchar [ref: > ext_users.id, note: 'أنشأها']
+  posted_by varchar [ref: > ext_users.id, note: 'رحّلها']
+  posted_at timestamp [note: 'وقت الترحيل']
+  journal_entry_id varchar [ref: > ext_journal_entries.id, note: 'قيد اليومية']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table stock_count_lines {
+  Note: 'سطور الجرد'
+
+  id varchar [pk, note: 'المعرّف']
+  session_id varchar [not null, ref: > stock_count_sessions.id, note: 'الجلسة']
+  item_id varchar [not null, ref: > items.id, note: 'الصنف']
+  lot_id varchar [ref: > inventory_lots.id, note: 'الدفعة']
+  system_qty_minor decimal(18,4) [not null, note: 'كمية النظام']
+  counted_qty_minor decimal(18,4) [not null, note: 'الكمية المعدودة']
+  difference_minor decimal(18,4) [not null, note: 'الفرق']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table opening_stock_headers {
+  Note: 'رؤوس الرصيد الافتتاحي للمخزن'
+
+  id varchar [pk, note: 'المعرّف']
+  warehouse_id varchar [not null, ref: > warehouses.id, note: 'المخزن']
+  post_date date [not null, note: 'تاريخ الترحيل']
+  status text [not null, note: 'الحالة']
+  created_by varchar [ref: > ext_users.id, note: 'أنشأه']
+  posted_by varchar [ref: > ext_users.id, note: 'رحّله']
+  journal_entry_id varchar [ref: > ext_journal_entries.id, note: 'قيد اليومية']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table opening_stock_lines {
+  Note: 'سطور الرصيد الافتتاحي'
+
+  id varchar [pk, note: 'المعرّف']
+  header_id varchar [not null, ref: > opening_stock_headers.id, note: 'الرأس']
+  item_id varchar [not null, ref: > items.id, note: 'الصنف']
+  qty_in_minor decimal(18,4) [not null, note: 'الكمية بالصغرى']
+  purchase_price decimal(18,4) [not null, note: 'سعر التكلفة']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Ref: items.form_type_id > item_form_types.id
+Ref: purchase_transactions.item_id > items.id
+Ref: sales_transactions.item_id > items.id
+Ref: inventory_lots.item_id > items.id
+Ref: inventory_lot_movements.lot_id > inventory_lots.id
+Ref: transfer_lines.transfer_id > store_transfers.id
+Ref: transfer_line_allocations.line_id > transfer_lines.id
+Ref: stock_movement_allocations.movement_header_id > stock_movement_headers.id
+Ref: stock_count_lines.session_id > stock_count_sessions.id
+Ref: opening_stock_lines.header_id > opening_stock_headers.id

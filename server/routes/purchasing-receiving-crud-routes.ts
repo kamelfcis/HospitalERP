@@ -117,9 +117,9 @@ export function registerReceivingCrudRoutes(app: Express) {
       if (!header || !lines) return res.status(400).json({ message: "بيانات ناقصة" });
       if (!header.supplierId) return res.status(400).json({ message: "المورد مطلوب" });
       if (!header.receiveDate) return res.status(400).json({ message: "تاريخ الاستلام مطلوب" });
-      if (!header.supplierInvoiceNo?.trim()) return res.status(400).json({ message: "رقم فاتورة المورد مطلوب" });
       if (!header.warehouseId) return res.status(400).json({ message: "المخزن مطلوب" });
       if (!Array.isArray(lines) || lines.length === 0) return res.status(400).json({ message: "يجب إضافة صنف واحد على الأقل" });
+      if (!header.supplierInvoiceNo?.trim()) return res.status(400).json({ message: "رقم فاتورة المورد مطلوب" });
 
       const whGuardMsg = await assertUserWarehouseAllowed(req.session.userId!, header.warehouseId, storage);
       if (whGuardMsg) return res.status(403).json({ message: whGuardMsg });

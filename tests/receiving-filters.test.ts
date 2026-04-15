@@ -1,13 +1,5 @@
-import { describe, it, expect, beforeAll } from "vitest";
-
-const BASE = "http://localhost:5000";
-
-async function api(method: string, path: string, body?: any) {
-  const opts: any = { method, headers: { "Content-Type": "application/json" } };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${BASE}${path}`, opts);
-  return { status: res.status, data: await res.json() };
-}
+import { describe, it, expect } from "vitest";
+import { liveCall as api } from "./live-session";
 
 describe("Receiving Register Filters", () => {
   const today = new Date().toISOString().split("T")[0];

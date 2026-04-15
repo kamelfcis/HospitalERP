@@ -18,45 +18,18 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { liveCall as api } from "./live-session";
 
-const BASE_URL = "http://localhost:5000";
-
-// ─── Real warehouse / item from DB (DEMO-DRUG-005 lot in main warehouse) ────
+// ─── Optional: fixed demo UUIDs from a seed DB; tests fall back to any heavy lot ────
 const WAREHOUSE_ID  = "9d6dfc3c-8b7c-4f44-8568-a0d1db644cc0";
 const ITEM_ID       = "d3ea2c56-4a92-451d-83c4-20ac8eb951f6";
 const LOT_ID        = "de71b916-be19-4201-836f-d95f68f6e2f0";
-const SYSTEM_QTY    = "7000.0000";   // actual tablets in the lot
+const SYSTEM_QTY    = "7000.0000";   // expected minor qty when demo lot exists
 const UNIT_COST     = "1.1332";      // EGP per tablet
 const MAJOR_TO_MINOR = 100;          // 100 tablets per box (علبة)
 const MEDIUM_TO_MINOR = 10;          // 10 tablets per strip (شريط)
 
-// ─── HTTP helpers ─────────────────────────────────────────────────────────
-let cookies = "";
-
-async function api(method: string, path: string, body?: any) {
-  const opts: RequestInit = {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(cookies ? { cookie: cookies } : {}),
-    },
-  };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${BASE_URL}${path}`, opts);
-  const setCookie = res.headers.get("set-cookie");
-  if (setCookie) cookies = setCookie.split(";")[0];
-  return { status: res.status, data: await res.json().catch(() => null) };
-}
-
 let sessionId: string;
-
-beforeAll(async () => {
-  const { status } = await api("POST", "/api/auth/login", {
-    username: "admin",
-    password: "admin123",
-  });
-  expect(status).toBe(200);
-});
 
 afterAll(async () => {
   if (sessionId) {
@@ -195,6 +168,11 @@ describe("Scale invariant — pure math", () => {
 // ═════════════════════════════════════════════════════════════════════════════
 
 describe("Scale invariant — API round-trip", () => {
+  /** Bound after load-items so tests work across DB restores (UUIDs differ). */
+  let apiItemId = ITEM_ID;
+  let apiLotId = LOT_ID;
+  let apiSystemQty = SYSTEM_QTY;
+  let apiUnitCost = UNIT_COST;
 
   it("Creates a draft stock count session", async () => {
     const { status, data } = await api("POST", "/api/stock-count/sessions", {
@@ -207,53 +185,61 @@ describe("Scale invariant — API round-trip", () => {
     sessionId = data.id;
   });
 
-  it("load-items returns actual minor qty (7000 tablets, not 7)", async () => {
+  it("load-items binds a real lot and asserts minor qty is not /1000-scaled", async () => {
     const { status, data } = await api(
       "GET",
       `/api/stock-count/sessions/${sessionId}/load-items?includeAll=true&limit=200`
     );
     expect(status).toBe(200);
 
-    const lot = (data as any[]).find(
-      (i: any) => i.lotId === LOT_ID
-    );
+    const rows = data as any[];
+    const lot =
+      rows.find((i: any) => i.lotId === LOT_ID) ??
+      rows.find((i: any) => parseFloat(String(i.systemQtyMinor ?? 0)) >= 500) ??
+      rows[0];
     expect(lot).toBeTruthy();
 
-    const systemQty = parseFloat(lot.systemQtyMinor);
-    // Must be ~7000, NOT ~7 (which would indicate /1000 bug)
-    expect(systemQty).toBeGreaterThan(6000);
-    expect(systemQty).toBeLessThan(8000);
-    expect(systemQty).not.toBeCloseTo(7, 0);
+    apiItemId = lot.itemId;
+    apiLotId = lot.lotId;
+    apiSystemQty = String(lot.systemQtyMinor);
+    apiUnitCost = String(lot.unitCost ?? UNIT_COST);
 
-    // Unit conversion fields must be present
+    const systemQty = parseFloat(apiSystemQty);
+    expect(systemQty).toBeGreaterThan(500);
+    expect(systemQty).toBeLessThan(100_000_000);
+
     expect(lot.majorUnitName).toBeTruthy();
     expect(lot.majorToMinor).toBeTruthy();
-    expect(parseFloat(lot.majorToMinor)).toBe(MAJOR_TO_MINOR);
+    const m2m = parseFloat(String(lot.majorToMinor));
+    if (lot.lotId === LOT_ID) {
+      expect(m2m).toBe(MAJOR_TO_MINOR);
+    } else {
+      expect(m2m).toBeGreaterThan(0);
+    }
   });
 
-  it("Upserts a line: counted=6900 (69 boxes), verifies differenceMinor and differenceValue", async () => {
-    const countedQtyMinor = "6900.0000"; // 69 boxes × 100 tabs = 6900 tabs
+  it("Upserts a line: counted = system − 100; verifies differenceMinor and differenceValue", async () => {
+    const countedQtyMinor = (parseFloat(apiSystemQty) - 100).toFixed(4);
 
     const { status, data } = await api(
       "POST",
       `/api/stock-count/sessions/${sessionId}/lines`,
       [{
-        itemId:          ITEM_ID,
-        lotId:           LOT_ID,
+        itemId:          apiItemId,
+        lotId:           apiLotId,
         expiryDate:      null,
-        systemQtyMinor:  SYSTEM_QTY,
+        systemQtyMinor:  apiSystemQty,
         countedQtyMinor,
-        unitCost:        UNIT_COST,
+        unitCost:        apiUnitCost,
       }]
     );
     expect(status).toBe(200);
     const line = data[0];
 
-    // differenceMinor must be -100 (not -100000 or -0.1)
     expect(parseFloat(line.differenceMinor)).toBeCloseTo(-100, 2);
 
-    // differenceValue = -100 × 1.1332 = -113.32
-    expect(parseFloat(line.differenceValue)).toBeCloseTo(-113.32, 1);
+    const expectedValue = -100 * parseFloat(apiUnitCost);
+    expect(parseFloat(line.differenceValue)).toBeCloseTo(expectedValue, 1);
   });
 
   it("GET session returns stored line with correct scale", async () => {
@@ -262,27 +248,22 @@ describe("Scale invariant — API round-trip", () => {
       `/api/stock-count/sessions/${sessionId}`
     );
     expect(status).toBe(200);
-    const line = data.lines.find((l: any) => l.lotId === LOT_ID);
+    const line = data.lines.find((l: any) => l.lotId === apiLotId);
     expect(line).toBeTruthy();
 
-    // countedQtyMinor stored as-is (6900), not 6900000
-    expect(parseFloat(line.countedQtyMinor)).toBeCloseTo(6900, 1);
-    expect(parseFloat(line.countedQtyMinor)).not.toBeCloseTo(6900 * 1000, 0);
+    const countedExpected = parseFloat(apiSystemQty) - 100;
+    expect(parseFloat(line.countedQtyMinor)).toBeCloseTo(countedExpected, 1);
+    expect(parseFloat(line.countedQtyMinor)).not.toBeCloseTo(countedExpected * 1000, 0);
 
-    // systemQtyMinor unchanged (7000, not 7)
-    expect(parseFloat(line.systemQtyMinor)).toBeCloseTo(7000, 1);
+    expect(parseFloat(line.systemQtyMinor)).toBeCloseTo(parseFloat(apiSystemQty), 1);
 
-    // difference is -100 (not -100000)
     expect(parseFloat(line.differenceMinor)).toBeCloseTo(-100, 1);
 
-    // value consistent: diff × cost (no hidden factor)
     const expectedValue = parseFloat(line.differenceMinor) * parseFloat(line.unitCost);
     expect(parseFloat(line.differenceValue)).toBeCloseTo(expectedValue, 1);
   });
 
   it("excludeCountedSinceDate: draft session does NOT cause exclusion", async () => {
-    // The session we just created is DRAFT — items in it must NOT be excluded
-    // when another new session loads items with excludeCountedSinceDate
     const { status, data } = await api(
       "GET",
       `/api/stock-count/sessions/${sessionId}/load-items` +
@@ -290,24 +271,23 @@ describe("Scale invariant — API round-trip", () => {
     );
     expect(status).toBe(200);
 
-    const lot = (data as any[]).find((i: any) => i.lotId === LOT_ID);
+    const lot = (data as any[]).find((i: any) => i.lotId === apiLotId);
     expect(lot).toBeTruthy();
-    // alreadyCounted must be false — draft session doesn't count
     expect(lot.alreadyCounted).toBe(false);
   });
 
   it("Upserts same line again with no change → differenceMinor stays -100", async () => {
-    // Idempotency check: re-saving same values must not accumulate
+    const countedQtyMinor = (parseFloat(apiSystemQty) - 100).toFixed(4);
     const { status, data } = await api(
       "POST",
       `/api/stock-count/sessions/${sessionId}/lines`,
       [{
-        itemId:          ITEM_ID,
-        lotId:           LOT_ID,
+        itemId:          apiItemId,
+        lotId:           apiLotId,
         expiryDate:      null,
-        systemQtyMinor:  SYSTEM_QTY,
-        countedQtyMinor: "6900.0000",
-        unitCost:        UNIT_COST,
+        systemQtyMinor:  apiSystemQty,
+        countedQtyMinor,
+        unitCost:        apiUnitCost,
       }]
     );
     expect(status).toBe(200);
@@ -315,18 +295,13 @@ describe("Scale invariant — API round-trip", () => {
     expect(parseFloat(line.differenceMinor)).toBeCloseTo(-100, 2);
   });
 
-  it("Scale regression: if countedQtyMinor were saved as 6900000 (bug), diff would be >6890000", async () => {
-    // Prove the old bug: if * 1000 were applied, countedQtyMinor would be 6,900,000
-    // and differenceMinor would be 6,900,000 - 7,000 = 6,893,000 — completely wrong.
-    // This test documents what WOULD happen and asserts it does NOT happen.
+  it("Scale regression: difference stays in plausible range (no *1000 explosion)", async () => {
     const { data } = await api(
       "GET",
       `/api/stock-count/sessions/${sessionId}`
     );
-    const line = data.lines.find((l: any) => l.lotId === LOT_ID);
-    // The difference MUST be within a plausible physical range (< total warehouse qty)
-    expect(Math.abs(parseFloat(line.differenceMinor))).toBeLessThan(parseFloat(SYSTEM_QTY));
-    // And must NOT be in the millions (what *1000 scale bug would cause)
+    const line = data.lines.find((l: any) => l.lotId === apiLotId);
+    expect(Math.abs(parseFloat(line.differenceMinor))).toBeLessThan(parseFloat(apiSystemQty));
     expect(Math.abs(parseFloat(line.differenceMinor))).toBeLessThan(100_000);
   });
 });

@@ -1,0 +1,134 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// PostgreSQL schema name: contract  (Insurance contracts, coverage, claims)
+// Tables today: public.contracts, contract_members, contract_coverage_rules,
+//   contract_claim_batches, contract_claim_lines, contract_approvals,
+//   contract_claim_settlements, contract_claim_settlement_lines
+// Source: shared/schema/contracts.ts
+// ═══════════════════════════════════════════════════════════════════════════
+
+Project contract {
+  database_type: 'PostgreSQL'
+  Note: '''
+    مخطط مقترح: contract — العقود والتغطية والمطالبات
+    بعض روابط سطور الفاتورة منطقية فقط (varchar). الوهمي: شركات، قوائم أسعار، مرضى.
+  '''
+}
+
+Table ext_companies {
+  Note: 'وهمي → الشركات (ref.companies)'
+  id varchar [pk, note: 'معرّف الشركة']
+}
+Table ext_price_lists {
+  Note: 'وهمي → قوائم الأسعار (bill.price_lists)'
+  id varchar [pk, note: 'معرّف القائمة']
+}
+Table ext_patients {
+  Note: 'وهمي → المرضى (hosp.patients)'
+  id varchar [pk, note: 'معرّف المريض']
+}
+
+Table contracts {
+  Note: 'عقود التأمين / التعاقد'
+
+  id varchar [pk, note: 'المعرّف']
+  company_id varchar [not null, ref: > ext_companies.id, note: 'الشركة']
+  contract_number text [not null, unique, note: 'رقم العقد']
+  contract_name text [not null, note: 'اسم العقد']
+  base_price_list_id varchar [ref: > ext_price_lists.id, note: 'قائمة الأسعار الأساسية']
+  start_date date [not null, note: 'تاريخ البداية']
+  end_date date [not null, note: 'تاريخ النهاية']
+  is_active boolean [not null, default: true, note: 'نشط']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table contract_members {
+  Note: 'منتسبو العقد (أفراد/بطاقات)'
+
+  id varchar [pk, note: 'المعرّف']
+  contract_id varchar [not null, ref: > contracts.id, note: 'العقد']
+  patient_id varchar [ref: > ext_patients.id, note: 'المريض المرتبط']
+  member_card_number text [not null, note: 'رقم بطاقة العضوية']
+  member_name_ar text [not null, note: 'اسم العضو بالعربية']
+  start_date date [not null, note: 'بداية التغطية']
+  end_date date [not null, note: 'نهاية التغطية']
+  is_active boolean [not null, default: true, note: 'نشط']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table contract_coverage_rules {
+  Note: 'قواعد التغطية والأسعار'
+
+  id varchar [pk, note: 'المعرّف']
+  contract_id varchar [not null, ref: > contracts.id, note: 'العقد']
+  rule_name text [not null, note: 'اسم القاعدة']
+  rule_type varchar [not null, note: 'نوع القاعدة (تضمين/استثناء/خصم/...)']
+  priority integer [not null, default: 10, note: 'الأولوية']
+  is_active boolean [not null, default: true, note: 'نشطة']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table contract_claim_batches {
+  Note: 'دفعات مطالبات التأمين'
+
+  id varchar [pk, note: 'المعرّف']
+  company_id varchar [not null, ref: > ext_companies.id, note: 'الشركة']
+  contract_id varchar [not null, ref: > contracts.id, note: 'العقد']
+  batch_number text [not null, unique, note: 'رقم الدفعة']
+  batch_date date [not null, note: 'تاريخ الدفعة']
+  status varchar [not null, note: 'حالة الدفعة']
+  total_claimed decimal(18,2) [not null, note: 'إجمالي المطالبة']
+  journal_entry_id varchar [note: 'قيد اليومية → fin']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table contract_claim_lines {
+  Note: 'سطور المطالبات'
+
+  id varchar [pk, note: 'المعرّف']
+  batch_id varchar [not null, ref: > contract_claim_batches.id, note: 'الدفعة']
+  contract_member_id varchar [ref: > contract_members.id, note: 'العضو']
+  patient_invoice_line_id varchar [note: 'سطر فاتورة مريض → bill']
+  sales_invoice_line_id varchar [note: 'سطر فاتورة مبيعات → bill']
+  invoice_header_id varchar [not null, note: 'رأس الفاتورة']
+  service_date date [not null, note: 'تاريخ الخدمة']
+  status varchar [not null, note: 'حالة السطر']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table contract_approvals {
+  Note: 'طلبات موافقة التعاقد'
+
+  id varchar [pk, note: 'المعرّف']
+  contract_id varchar [not null, ref: > contracts.id, note: 'العقد']
+  contract_member_id varchar [ref: > contract_members.id, note: 'العضو']
+  patient_invoice_line_id varchar [note: 'سطر فاتورة مريض']
+  approval_status varchar [not null, note: 'حالة الموافقة']
+  requested_amount decimal(18,2) [not null, note: 'المبلغ المطلوب']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table contract_claim_settlements {
+  Note: 'تسويات مطالبات الشركة'
+
+  id varchar [pk, note: 'المعرّف']
+  batch_id varchar [not null, ref: > contract_claim_batches.id, note: 'دفعة المطالبة']
+  settlement_date date [not null, note: 'تاريخ التسوية']
+  settled_amount decimal(18,2) [not null, note: 'المبلغ المحصّل']
+  journal_entry_id varchar [note: 'قيد اليومية → fin']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table contract_claim_settlement_lines {
+  Note: 'سطور تسوية المطالبة'
+
+  id varchar [pk, note: 'المعرّف']
+  settlement_id varchar [not null, ref: > contract_claim_settlements.id, note: 'التسوية']
+  claim_line_id varchar [not null, ref: > contract_claim_lines.id, note: 'سطر المطالبة']
+  settled_amount decimal(18,2) [not null, note: 'المبلغ المسوّى']
+  write_off_amount decimal(18,2) [note: 'مبلغ الشطب']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Ref: contract_members.contract_id > contracts.id
+Ref: contract_coverage_rules.contract_id > contracts.id
+Ref: contract_claim_lines.batch_id > contract_claim_batches.id

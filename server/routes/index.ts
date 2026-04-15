@@ -57,7 +57,7 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  registerAuthRoutes(app);
+  await registerAuthRoutes(app);
   registerFinanceRoutes(app);
   registerInventoryRoutes(app);
   registerInvoicingRoutes(app);

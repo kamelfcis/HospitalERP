@@ -87,20 +87,22 @@ export async function validateReceivingLines(
     }
 
     const item = itemsMap.get(line.itemId);
-    if (item) {
-      if (item.hasExpiry) {
-        const month = line.expiryMonth != null ? parseInt(String(line.expiryMonth)) : null;
-        const year = line.expiryYear != null ? parseInt(String(line.expiryYear)) : null;
-        if (month == null || isNaN(month) || month < 1 || month > 12) {
-          errors.push({ lineIndex: i, field: "expiry", messageAr: "تاريخ الصلاحية مطلوب لهذا الصنف" });
-        } else if (year == null || isNaN(year) || year < 2000 || year > 2100) {
-          errors.push({ lineIndex: i, field: "expiry", messageAr: "سنة الصلاحية غير صحيحة" });
-        }
-      } else {
-        if (line.expiryMonth != null || line.expiryYear != null) {
-          line.expiryMonth = null;
-          line.expiryYear = null;
-        }
+    if (!item) {
+      errors.push({ lineIndex: i, field: "itemId", messageAr: "الصنف غير موجود أو غير صالح" });
+      continue;
+    }
+    if (item.hasExpiry) {
+      const month = line.expiryMonth != null ? parseInt(String(line.expiryMonth)) : null;
+      const year = line.expiryYear != null ? parseInt(String(line.expiryYear)) : null;
+      if (month == null || isNaN(month) || month < 1 || month > 12) {
+        errors.push({ lineIndex: i, field: "expiry", messageAr: "تاريخ الصلاحية مطلوب لهذا الصنف" });
+      } else if (year == null || isNaN(year) || year < 2000 || year > 2100) {
+        errors.push({ lineIndex: i, field: "expiry", messageAr: "سنة الصلاحية غير صحيحة" });
+      }
+    } else {
+      if (line.expiryMonth != null || line.expiryYear != null) {
+        line.expiryMonth = null;
+        line.expiryYear = null;
       }
     }
   }

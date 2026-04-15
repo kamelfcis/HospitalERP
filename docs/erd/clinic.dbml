@@ -1,0 +1,185 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// PostgreSQL schema name: clinic  (Outpatient clinics, appointments, intake)
+// Tables today: public.clinic_*, clinic_visit_intake, clinic_doctor_favorites
+// Source: shared/schema/clinic.ts, intake.ts
+// ═══════════════════════════════════════════════════════════════════════════
+
+Project clinic {
+  database_type: 'PostgreSQL'
+  Note: '''
+    مخطط مقترح: clinic — العيادات الخارجية والمواعيد والاستقبال
+    الوهمي: أطباء، مرضى، أصناف، خدمات، شركات، عقود، مستخدمون
+  '''
+}
+
+Table ext_doctors {
+  Note: 'وهمي → الأطباء'
+  id varchar [pk, note: 'معرّف الطبيب']
+}
+Table ext_patients {
+  Note: 'وهمي → المرضى'
+  id varchar [pk, note: 'معرّف المريض']
+}
+Table ext_items {
+  Note: 'وهمي → الأصناف'
+  id varchar [pk, note: 'معرّف الصنف']
+}
+Table ext_services {
+  Note: 'وهمي → الخدمات'
+  id varchar [pk, note: 'معرّف الخدمة']
+}
+Table ext_companies {
+  Note: 'وهمي → الشركات'
+  id varchar [pk, note: 'معرّف الشركة']
+}
+Table ext_contracts {
+  Note: 'وهمي → العقود'
+  id varchar [pk, note: 'معرّف العقد']
+}
+Table ext_contract_members {
+  Note: 'وهمي → أعضاء العقد'
+  id varchar [pk, note: 'معرّف العضو']
+}
+Table ext_users {
+  Note: 'وهمي → المستخدمين'
+  id varchar [pk, note: 'معرّف المستخدم']
+}
+
+Table clinic_clinics {
+  Note: 'تعريف العيادات'
+
+  id varchar [pk, note: 'المعرّف']
+  name_ar text [not null, note: 'اسم العيادة']
+  department_id varchar [note: 'القسم → inv.departments']
+  default_pharmacy_id varchar [note: 'الصيدلية الافتراضية']
+  consultation_service_id varchar [note: 'خدمة الكشف → bill.services']
+  is_active boolean [not null, default: true, note: 'نشطة']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table clinic_doctor_schedules {
+  Note: 'جداول دوام الأطباء'
+
+  id varchar [pk, note: 'المعرّف']
+  clinic_id varchar [not null, ref: > clinic_clinics.id, note: 'العيادة']
+  doctor_id varchar [not null, ref: > ext_doctors.id, note: 'الطبيب']
+  weekday integer [note: 'يوم الأسبوع']
+  start_time text [note: 'وقت البداية']
+  end_time text [note: 'وقت النهاية']
+}
+
+Table clinic_appointments {
+  Note: 'مواعيد المرضى'
+
+  id varchar [pk, note: 'المعرّف']
+  clinic_id varchar [not null, ref: > clinic_clinics.id, note: 'العيادة']
+  doctor_id varchar [not null, ref: > ext_doctors.id, note: 'الطبيب']
+  patient_id varchar [ref: > ext_patients.id, note: 'المريض']
+  patient_name text [not null, note: 'اسم المريض']
+  appointment_date date [not null, note: 'تاريخ الموعد']
+  status varchar [not null, note: 'حالة الموعد']
+  company_id varchar [ref: > ext_companies.id, note: 'شركة التأمين']
+  contract_id varchar [ref: > ext_contracts.id, note: 'العقد']
+  contract_member_id varchar [ref: > ext_contract_members.id, note: 'عضو العقد']
+  visit_id varchar [note: 'الزيارة → hosp.patient_visits']
+  encounter_id varchar [note: 'المقابلة → hosp.encounters']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table clinic_user_clinic_assignments {
+  Note: 'ربط المستخدم بالعيادة'
+
+  id varchar [pk, note: 'المعرّف']
+  user_id varchar [not null, ref: > ext_users.id, note: 'المستخدم']
+  clinic_id varchar [not null, ref: > clinic_clinics.id, note: 'العيادة']
+}
+
+Table clinic_user_doctor_assignments {
+  Note: 'ربط المستخدم بالطبيب'
+
+  id varchar [pk, note: 'المعرّف']
+  user_id varchar [not null, ref: > ext_users.id, note: 'المستخدم']
+  doctor_id varchar [not null, ref: > ext_doctors.id, note: 'الطبيب']
+}
+
+Table clinic_consultations {
+  Note: 'الاستشارات الطبية (محتوى الكشف)'
+
+  id varchar [pk, note: 'المعرّف']
+  appointment_id varchar [not null, unique, ref: > clinic_appointments.id, note: 'الموعد']
+  chief_complaint text [note: 'الشكوى الرئيسية']
+  diagnosis text [note: 'التشخيص']
+  final_amount decimal(10,2) [note: 'المبلغ النهائي']
+  payment_status varchar(20) [note: 'حالة السداد']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table clinic_consultation_drugs {
+  Note: 'أدوية الاستشارة'
+
+  id varchar [pk, note: 'المعرّف']
+  consultation_id varchar [not null, ref: > clinic_consultations.id, note: 'الاستشارة']
+  line_no integer [not null, note: 'رقم السطر']
+  item_id varchar [ref: > ext_items.id, note: 'الصنف']
+  drug_name text [not null, note: 'اسم الدواء']
+}
+
+Table clinic_doctor_favorite_drugs {
+  Note: 'الأدوية المفضلة للطبيب'
+
+  id varchar [pk, note: 'المعرّف']
+  doctor_id varchar [not null, ref: > ext_doctors.id, note: 'الطبيب']
+  clinic_id varchar [ref: > clinic_clinics.id, note: 'العيادة']
+  item_id varchar [ref: > ext_items.id, note: 'الصنف']
+  drug_name text [not null, note: 'اسم الدواء']
+}
+
+Table clinic_service_doctor_prices {
+  Note: 'أسعار خدمات مخصصة حسب الطبيب'
+
+  id varchar [pk, note: 'المعرّف']
+  service_id varchar [not null, note: 'الخدمة → bill.services']
+  doctor_id varchar [not null, ref: > ext_doctors.id, note: 'الطبيب']
+  price decimal(10,2) [not null, note: 'السعر']
+}
+
+Table clinic_orders {
+  Note: 'أوامر الطبيب (فحوصات/أدوية/خدمات)'
+
+  id varchar [pk, note: 'المعرّف']
+  appointment_id varchar [not null, ref: > clinic_appointments.id, note: 'الموعد']
+  doctor_id varchar [not null, ref: > ext_doctors.id, note: 'الطبيب']
+  consultation_id varchar [ref: > clinic_consultations.id, note: 'الاستشارة']
+  order_type varchar [not null, note: 'نوع الأمر']
+  service_id varchar [ref: > ext_services.id, note: 'الخدمة']
+  item_id varchar [ref: > ext_items.id, note: 'الصنف']
+  status varchar [not null, note: 'حالة التنفيذ']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table clinic_visit_intake {
+  Note: 'استقبال العيادة — بيانات ما قبل الاستشارة'
+
+  id varchar [pk, note: 'المعرّف']
+  appointment_id varchar [not null, unique, ref: > clinic_appointments.id, note: 'الموعد']
+  reason_for_visit text [note: 'سبب الزيارة']
+  blood_pressure varchar(20) [note: 'ضغط الدم']
+  is_locked boolean [not null, default: false, note: 'مقفل بعد بدء الكشف']
+  created_by varchar [not null, note: 'أنشأه']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table clinic_doctor_favorites {
+  Note: 'نصوص مفضلة للطبيب (اختصارات كتابة)'
+
+  id varchar [pk, note: 'المعرّف']
+  doctor_id varchar [not null, ref: > ext_doctors.id, note: 'الطبيب']
+  clinic_id varchar [ref: > clinic_clinics.id, note: 'العيادة']
+  type varchar(20) [not null, note: 'نوع النص']
+  title text [not null, note: 'العنوان']
+  content text [not null, note: 'المحتوى']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Ref: clinic_consultations.appointment_id > clinic_appointments.id
+Ref: clinic_orders.appointment_id > clinic_appointments.id

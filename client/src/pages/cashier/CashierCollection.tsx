@@ -11,7 +11,7 @@
 //  InvoiceWorkArea     → compound component لكل تاب
 // ============================================================
 import { useState } from "react";
-import { AlertTriangle, DollarSign, Loader2, Receipt, Undo2, Wallet } from "lucide-react";
+import { AlertTriangle, DollarSign, Keyboard, Loader2, Receipt, Undo2, Wallet } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ import { useCashierShift }    from "./hooks/useCashierShift";
 import { usePendingInvoices } from "./hooks/usePendingInvoices";
 import { useInvoiceTab }      from "./hooks/useInvoiceTab";
 import { useCashierActions }  from "./hooks/useCashierActions";
+import { useCashierKeyboard } from "./hooks/useCashierKeyboard";
 import { useReceiptPrint }    from "@/hooks/use-receipt-print";
 
 import { UnitSelector }                 from "./components/UnitSelector";
@@ -92,9 +93,38 @@ export default function CashierCollection() {
     salesSelected:   salesTab.selected,
     returnsSelected: returnsTab.selected,
     cashierName:     user?.fullName || "",
-    hasActiveShift,  activeTab,
     clearSelection:  clearAllSelections,
     onPrintReceipts: printInvoiceReceipts,
+  });
+
+  useCashierKeyboard({
+    enabled:       hasActiveShift && !shiftLoading,
+    isStale,
+    hasActiveShift,
+    activeTab,
+    setActiveTab,
+    salesTab: {
+      filtered:       salesTab.filtered,
+      selected:       salesTab.selected,
+      toggleAll:      salesTab.toggleAll,
+      clearAll:       salesTab.clearAll,
+      clearSelection: salesTab.clearSelection,
+      selectRelative: salesTab.selectRelative,
+      selectFirst:    salesTab.selectFirst,
+      selectLast:     salesTab.selectLast,
+    },
+    returnsTab: {
+      filtered:       returnsTab.filtered,
+      selected:       returnsTab.selected,
+      toggleAll:      returnsTab.toggleAll,
+      clearAll:       returnsTab.clearAll,
+      clearSelection: returnsTab.clearSelection,
+      selectRelative: returnsTab.selectRelative,
+      selectFirst:    returnsTab.selectFirst,
+      selectLast:     returnsTab.selectLast,
+    },
+    collectMutation,
+    refundMutation,
   });
 
   // ── handlers اختيار الوحدة ────────────────────────────────
@@ -116,6 +146,7 @@ export default function CashierCollection() {
   return (
     <div className="p-3 space-y-3 overflow-x-hidden" dir="rtl" data-testid="page-cashier-collection">
       <h1 className="text-lg font-bold text-right">شاشة تحصيل الكاشير</h1>
+      {hasActiveShift && <CashierShortcutsStrip />}
 
       {/* ── كارت الوردية (فتح / حالة) ── */}
       <Card>
@@ -233,7 +264,7 @@ export default function CashierCollection() {
                       إجمالي التحصيل: {formatNumber(salesTab.aggregated.collectibleTotal)} ج.م
                     </span>
                   )}
-                  <span className="text-[10px] text-muted-foreground">Ctrl+Enter / F9</span>
+                  <span className="text-[10px] text-muted-foreground">Ctrl+Enter · F9</span>
                 </>
               }
             />
@@ -273,7 +304,7 @@ export default function CashierCollection() {
                       الصافي: {formatNumber(returnsTab.aggregated.netTotal)} ج.م
                     </span>
                   )}
-                  <span className="text-[10px] text-muted-foreground">Ctrl+Enter / F9</span>
+                  <span className="text-[10px] text-muted-foreground">Ctrl+Enter · F9</span>
                 </>
               }
             />
@@ -306,6 +337,41 @@ export default function CashierCollection() {
         isPending={closeShiftMutation.isPending}
         shiftTotals={shiftTotals}
       />
+    </div>
+  );
+}
+
+// ── شريط اختصارات سطر واحد (بدون صندوق) ─────────────────────
+const KBD = "rounded border border-border/60 bg-background px-1 py-px font-mono text-[9px] font-medium text-foreground shadow-xs sm:text-[10px]";
+
+function CashierShortcutsStrip() {
+  return (
+    <div
+      role="note"
+      aria-label="اختصارات لوحة المفاتيح"
+      className="flex max-w-full flex-row-reverse items-center gap-x-1.5 overflow-x-auto whitespace-nowrap border-b border-border/40 pb-2 text-[10px] text-muted-foreground [scrollbar-width:thin] sm:gap-x-2 sm:text-[11px]"
+    >
+      <span className="inline-flex shrink-0 items-center gap-1 font-semibold text-foreground">
+        <Keyboard className="size-3.5 text-primary sm:size-4" aria-hidden />
+        اختصارات
+      </span>
+      <span className="text-border/70" aria-hidden>
+        |
+      </span>
+      <span className="min-w-0">
+        <kbd className={KBD}>Alt+1</kbd> مبيعات<span className="mx-1 text-border/50">·</span>
+        <kbd className={KBD}>Alt+2</kbd> مرتجعات<span className="mx-1 text-border/50">·</span>
+        <kbd className={KBD}>/</kbd> بحث<span className="mx-1 text-border/50">·</span>
+        <kbd className={KBD}>Esc</kbd> مسح<span className="mx-1 text-border/50">·</span>
+        <kbd className={KBD}>↑</kbd>
+        <kbd className={KBD}>↓</kbd> صف<span className="mx-1 text-border/50">·</span>
+        <kbd className={KBD}>Home</kbd>
+        <kbd className={KBD}>End</kbd> أول/آخر<span className="mx-1 text-border/50">·</span>
+        <kbd className={`${KBD} px-0.5 text-[8px] sm:text-[9px]`}>Shift+Alt+A</kbd> الكل
+        <span className="mx-1 text-border/50">·</span>
+        <kbd className={KBD}>Ctrl+Enter</kbd> أو <kbd className={KBD}>F9</kbd> تنفيذ<span className="mx-1 text-border/50">·</span>
+        <kbd className={KBD}>F4</kbd> إغلاق وردية
+      </span>
     </div>
   );
 }

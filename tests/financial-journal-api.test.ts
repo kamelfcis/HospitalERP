@@ -22,9 +22,9 @@
  */
 
 import { describe, it, expect, beforeAll } from "vitest";
-import { makeAuthApi, loginWithRetry } from "./api-auth-helper";
+import { makeAuthApi, loginWithRetry, BASE_URL } from "./api-auth-helper";
 
-const admin = makeAuthApi("admin", "admin123");
+const admin = makeAuthApi();
 let sharedLoginDone = false;
 
 async function ensureLoggedIn() {
@@ -59,7 +59,7 @@ describe("Financial Journal Entry API", () => {
   // ── صلاحية الوصول ──────────────────────────────────────────
 
   it("بدون مصادقة: يحصل على 401", async () => {
-    const res = await fetch("http://localhost:5000/api/journal-entries");
+    const res = await fetch(`${BASE_URL}/api/journal-entries`);
     expect(res.status).toBe(401);
   });
 

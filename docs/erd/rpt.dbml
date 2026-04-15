@@ -1,0 +1,141 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// PostgreSQL schema name: rpt  (Reporting & analytics snapshots)
+// Tables today: public.rpt_* , public.rpt_refresh_log
+// Source: database_export.sql (not exported from Drizzle barrel)
+// ═══════════════════════════════════════════════════════════════════════════
+
+Project rpt {
+  database_type: 'PostgreSQL'
+  Note: '''
+    مخطط مقترح: rpt — جداول التقارير واللقطات (Snapshot)
+    تُحدَّث بوظائف/مهام مجدولة؛ سجل التحديث في rpt_refresh_log
+  '''
+}
+
+Table rpt_refresh_log {
+  Note: 'سجل تشغيل تحديث التقارير'
+
+  id bigint [pk, note: 'المعرّف']
+  report_table_name varchar(100) [not null, note: 'اسم جدول التقرير']
+  refresh_function varchar(100) [not null, note: 'اسم الدالة']
+  refresh_params jsonb [note: 'معاملات التحديث']
+  refresh_start_at timestamp [not null, note: 'بداية التحديث']
+  refresh_end_at timestamp [note: 'نهاية التحديث']
+  duration_ms integer [note: 'المدة بالمللي ثانية']
+  status varchar(20) [not null, note: 'الحالة']
+  rows_affected integer [note: 'عدد الصفوف']
+}
+
+Table rpt_account_balances_by_period {
+  Note: 'أرصدة الحسابات حسب الفترة'
+
+  id varchar [pk, note: 'المعرّف']
+  period_id varchar [not null, note: 'الفترة المالية']
+  period_year smallint [not null, note: 'السنة']
+  period_month smallint [not null, note: 'الشهر']
+  account_id varchar [not null, note: 'الحساب → fin.accounts']
+  opening_balance numeric(18,2) [not null, note: 'الرصيد الافتتاحي']
+  period_debit numeric(18,2) [not null, note: 'مدين الفترة']
+  period_credit numeric(18,2) [not null, note: 'دائن الفترة']
+  closing_balance numeric(18,2) [not null, note: 'الرصيد الختامي']
+  refreshed_at timestamp [not null, note: 'وقت التحديث']
+}
+
+Table rpt_daily_revenue {
+  Note: 'الإيرادات اليومية المجمّعة'
+
+  id varchar [pk, note: 'المعرّف']
+  revenue_date date [not null, note: 'تاريخ الإيراد']
+  period_year smallint [not null, note: 'السنة']
+  period_month smallint [not null, note: 'الشهر']
+  source_type varchar(30) [not null, note: 'نوع المصدر']
+  department_id varchar [note: 'القسم']
+  pharmacy_id varchar [note: 'الصيدلية']
+  total_net numeric(15,2) [not null, note: 'صافي الإيراد']
+  refreshed_at timestamp [not null, note: 'وقت التحديث']
+}
+
+Table rpt_department_activity {
+  Note: 'نشاط الأقسام'
+
+  id varchar [pk, note: 'المعرّف']
+  activity_date date [not null, note: 'تاريخ النشاط']
+  department_id varchar [not null, note: 'القسم']
+  department_name text [not null, note: 'اسم القسم']
+  census_eod integer [not null, note: 'الإشغال نهاية اليوم']
+  gross_revenue numeric(15,2) [not null, note: 'الإيراد الإجمالي']
+  refreshed_at timestamp [not null, note: 'وقت التحديث']
+}
+
+Table rpt_inventory_snapshot {
+  Note: 'لقطة مخزون لتاريخ معيّن'
+
+  id varchar [pk, note: 'المعرّف']
+  snapshot_date date [not null, note: 'تاريخ اللقطة']
+  item_id varchar [not null, note: 'الصنف']
+  warehouse_id varchar [not null, note: 'المخزن']
+  qty_in_minor numeric(18,3) [not null, note: 'الكمية بالصغرى']
+  refreshed_at timestamp [not null, note: 'وقت التحديث']
+}
+
+Table rpt_item_movements_summary {
+  Note: 'ملخص حركات الصنف'
+
+  id varchar [pk, note: 'المعرّف']
+  movement_date date [not null, note: 'تاريخ الحركة']
+  item_id varchar [not null, note: 'الصنف']
+  warehouse_id varchar [not null, note: 'المخزن']
+  net_qty_change numeric(15,3) [not null, note: 'صافي تغيير الكمية']
+  refreshed_at timestamp [not null, note: 'وقت التحديث']
+}
+
+Table rpt_patient_revenue {
+  Note: 'إيرادات المرضى حسب الفترة'
+
+  id varchar [pk, note: 'المعرّف']
+  period_year smallint [not null, note: 'السنة']
+  period_month smallint [not null, note: 'الشهر']
+  patient_id varchar [note: 'المريض']
+  patient_name text [not null, note: 'اسم المريض']
+  net_amount numeric(15,2) [not null, note: 'صافي الفوترة']
+  outstanding_balance numeric(15,2) [not null, note: 'المتبقي']
+  refreshed_at timestamp [not null, note: 'وقت التحديث']
+}
+
+Table rpt_patient_service_usage {
+  Note: 'استخدام الخدمات والأصناف للمرضى'
+
+  id varchar [pk, note: 'المعرّف']
+  source_line_id varchar [not null, note: 'معرّف سطر المصدر']
+  invoice_id varchar [not null, note: 'الفاتورة']
+  service_date date [not null, note: 'تاريخ الخدمة']
+  patient_name text [not null, note: 'اسم المريض']
+  line_type varchar(20) [not null, note: 'نوع السطر']
+  total_price numeric(15,2) [not null, note: 'السعر الإجمالي']
+  refreshed_at timestamp [not null, note: 'وقت التحديث']
+}
+
+Table rpt_patient_visit_classification {
+  Note: 'تصنيف إيرادات الزيارة'
+
+  id varchar [pk, note: 'المعرّف']
+  source_type varchar(50) [not null, note: 'نوع المصدر']
+  source_id varchar [not null, note: 'معرّف المصدر']
+  period_year smallint [not null, note: 'السنة']
+  business_classification varchar(50) [not null, note: 'التصنيف التجاري']
+  total_amount numeric(15,2) [not null, note: 'المبلغ']
+  refreshed_at timestamp [not null, note: 'وقت التحديث']
+}
+
+Table rpt_patient_visit_summary {
+  Note: 'ملخص زيارة المريض'
+
+  id varchar [pk, note: 'المعرّف']
+  source_type varchar(50) [not null, note: 'نوع المصدر']
+  source_id varchar [not null, note: 'معرّف المصدر']
+  visit_date date [not null, note: 'تاريخ الزيارة']
+  patient_name text [not null, note: 'اسم المريض']
+  net_amount numeric(15,2) [not null, note: 'صافي المبلغ']
+  outstanding_balance numeric(15,2) [not null, note: 'المتبقي']
+  refreshed_at timestamp [not null, note: 'وقت التحديث']
+}

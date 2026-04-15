@@ -1,0 +1,100 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// PostgreSQL schema name: ops  (Operational: shortage notebook, oversell)
+// Tables today: public.shortage_*, pending_stock_allocations,
+//                oversell_resolution_batches, oversell_cost_resolutions
+// Source: shared/schema/shortage.ts, oversell.ts
+// ═══════════════════════════════════════════════════════════════════════════
+
+Project ops {
+  database_type: 'PostgreSQL'
+  Note: '''
+    مخطط مقترح: ops — كشكول النواقص وتسوية الصرف بدون رصيد
+    الوهمي: أصناف، مستخدمون، مخازن، قيود، حركات مخزون
+  '''
+}
+
+Table ext_items {
+  Note: 'وهمي → الأصناف'
+  id varchar [pk, note: 'معرّف الصنف']
+}
+Table ext_users {
+  Note: 'وهمي → المستخدمين'
+  id varchar [pk, note: 'معرّف المستخدم']
+}
+Table ext_warehouses {
+  Note: 'وهمي → المخازن'
+  id varchar [pk, note: 'معرّف المخزن']
+}
+
+Table shortage_events {
+  Note: 'سجل أحداث النواقص'
+
+  id varchar [pk, note: 'المعرّف']
+  item_id varchar [not null, note: 'الصنف → inv.items']
+  warehouse_id varchar [ref: > ext_warehouses.id, note: 'المخزن']
+  requested_by varchar [not null, ref: > ext_users.id, note: 'طالب النقص']
+  source_screen varchar(50) [not null, note: 'شاشة المصدر']
+  requested_at timestamp [not null, note: 'وقت الطلب']
+}
+
+Table shortage_agg {
+  Note: 'ملخص النواقص لكل صنف'
+
+  item_id varchar [pk, note: 'الصنف → inv.items']
+  request_count integer [not null, note: 'عدد الطلبات']
+  last_requested_at timestamp [not null, note: 'آخر طلب']
+  is_resolved boolean [not null, default: false, note: 'تم الحل']
+  refreshed_at timestamp [not null, note: 'آخر تحديث للملخص']
+}
+
+Table shortage_followups {
+  Note: 'متابعة النواقص (مكالمات/طلب من مورد)'
+
+  id varchar [pk, note: 'المعرّف']
+  item_id varchar [not null, note: 'الصنف → inv.items']
+  action_type varchar(50) [not null, note: 'نوع الإجراء']
+  action_by varchar [not null, ref: > ext_users.id, note: 'نفّذ الإجراء']
+  follow_up_due_date timestamp [not null, note: 'موعد المتابعة']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table pending_stock_allocations {
+  Note: 'سطور فواتير بصرف مؤجل (بدون خصم مخزون فعلي)'
+
+  id varchar [pk, note: 'المعرّف']
+  invoice_id varchar [not null, note: 'رأس الفاتورة (مبيعات أو مريض)']
+  invoice_line_id varchar [not null, unique, note: 'سطر الفاتورة']
+  item_id varchar [not null, ref: > ext_items.id, note: 'الصنف']
+  warehouse_id varchar [not null, ref: > ext_warehouses.id, note: 'المخزن']
+  qty_minor_pending decimal(18,6) [not null, note: 'الكمية المعلقة بالصغرى']
+  status varchar(30) [not null, note: 'الحالة']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Table oversell_resolution_batches {
+  Note: 'دفعات تسوية الصرف بدون رصيد'
+
+  id varchar [pk, note: 'المعرّف']
+  warehouse_id varchar [not null, ref: > ext_warehouses.id, note: 'المخزن']
+  resolved_by varchar [not null, ref: > ext_users.id, note: 'نفّذ التسوية']
+  resolved_at timestamp [not null, note: 'وقت التسوية']
+  stock_movement_header_id varchar [note: 'رأس حركة مخزون → inv']
+  journal_entry_id varchar [note: 'قيد اليومية → fin']
+}
+
+Table oversell_cost_resolutions {
+  Note: 'سطور تسوية التكلفة المؤجلة'
+
+  id varchar [pk, note: 'المعرّف']
+  batch_id varchar [not null, ref: > oversell_resolution_batches.id, note: 'الدفعة']
+  pending_allocation_id varchar [not null, ref: > pending_stock_allocations.id, note: 'الصرف المعلق']
+  invoice_id varchar [not null, note: 'الفاتورة']
+  item_id varchar [not null, ref: > ext_items.id, note: 'الصنف']
+  lot_id varchar [note: 'الدفعة → inv.inventory_lots']
+  qty_minor_resolved decimal(18,6) [not null, note: 'الكمية المسوّاة']
+  total_cost decimal(18,2) [not null, note: 'إجمالي التكلفة']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+}
+
+Ref: oversell_cost_resolutions.batch_id > oversell_resolution_batches.id
+Ref: oversell_cost_resolutions.pending_allocation_id > pending_stock_allocations.id

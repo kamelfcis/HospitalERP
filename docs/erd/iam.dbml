@@ -1,0 +1,93 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// PostgreSQL schema name: iam  (Identity & Access Management)
+// Tables today: public.permission_groups, public.group_permissions, public.users,
+//                public.role_permissions, public.user_permissions, public.session
+// Source: shared/schema/users.ts + database_export.session
+// ═══════════════════════════════════════════════════════════════════════════
+
+Project iam {
+  database_type: 'PostgreSQL'
+  Note: '''
+    مخطط مقترح: iam — الهوية والوصول والجلسات
+    Proposed schema: iam — Identity, permission groups, users, express-session store.
+  '''
+}
+
+Table permission_groups {
+  Note: 'مجموعات الصلاحيات — بديل مرن لدور المستخدم الثابت'
+
+  id varchar [pk, note: 'المعرّف']
+  name text [not null, unique, note: 'اسم المجموعة الفريد']
+  description text [note: 'وصف المجموعة']
+  is_system boolean [not null, default: false, note: 'مجموعة نظامية لا تُحذف']
+  system_key varchar [note: 'مفتاح الدور الأصلي للمجموعات المولدة']
+  sort_order integer [not null, default: 0, note: 'ترتيب العرض']
+  seed_snapshot text [note: 'لقطة آخر صلاحيات مُزرَعة للمزامنة']
+  max_discount_pct decimal(5,2) [note: 'أقصى نسبة خصم مسموحة']
+  max_discount_value decimal(12,2) [note: 'أقصى قيمة خصم ثابتة']
+  default_route varchar [note: 'المسار الافتراضي بعد تسجيل الدخول']
+  created_at timestamp [not null, default: `now()`, note: 'تاريخ الإنشاء']
+}
+
+Table group_permissions {
+  Note: 'صلاحيات كل مجموعة (ربط many-to-many)'
+
+  id varchar [pk, note: 'المعرّف']
+  group_id varchar [not null, ref: > permission_groups.id, note: 'المجموعة']
+  permission text [not null, note: 'اسم الصلاحية']
+  created_at timestamp [not null, default: `now()`, note: 'تاريخ الإنشاء']
+}
+
+Table users {
+  Note: 'المستخدمون — حسابات الدخول والإعدادات'
+
+  id varchar [pk, note: 'المعرّف']
+  username text [not null, unique, note: 'اسم الدخول']
+  password text [not null, note: 'كلمة المرور (مخزنة مُشفّرة)']
+  full_name text [not null, note: 'الاسم الكامل']
+  role varchar [not null, note: 'الدور الوراثي (enum) — احتياطي']
+  permission_group_id varchar [ref: > permission_groups.id, note: 'مجموعة الصلاحيات']
+  department_id varchar [note: 'القسم الافتراضي → inv.departments']
+  pharmacy_id varchar [note: 'الصيدلية الافتراضية → inv.pharmacies']
+  default_warehouse_id varchar [note: 'المخزن الافتراضي']
+  default_purchase_warehouse_id varchar [note: 'مخزن المشتريات الافتراضي']
+  is_active boolean [not null, default: true, note: 'نشط']
+  cashier_gl_account_id text [note: 'حساب GL للكاشير']
+  cashier_variance_account_id text [note: 'حساب فرق الجرد (احتياطي)']
+  cashier_variance_short_account_id text [note: 'حساب عجز الجرد النقدي']
+  cashier_variance_over_account_id text [note: 'حساب فائض الجرد النقدي']
+  max_discount_pct decimal(5,2) [note: 'حد الخصم للمستخدم']
+  all_cashier_units boolean [not null, default: false, note: 'جميع وحدات الكاشير']
+  created_at timestamp [not null, default: `now()`, note: 'تاريخ الإنشاء']
+}
+
+Table role_permissions {
+  Note: 'صلاحيات حسب الدور — قديم (fallback)'
+
+  id varchar [pk, note: 'المعرّف']
+  role text [not null, note: 'اسم الدور']
+  permission text [not null, note: 'اسم الصلاحية']
+  created_at timestamp [not null, default: `now()`, note: 'تاريخ الإنشاء']
+}
+
+Table user_permissions {
+  Note: 'صلاحيات مخصصة للمستخدم — قديم (fallback)'
+
+  id varchar [pk, note: 'المعرّف']
+  user_id varchar [not null, ref: > users.id, note: 'المستخدم']
+  permission text [not null, note: 'اسم الصلاحية']
+  granted boolean [not null, default: true, note: 'ممنوح أم لا']
+  created_at timestamp [not null, default: `now()`, note: 'تاريخ الإنشاء']
+}
+
+Table session {
+  Note: 'جلسات تسجيل الدخول (connect-pg-simple / express)'
+
+  sid varchar [pk, note: 'معرّف الجلسة']
+  sess json [not null, note: 'بيانات الجلسة JSON']
+  expire timestamp [not null, note: 'انتهاء الصلاحية']
+}
+
+Ref: group_permissions.group_id > permission_groups.id
+Ref: users.permission_group_id > permission_groups.id
+Ref: user_permissions.user_id > users.id

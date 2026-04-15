@@ -10,24 +10,37 @@
  * ═══════════════════════════════════════════════════════════════
  */
 
-export const BASE_URL = "http://localhost:5000";
+/** Override with `TEST_BASE_URL` when the dev server is not on 127.0.0.1:5000 */
+export const BASE_URL = process.env.TEST_BASE_URL ?? "http://127.0.0.1:5000";
 
 export class AuthenticatedApi {
   private cookie = "";
   private username: string;
   private password: string;
 
-  constructor(username = "admin", password = "admin123") {
+  constructor(
+    username = process.env.TEST_ADMIN_USERNAME ?? "admin",
+    password = process.env.TEST_ADMIN_PASSWORD ?? "admin123",
+  ) {
     this.username = username;
     this.password = password;
   }
 
   async login() {
-    const res = await fetch(`${BASE_URL}/api/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: this.username, password: this.password }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${BASE_URL}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: this.username, password: this.password }),
+      });
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      throw new Error(
+        `Login failed: cannot reach ${BASE_URL} (${detail}). ` +
+          `Start the API (npm run dev) or set TEST_BASE_URL to the correct host:port.`,
+      );
+    }
     if (!res.ok) throw new Error(`Login failed: ${res.status} — ${this.username}`);
 
     // Node.js 18+ fetch: getSetCookie() returns array; fallback to get()
@@ -64,7 +77,10 @@ export class AuthenticatedApi {
   }
 }
 
-export function makeAuthApi(username = "admin", password = "admin123") {
+export function makeAuthApi(
+  username = process.env.TEST_ADMIN_USERNAME ?? "admin",
+  password = process.env.TEST_ADMIN_PASSWORD ?? "admin123",
+) {
   return new AuthenticatedApi(username, password);
 }
 

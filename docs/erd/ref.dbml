@@ -1,0 +1,41 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// PostgreSQL schema name: ref  (Reference: payers / insurance companies)
+// Tables today: public.companies
+// Source: shared/schema/companies.ts
+// ═══════════════════════════════════════════════════════════════════════════
+
+Project ref {
+  database_type: 'PostgreSQL'
+  Note: '''
+    مخطط مقترح: ref — شركات التأمين والتعاقد
+    Proposed schema: ref — payer / insurance company master + GL link.
+    ext_accounts → public.accounts (fin)
+  '''
+}
+
+Table ext_accounts {
+  Note: 'جدول وهمي — يربط بـ public.accounts (دليل الحسابات)'
+
+  id varchar [pk, note: 'معرّف الحساب']
+}
+
+Table companies {
+  Note: 'شركات التأمين والتعاقد'
+
+  id varchar [pk, note: 'المعرّف']
+  code varchar(30) [not null, unique, note: 'رمز الشركة']
+  name_ar text [not null, note: 'الاسم بالعربية']
+  name_en text [note: 'الاسم بالإنجليزية']
+  company_type text [not null, default: 'contract', note: 'نوع الشركة (تأمين/تعاقد/...)']
+  is_active boolean [not null, default: true, note: 'نشطة']
+  phone text [note: 'الهاتف']
+  email text [note: 'البريد']
+  address text [note: 'العنوان']
+  tax_id text [note: 'الرقم الضريبي']
+  gl_account_id varchar [ref: > ext_accounts.id, note: 'حساب GL للذمم']
+  default_payment_terms_days integer [note: 'أيام السداد الافتراضية']
+  credit_limit decimal(18,2) [note: 'الحد الائتماني']
+  notes text [note: 'ملاحظات']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+  updated_at timestamp [not null, note: 'آخر تحديث']
+}

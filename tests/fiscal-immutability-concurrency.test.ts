@@ -1,13 +1,5 @@
-import { describe, it, expect, beforeAll } from 'vitest';
-
-const BASE_URL = "http://localhost:5000";
-
-async function api(method: string, path: string, body?: any) {
-  const opts: RequestInit = { method, headers: { "Content-Type": "application/json" } };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${BASE_URL}${path}`, opts);
-  return { status: res.status, data: await res.json().catch(() => null) };
-}
+import { describe, it, expect, beforeAll } from "vitest";
+import { liveCall as api } from "./live-session";
 
 async function nextPatientInvNum(): Promise<string> {
   const res = await api("GET", "/api/patient-invoices/next-number");
@@ -81,7 +73,7 @@ describe("Fiscal Period Enforcement", () => {
     if (!closedPeriodId || !supplierId || !warehouseId || !itemId) return;
     const createRes = await api("POST", "/api/receivings", {
       header: { supplierId, supplierInvoiceNo: `FP-R-${Date.now()}`, warehouseId, receiveDate: closedPeriodDate },
-      lines: [{ itemId, unitLevel: "minor", qtyEntered: "5", qtyInMinor: "5", purchasePrice: "10", lineTotal: "50", bonusQty: "0", bonusQtyInMinor: "0", expiryMonth: 12, expiryYear: 2028 }],
+      lines: [{ itemId, unitLevel: "minor", qtyEntered: "5", qtyInMinor: "5", purchasePrice: "10", salePrice: "12", lineTotal: "50", bonusQty: "0", bonusQtyInMinor: "0", expiryMonth: 12, expiryYear: 2028 }],
     });
     if (createRes.status !== 201) return;
     const postRes = await api("POST", `/api/receivings/${createRes.data.id}/post`);
@@ -107,7 +99,7 @@ describe("Fiscal Period Enforcement", () => {
     if (!closedPeriodId || !warehouseId || !itemId) return;
     const createRes = await api("POST", "/api/sales-invoices", {
       header: { warehouseId, invoiceDate: closedPeriodDate, customerType: "cash" },
-      lines: [{ itemId, unitLevel: "minor", qty: "1", qtyInMinor: "1", salePrice: "50", lineTotal: "50" }],
+      lines: [{ itemId, unitLevel: "minor", qty: "1", qtyInMinor: "1", expiryMonth: 12, expiryYear: 2030, salePrice: "50", lineTotal: "50" }],
     });
     if (createRes.status !== 201) return;
     const finalizeRes = await api("POST", `/api/sales-invoices/${createRes.data.id}/finalize`);
@@ -131,7 +123,7 @@ describe("Fiscal Period Enforcement", () => {
     if (!closedPeriodId || !supplierId || !warehouseId || !itemId) return;
     const rcvRes = await api("POST", "/api/receivings", {
       header: { supplierId, supplierInvoiceNo: `FP-PI-${Date.now()}`, warehouseId, receiveDate: closedPeriodDate },
-      lines: [{ itemId, unitLevel: "minor", qtyEntered: "2", qtyInMinor: "2", purchasePrice: "20", lineTotal: "40", bonusQty: "0", bonusQtyInMinor: "0", expiryMonth: 12, expiryYear: 2028 }],
+      lines: [{ itemId, unitLevel: "minor", qtyEntered: "2", qtyInMinor: "2", purchasePrice: "20", salePrice: "25", lineTotal: "40", bonusQty: "0", bonusQtyInMinor: "0", expiryMonth: 12, expiryYear: 2028 }],
     });
     if (rcvRes.status !== 201) return;
     const convRes = await api("POST", `/api/receivings/${rcvRes.data.id}/convert-to-invoice`);
@@ -148,7 +140,7 @@ describe("Fiscal Period Enforcement", () => {
 
     const createRes = await api("POST", "/api/sales-invoices", {
       header: { warehouseId, invoiceDate: today, customerType: "cash" },
-      lines: [{ itemId, unitLevel: "minor", qty: "1", qtyInMinor: "1", salePrice: "10", lineTotal: "10" }],
+      lines: [{ itemId, unitLevel: "minor", qty: "1", qtyInMinor: "1", expiryMonth: 12, expiryYear: 2030, salePrice: "10", lineTotal: "10" }],
     });
     if (createRes.status !== 201) return;
     const invoiceId = createRes.data.id;
@@ -191,7 +183,7 @@ describe("Fiscal Period Enforcement", () => {
 
     const createRes = await api("POST", "/api/sales-invoices", {
       header: { warehouseId, invoiceDate: today, customerType: "cash" },
-      lines: [{ itemId, unitLevel: "minor", qty: "1", qtyInMinor: "1", salePrice: "10", lineTotal: "10" }],
+      lines: [{ itemId, unitLevel: "minor", qty: "1", qtyInMinor: "1", expiryMonth: 12, expiryYear: 2030, salePrice: "10", lineTotal: "10" }],
     });
     if (createRes.status !== 201) return;
     const invoiceId = createRes.data.id;
@@ -306,7 +298,7 @@ describe("Cancelled Documents Behavior", () => {
     const today = new Date().toISOString().split("T")[0];
     const createRes = await api("POST", "/api/sales-invoices", {
       header: { warehouseId, invoiceDate: today, customerType: "cash" },
-      lines: [{ itemId, unitLevel: "minor", qty: "1", qtyInMinor: "1", salePrice: "100", lineTotal: "100" }],
+      lines: [{ itemId, unitLevel: "minor", qty: "1", qtyInMinor: "1", expiryMonth: 12, expiryYear: 2030, salePrice: "100", lineTotal: "100" }],
     });
     expect(createRes.status).toBe(201);
     const docId = createRes.data?.id;
@@ -319,7 +311,7 @@ describe("Cancelled Documents Behavior", () => {
     expect(getRes.data?.status).toBe("cancelled");
 
     const editRes = await api("PATCH", `/api/sales-invoices/${docId}`, {
-      header: {}, lines: [{ itemId, unitLevel: "minor", qty: "1", qtyInMinor: "1", salePrice: "50", lineTotal: "50" }],
+      header: {}, lines: [{ itemId, unitLevel: "minor", qty: "1", qtyInMinor: "1", expiryMonth: 12, expiryYear: 2030, salePrice: "50", lineTotal: "50" }],
     });
     expect(editRes.status).toBe(409);
   });
@@ -329,7 +321,7 @@ describe("Cancelled Documents Behavior", () => {
     const today = new Date().toISOString().split("T")[0];
     const createRes = await api("POST", "/api/sales-invoices", {
       header: { warehouseId, invoiceDate: today, customerType: "cash" },
-      lines: [{ itemId, unitLevel: "minor", qty: "1", qtyInMinor: "1", salePrice: "50", lineTotal: "50" }],
+      lines: [{ itemId, unitLevel: "minor", qty: "1", qtyInMinor: "1", expiryMonth: 12, expiryYear: 2030, salePrice: "50", lineTotal: "50" }],
     });
     expect(createRes.status).toBe(201);
     await api("DELETE", `/api/sales-invoices/${createRes.data.id}`);
@@ -362,7 +354,7 @@ describe("Cancelled Documents Behavior", () => {
     const today = new Date().toISOString().split("T")[0];
     const createRes = await api("POST", "/api/sales-invoices", {
       header: { warehouseId, invoiceDate: today, customerType: "cash" },
-      lines: [{ itemId, unitLevel: "minor", qty: "1", qtyInMinor: "1", salePrice: "30", lineTotal: "30" }],
+      lines: [{ itemId, unitLevel: "minor", qty: "1", qtyInMinor: "1", expiryMonth: 12, expiryYear: 2030, salePrice: "30", lineTotal: "30" }],
     });
     expect(createRes.status).toBe(201);
     const docId = createRes.data?.id;
@@ -510,7 +502,7 @@ describe("Concurrency / Idempotency Guards", () => {
     const today = new Date().toISOString().split("T")[0];
     const createRes = await api("POST", "/api/sales-invoices", {
       header: { warehouseId, invoiceDate: today, customerType: "cash" },
-      lines: [{ itemId, unitLevel: "minor", qty: "1", qtyInMinor: "1", salePrice: "200", lineTotal: "200" }],
+      lines: [{ itemId, unitLevel: "minor", qty: "1", qtyInMinor: "1", expiryMonth: 12, expiryYear: 2030, salePrice: "200", lineTotal: "200" }],
     });
     expect(createRes.status).toBe(201);
 
@@ -585,14 +577,14 @@ describe("Document Immutability", () => {
     const today = new Date().toISOString().split("T")[0];
     const createRes = await api("POST", "/api/receivings", {
       header: { supplierId, supplierInvoiceNo: `IMM-R-${Date.now()}`, warehouseId, receiveDate: today },
-      lines: [{ itemId, unitLevel: "minor", qtyEntered: "3", qtyInMinor: "3", purchasePrice: "15", lineTotal: "45", bonusQty: "0", bonusQtyInMinor: "0", expiryMonth: 12, expiryYear: 2029 }],
+      lines: [{ itemId, unitLevel: "minor", qtyEntered: "3", qtyInMinor: "3", purchasePrice: "15", salePrice: "18", lineTotal: "45", bonusQty: "0", bonusQtyInMinor: "0", expiryMonth: 12, expiryYear: 2029 }],
     });
     if (createRes.status !== 201) return;
     const postRes = await api("POST", `/api/receivings/${createRes.data.id}/post`);
     if (postRes.status !== 200) return;
     const editRes = await api("PATCH", `/api/receivings/${createRes.data.id}`, {
       header: { supplierId, supplierInvoiceNo: `IMM-R-${Date.now()}`, warehouseId, receiveDate: today },
-      lines: [{ itemId, unitLevel: "minor", qtyEntered: "1", qtyInMinor: "1", purchasePrice: "10", lineTotal: "10", bonusQty: "0", bonusQtyInMinor: "0", expiryMonth: 12, expiryYear: 2029 }],
+      lines: [{ itemId, unitLevel: "minor", qtyEntered: "1", qtyInMinor: "1", purchasePrice: "10", salePrice: "12", lineTotal: "10", bonusQty: "0", bonusQtyInMinor: "0", expiryMonth: 12, expiryYear: 2029 }],
     });
     expect(editRes.status).toBe(409);
   });
@@ -602,7 +594,7 @@ describe("Document Immutability", () => {
     const today = new Date().toISOString().split("T")[0];
     const rcvRes = await api("POST", "/api/receivings", {
       header: { supplierId, supplierInvoiceNo: `IMM-PI-${Date.now()}`, warehouseId, receiveDate: today },
-      lines: [{ itemId, unitLevel: "minor", qtyEntered: "2", qtyInMinor: "2", purchasePrice: "20", lineTotal: "40", bonusQty: "0", bonusQtyInMinor: "0", expiryMonth: 12, expiryYear: 2029 }],
+      lines: [{ itemId, unitLevel: "minor", qtyEntered: "2", qtyInMinor: "2", purchasePrice: "20", salePrice: "25", lineTotal: "40", bonusQty: "0", bonusQtyInMinor: "0", expiryMonth: 12, expiryYear: 2029 }],
     });
     if (rcvRes.status !== 201) return;
     const convRes = await api("POST", `/api/receivings/${rcvRes.data.id}/convert-to-invoice`);
@@ -660,7 +652,7 @@ describe("Financial Rounding Consistency", () => {
     const today = new Date().toISOString().split("T")[0];
     const createRes = await api("POST", "/api/sales-invoices", {
       header: { warehouseId, invoiceDate: today, customerType: "cash" },
-      lines: [{ itemId, unitLevel: "minor", qty: "3", qtyInMinor: "3", salePrice: "33.333", lineTotal: "99.999" }],
+      lines: [{ itemId, unitLevel: "minor", qty: "3", qtyInMinor: "3", expiryMonth: 12, expiryYear: 2030, salePrice: "33.333", lineTotal: "99.999" }],
     });
     expect(createRes.status).toBe(201);
     const inv = await api("GET", `/api/sales-invoices/${createRes.data.id}`);

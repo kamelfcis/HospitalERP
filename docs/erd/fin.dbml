@@ -1,0 +1,201 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// PostgreSQL schema name: fin  (Finance & GL)
+// Tables today: public.fiscal_periods, cost_centers, accounts, user_account_scopes,
+//   journal_templates, journal_entries, journal_lines, template_lines,
+//   audit_log, account_mappings, accounting_event_log
+// Source: shared/schema/finance.ts
+// ═══════════════════════════════════════════════════════════════════════════
+
+Project fin {
+  database_type: 'PostgreSQL'
+  Note: '''
+    مخطط مقترح: fin — المحاسبة والأستاذ العام
+    Proposed schema: fin — GL, journals, fiscal periods, audit.
+    ext_users = جدول وهمي → public.users (iam)
+  '''
+}
+
+Table ext_users {
+  Note: 'جدول وهمي — يربط بـ public.users (المستخدمون)'
+
+  id varchar [pk, note: 'معرّف المستخدم']
+}
+
+Table fiscal_periods {
+  Note: 'الفترات المالية'
+
+  id varchar [pk, note: 'المعرّف']
+  name text [not null, note: 'اسم الفترة']
+  start_date date [not null, note: 'تاريخ البداية']
+  end_date date [not null, note: 'تاريخ النهاية']
+  is_closed boolean [not null, default: false, note: 'مغلقة']
+  closed_at timestamp [note: 'وقت الإغلاق']
+  closed_by varchar [ref: > ext_users.id, note: 'أغلقها المستخدم']
+  created_at timestamp [not null, default: `now()`, note: 'تاريخ الإنشاء']
+}
+
+Table cost_centers {
+  Note: 'مراكز التكلفة (شجرة)'
+
+  id varchar [pk, note: 'المعرّف']
+  code varchar(20) [not null, unique, note: 'رمز المركز']
+  name text [not null, note: 'اسم المركز']
+  description text [note: 'الوصف']
+  type text [note: 'النوع']
+  parent_id varchar [ref: > cost_centers.id, note: 'المركز الأب (شجرة)']
+  is_active boolean [not null, default: true, note: 'نشط']
+  created_at timestamp [not null, default: `now()`, note: 'تاريخ الإنشاء']
+}
+
+Table accounts {
+  Note: 'دليل الحسابات (شجرة)'
+
+  id varchar [pk, note: 'المعرّف']
+  code varchar(20) [not null, unique, note: 'رمز الحساب']
+  name text [not null, note: 'اسم الحساب']
+  account_type varchar [not null, note: 'نوع الحساب (أصول/خصوم/إيرادات/...)']
+  parent_id varchar [ref: > accounts.id, note: 'الحساب الأب']
+  level integer [not null, default: 1, note: 'المستوى في الشجرة']
+  is_active boolean [not null, default: true, note: 'نشط']
+  requires_cost_center boolean [not null, default: false, note: 'يتطلب مركز تكلفة']
+  default_cost_center_id varchar [ref: > cost_centers.id, note: 'مركز التكلفة الافتراضي']
+  description text [note: 'الوصف']
+  opening_balance decimal(18,2) [not null, default: 0, note: 'الرصيد الافتتاحي']
+  created_at timestamp [not null, default: `now()`, note: 'تاريخ الإنشاء']
+}
+
+Table user_account_scopes {
+  Note: 'نطاق رؤية الحسابات لكل مستخدم'
+
+  id varchar [pk, note: 'المعرّف']
+  user_id varchar [not null, ref: > ext_users.id, note: 'المستخدم']
+  account_id varchar [not null, ref: > accounts.id, note: 'الحساب']
+  created_at timestamp [not null, default: `now()`, note: 'تاريخ الإنشاء']
+  created_by varchar [ref: > ext_users.id, note: 'أنشأه']
+}
+
+Table journal_templates {
+  Note: 'نماذج القيود المحاسبية'
+
+  id varchar [pk, note: 'المعرّف']
+  name text [not null, note: 'اسم النموذج']
+  description text [note: 'الوصف']
+  is_active boolean [not null, default: true, note: 'نشط']
+  created_by varchar [ref: > ext_users.id, note: 'أنشأه']
+  created_at timestamp [not null, default: `now()`, note: 'تاريخ الإنشاء']
+}
+
+Table journal_entries {
+  Note: 'قيود اليومية — رأس القيد'
+
+  id varchar [pk, note: 'المعرّف']
+  entry_number integer [not null, unique, note: 'رقم القيد']
+  entry_date date [not null, note: 'تاريخ القيد']
+  description text [not null, note: 'البيان']
+  status varchar [not null, note: 'حالة القيد (مسودة/مرحل/ملغى/...)']
+  period_id varchar [ref: > fiscal_periods.id, note: 'الفترة المالية']
+  total_debit decimal(18,2) [not null, note: 'إجمالي المدين']
+  total_credit decimal(18,2) [not null, note: 'إجمالي الدائن']
+  reference text [note: 'مرجع خارجي']
+  created_by varchar [ref: > ext_users.id, note: 'أنشأه']
+  posted_by varchar [ref: > ext_users.id, note: 'رحّله']
+  posted_at timestamp [note: 'وقت الترحيل']
+  reversed_by varchar [ref: > ext_users.id, note: 'ألغاه']
+  reversed_at timestamp [note: 'وقت الإلغاء']
+  reversal_entry_id varchar [ref: > journal_entries.id, note: 'قيد الإلغاء المرتبط']
+  template_id varchar [ref: > journal_templates.id, note: 'النموذج']
+  source_type text [note: 'نوع المصدر']
+  source_document_id varchar [note: 'معرّف المستند المصدر']
+  source_entry_type text [note: 'نوع القيد المصدر']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+  updated_at timestamp [not null, note: 'آخر تحديث']
+}
+
+Table journal_lines {
+  Note: 'قيود اليومية — سطور القيد'
+
+  id varchar [pk, note: 'المعرّف']
+  journal_entry_id varchar [not null, ref: > journal_entries.id, note: 'رأس القيد']
+  line_number integer [not null, note: 'رقم السطر']
+  account_id varchar [not null, ref: > accounts.id, note: 'الحساب']
+  cost_center_id varchar [ref: > cost_centers.id, note: 'مركز التكلفة']
+  description text [note: 'بيان السطر']
+  debit decimal(18,2) [not null, default: 0, note: 'مدين']
+  credit decimal(18,2) [not null, default: 0, note: 'دائن']
+}
+
+Table template_lines {
+  Note: 'سطور نماذج القيود'
+
+  id varchar [pk, note: 'المعرّف']
+  template_id varchar [not null, ref: > journal_templates.id, note: 'النموذج']
+  line_number integer [not null, note: 'رقم السطر']
+  account_id varchar [ref: > accounts.id, note: 'الحساب']
+  cost_center_id varchar [ref: > cost_centers.id, note: 'مركز التكلفة']
+  description text [note: 'البيان']
+  debit_percent decimal(15,2) [note: 'نسبة مدين']
+  credit_percent decimal(15,2) [note: 'نسبة دائن']
+}
+
+Table audit_log {
+  Note: 'سجل التدقيق العام'
+
+  id varchar [pk, note: 'المعرّف']
+  table_name text [not null, note: 'اسم الجدول']
+  record_id varchar [not null, note: 'معرّف السجل']
+  action text [not null, note: 'الإجراء']
+  old_values text [note: 'القيم القديمة']
+  new_values text [note: 'القيم الجديدة']
+  user_id varchar [ref: > ext_users.id, note: 'المستخدم']
+  ip_address text [note: 'عنوان IP']
+  created_at timestamp [not null, default: `now()`, note: 'وقت الحدث']
+}
+
+Table account_mappings {
+  Note: 'ربط أنواع العمليات بالحسابات المدينة/الدائنة'
+
+  id varchar [pk, note: 'المعرّف']
+  transaction_type text [not null, note: 'نوع العملية']
+  line_type text [not null, note: 'نوع السطر']
+  debit_account_id varchar [ref: > accounts.id, note: 'حساب المدين']
+  credit_account_id varchar [ref: > accounts.id, note: 'حساب الدائن']
+  warehouse_id varchar [note: 'المخزن → inv.warehouses']
+  pharmacy_id varchar [note: 'الصيدلية']
+  department_id varchar [note: 'القسم → inv.departments']
+  description text [note: 'الوصف']
+  is_active boolean [not null, default: true, note: 'نشط']
+  created_at timestamp [not null, note: 'تاريخ الإنشاء']
+  updated_at timestamp [not null, note: 'آخر تحديث']
+}
+
+Table accounting_event_log {
+  Note: 'سجل أحداث المحاسبة (نجاح/فشل/إعادة محاولة)'
+
+  id varchar [pk, note: 'المعرّف']
+  event_type text [not null, note: 'نوع الحدث']
+  source_type text [note: 'نوع المصدر']
+  source_id text [note: 'معرّف المصدر']
+  appointment_id text [note: 'معرّف الموعد']
+  posted_by_user text [note: 'المستخدم']
+  created_at timestamptz [not null, note: 'تاريخ الإنشاء']
+  updated_at timestamptz [not null, note: 'آخر تحديث']
+  status text [not null, default: 'success', note: 'الحالة']
+  error_message text [note: 'رسالة الخطأ']
+  attempt_count integer [not null, default: 1, note: 'عدد المحاولات']
+  last_attempted_at timestamptz [not null, note: 'آخر محاولة']
+  next_retry_at timestamptz [note: 'المحاولة القادمة']
+  journal_entry_id varchar [note: 'قيد اليومية (مرجع منطقي)']
+}
+
+Ref: cost_centers.parent_id > cost_centers.id
+Ref: accounts.parent_id > accounts.id
+Ref: journal_entries.period_id > fiscal_periods.id
+Ref: journal_entries.reversal_entry_id > journal_entries.id
+Ref: journal_entries.template_id > journal_templates.id
+Ref: template_lines.template_id > journal_templates.id
+Ref: template_lines.account_id > accounts.id
+Ref: journal_lines.journal_entry_id > journal_entries.id
+Ref: journal_lines.account_id > accounts.id
+Ref: journal_lines.cost_center_id > cost_centers.id
+Ref: account_mappings.debit_account_id > accounts.id
+Ref: account_mappings.credit_account_id > accounts.id

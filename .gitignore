@@ -1,5 +1,11 @@
 node_modules
 dist
+coverage
+.local
+.tmp
+.env
+.env.local
+.env.test
 .DS_Store
 server/public
 vite.config.ts.*

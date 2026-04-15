@@ -26,7 +26,9 @@ export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   max:                    30,
   idleTimeoutMillis:      30_000,
-  connectionTimeoutMillis: 5_000,
+  // Remote PostgreSQL (VPS / high-latency links) can exceed a 5s TCP handshake.
+  // Keep this high enough that startup doesn't fail while still failing fast on truly dead hosts.
+  connectionTimeoutMillis: 30_000,
 });
 
 // ── إعداد statement_timeout عند إنشاء كل اتصال ────────────────────────────

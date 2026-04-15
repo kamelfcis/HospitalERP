@@ -89,6 +89,40 @@ export function useInvoiceTab({ invoices, hasActiveShift, detailsEndpoint }: Use
   const clearSelection = useCallback(() => setSelected(new Set()), []);
   const clearAll       = useCallback(() => { setSelected(new Set()); setSearch(""); }, []);
 
+  // ── تنقّل لوحة المفاتيح في القائمة المفلترة (صف واحد مختار) ─
+  const selectRelative = useCallback(
+    (delta: number) => {
+      setSelected((prev) => {
+        const list = filtered;
+        if (!list.length) return new Set();
+        let idx = 0;
+        if (prev.size === 1) {
+          const cur = Array.from(prev)[0];
+          const i = list.findIndex((x) => x.id === cur);
+          idx = i >= 0 ? i : 0;
+        } else if (prev.size > 1) {
+          const firstSel = list.findIndex((x) => prev.has(x.id));
+          idx = firstSel >= 0 ? firstSel : 0;
+        } else {
+          idx = delta > 0 ? 0 : list.length - 1;
+        }
+        const next = Math.max(0, Math.min(list.length - 1, idx + delta));
+        return new Set([list[next]!.id]);
+      });
+    },
+    [filtered],
+  );
+
+  const selectFirst = useCallback(() => {
+    if (!filtered.length) return;
+    setSelected(new Set([filtered[0]!.id]));
+  }, [filtered]);
+
+  const selectLast = useCallback(() => {
+    if (!filtered.length) return;
+    setSelected(new Set([filtered[filtered.length - 1]!.id]));
+  }, [filtered]);
+
   return {
     // بحث
     search, setSearch,
@@ -102,5 +136,6 @@ export function useInvoiceTab({ invoices, hasActiveShift, detailsEndpoint }: Use
     aggregated,
     // أدوات
     clearSelection, clearAll,
+    selectRelative, selectFirst, selectLast,
   };
 }

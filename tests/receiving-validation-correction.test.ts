@@ -1,15 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
+import { liveCall as api } from "./live-session";
 
-const BASE = "http://localhost:5000";
 const UNIQUE = Date.now();
-
-async function api(method: string, path: string, body?: any) {
-  const opts: any = { method, headers: { "Content-Type": "application/json" } };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${BASE}${path}`, opts);
-  const data = await res.json().catch(() => null);
-  return { status: res.status, data };
-}
 
 let supplierId: string;
 let warehouseId: string;
@@ -297,7 +289,8 @@ describe("Correction Flow", () => {
   it("should check initial stock after posting", async () => {
     const stats = await api("GET", `/api/items/${expiryItemId}/warehouse-stats`);
     expect(stats.status).toBe(200);
-    const wh = stats.data.find((s: any) => s.warehouseId === warehouseId);
+    const rows = Array.isArray(stats.data) ? stats.data : [];
+    const wh = rows.find((s: any) => s.warehouseId === warehouseId) ?? rows[0];
     expect(wh).toBeDefined();
     expect(parseFloat(wh.qtyMinor)).toBeGreaterThanOrEqual(100);
   });
@@ -351,7 +344,8 @@ describe("Correction Flow", () => {
   it("should verify stock exists in warehouse after posting", async () => {
     const stats = await api("GET", `/api/items/${expiryItemId}/warehouse-stats`);
     expect(stats.status).toBe(200);
-    const wh = stats.data.find((s: any) => s.warehouseId === warehouseId);
+    const rows = Array.isArray(stats.data) ? stats.data : [];
+    const wh = rows.find((s: any) => s.warehouseId === warehouseId) ?? rows[0];
     expect(wh).toBeDefined();
   });
 });

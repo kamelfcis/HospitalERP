@@ -112,8 +112,9 @@ export async function executePostReceiving(id: string) {
   const receiving = await storage.getReceiving(id);
   if (!receiving)
     throw new ServiceError(404, "المستند غير موجود");
-  if (receiving.status === "posted" || receiving.status === "posted_qty_only" || receiving.status === "posted_costed")
-    throw new ServiceError(409, "المستند مُرحّل بالفعل", "ALREADY_POSTED");
+  if (receiving.status === "posted" || receiving.status === "posted_qty_only" || receiving.status === "posted_costed") {
+    return receiving;
+  }
 
   try {
     await storage.assertPeriodOpen(receiving.receiveDate);

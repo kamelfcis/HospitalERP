@@ -105,9 +105,7 @@ const methods = {
   async searchSuppliers(this: DatabaseStorage, q: string, limit: number = 20): Promise<Pick<Supplier, 'id' | 'code' | 'nameAr' | 'nameEn' | 'phone'>[]> {
     const trimmed = q.trim();
     if (!trimmed) {
-      return db.select({
-        id: suppliers.id, code: suppliers.code, nameAr: suppliers.nameAr, nameEn: suppliers.nameEn, phone: suppliers.phone,
-      }).from(suppliers).where(eq(suppliers.isActive, true)).orderBy(suppliers.nameAr).limit(limit);
+      return [];
     }
     const isNumericLike = /^\d+$/.test(trimmed);
     let results;

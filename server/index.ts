@@ -10,6 +10,7 @@
  *  ✓ Structured logging عبر pino
  */
 
+import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
@@ -25,6 +26,19 @@ import { loadSettings } from "./settings-cache";
 import { pool, testDbConnection } from "./db";
 import { logger } from "./lib/logger";
 import { runStartup } from "./startup";
+
+// Surface async failures that would otherwise exit with no clear log (Windows / pino flush).
+process.on("unhandledRejection", (reason) => {
+  const msg = reason instanceof Error ? reason.stack ?? reason.message : String(reason);
+  logger.fatal({ err: msg }, "[FATAL] unhandledRejection");
+  console.error("[FATAL] unhandledRejection\n", msg);
+  process.exit(1);
+});
+process.on("uncaughtException", (err) => {
+  logger.fatal({ err: err.message, stack: err.stack }, "[FATAL] uncaughtException");
+  console.error("[FATAL] uncaughtException\n", err);
+  process.exit(1);
+});
 
 // ── Module augmentations ──────────────────────────────────────────────────────
 declare module "http" {
@@ -271,40 +285,68 @@ process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
     logger.warn("[STARTUP] system settings table not yet available — will retry after schema sync");
   }
 
-  // ── 5d. Register routes ───────────────────────────────────────────────────
-  await registerRoutes(httpServer, app);
-  registerMonitoringRoutes(app);
+  try {
+    // ── 5d. Register routes ─────────────────────────────────────────────────
+    await registerRoutes(httpServer, app);
+    logger.info("[STARTUP] HTTP API routes registered");
+    registerMonitoringRoutes(app);
 
-  // ── 5e. Global error handler ──────────────────────────────────────────────
-  app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-    const status  = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+    // ── 5e. Global error handler ────────────────────────────────────────────
+    app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+      const status  = err.status || err.statusCode || 500;
+      const message = err.message || "Internal Server Error";
 
-    logger.error({
-      requestId: (req as any).requestId,
-      status,
-      err:       err.message,
-      stack:     status >= 500 ? err.stack : undefined,
-    }, "Internal Server Error");
+      logger.error({
+        requestId: (req as any).requestId,
+        status,
+        err:       err.message,
+        stack:     status >= 500 ? err.stack : undefined,
+      }, "Internal Server Error");
 
-    if (res.headersSent) return next(err);
-    return res.status(status).json({ message });
-  });
+      if (res.headersSent) return next(err);
+      return res.status(status).json({ message });
+    });
 
-  // ── 5f. Static / Vite ─────────────────────────────────────────────────────
-  if (process.env.NODE_ENV === "production") {
-    serveStatic(app);
-  } else {
-    const { setupVite } = await import("./vite");
-    await setupVite(httpServer, app);
+    // ── 5f. Static / Vite ───────────────────────────────────────────────────
+    if (process.env.NODE_ENV === "production") {
+      serveStatic(app);
+    } else {
+      logger.info("[STARTUP] initializing Vite dev middleware (may take a few seconds)…");
+      const { setupVite } = await import("./vite");
+      await setupVite(httpServer, app);
+      logger.info("[STARTUP] Vite dev middleware ready");
+    }
+
+    // ── 5g. Startup tasks (migrations, sequences, backfills, integrity, cron) ─
+    logger.info("[STARTUP] running deferred startup tasks (DB migrations, integrity, workers)…");
+    await runStartup(log);
+    logger.info("[STARTUP] deferred startup tasks finished");
+
+    // ── 5h. Listen ─────────────────────────────────────────────────────────
+    const port = parseInt(process.env.PORT || "5000", 10);
+    // SO_REUSEPORT is not reliably useful on Windows for this stack and can
+    // contribute to confusing listen/bind behavior — keep Linux/Replit behavior.
+    const listenOpts =
+      process.platform === "win32"
+        ? ({ port, host: "0.0.0.0" } as const)
+        : ({ port, host: "0.0.0.0", reusePort: true } as const);
+
+    await new Promise<void>((resolve, reject) => {
+      const onErr = (err: Error) => {
+        httpServer.off("error", onErr);
+        reject(err);
+      };
+      httpServer.once("error", onErr);
+      httpServer.listen(listenOpts, () => {
+        httpServer.off("error", onErr);
+        log(`serving on port ${port}`);
+        resolve();
+      });
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    const stack   = err instanceof Error ? err.stack : undefined;
+    logger.fatal({ err: message, stack }, "[FATAL STARTUP] server failed during bootstrap (routes, vite, migrations, or listen)");
+    process.exit(1);
   }
-
-  // ── 5g. Startup tasks (migrations, sequences, backfills, integrity, cron) ─
-  await runStartup(log);
-
-  // ── 5h. Listen ────────────────────────────────────────────────────────────
-  const port = parseInt(process.env.PORT || "5000", 10);
-  httpServer.listen({ port, host: "0.0.0.0", reusePort: true }, () => {
-    log(`serving on port ${port}`);
-  });
 })();

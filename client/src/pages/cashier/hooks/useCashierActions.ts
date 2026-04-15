@@ -1,4 +1,3 @@
-import { useCallback, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -10,15 +9,13 @@ interface UseCashierActionsParams {
   salesSelected: Set<string>;
   returnsSelected: Set<string>;
   cashierName: string;
-  hasActiveShift: boolean;
-  activeTab: string;
   clearSelection: () => void;
   onPrintReceipts?: (invoiceIds: string[]) => void;
 }
 
 export function useCashierActions({
   shiftId, shiftUnitType, shiftUnitId, salesSelected, returnsSelected,
-  cashierName, hasActiveShift, activeTab, clearSelection, onPrintReceipts,
+  cashierName, clearSelection, onPrintReceipts,
 }: UseCashierActionsParams) {
   const { toast } = useToast();
 
@@ -69,21 +66,6 @@ export function useCashierActions({
       toast({ title: "خطأ في صرف المرتجع", description: error.message, variant: "destructive" });
     },
   });
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey && e.key === "Enter") || e.key === "F9") {
-        e.preventDefault();
-        if (activeTab === "sales" && salesSelected.size > 0 && hasActiveShift && !collectMutation.isPending) {
-          collectMutation.mutate();
-        } else if (activeTab === "returns" && returnsSelected.size > 0 && hasActiveShift && !refundMutation.isPending) {
-          refundMutation.mutate();
-        }
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeTab, salesSelected, returnsSelected, hasActiveShift, collectMutation, refundMutation]);
 
   return { collectMutation, refundMutation };
 }
