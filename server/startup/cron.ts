@@ -21,6 +21,11 @@ import { logger } from "../lib/logger";
 type LogFn = (msg: string, source?: string) => void;
 
 export function startCronJobs(log: LogFn): void {
+  if (process.env.VERCEL === "1") {
+    log("[CRON] skipped on Vercel serverless — use a long-running host or external scheduler for background ticks");
+    return;
+  }
+
   // ── Stay Engine: every 5 minutes ──────────────────────────────────────────
   const STAY_TICK_MS = 5 * 60 * 1000;
   const runStayTick = async () => {

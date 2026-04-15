@@ -4,5 +4,14 @@
   "outputDirectory": "dist/public",
   "installCommand": "npm ci",
   "framework": null,
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "functions": {
+    "api/[[...path]].ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  },
+  "rewrites": [
+    { "source": "/health", "destination": "/api/health" },
+    { "source": "/((?!api/|assets/).*)", "destination": "/index.html" }
+  ]
 }
