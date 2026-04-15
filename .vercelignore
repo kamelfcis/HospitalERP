@@ -1,0 +1,13 @@
+# Keep upload under Vercel CLI file limits (~15k); build runs fresh on their servers.
+node_modules
+dist
+coverage
+.tmp
+.local
+.git
+.cursor
+.agents
+*.log
+.env
+.env.local
+.env.test
