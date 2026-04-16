@@ -170,6 +170,7 @@ export async function bootstrapApp(): Promise<{ app: Express; httpServer: Server
         createTableIfMissing: true,
         pruneSessionInterval: 60 * 60,
       }),
+      proxy:            isVercel,
       secret:           process.env.SESSION_SECRET || KNOWN_DEFAULT_SECRET,
       resave:           false,
       saveUninitialized: false,
@@ -184,10 +185,26 @@ export async function bootstrapApp(): Promise<{ app: Express; httpServer: Server
 
   app.use(perfRequestMiddleware(500));
 
-  const API_PUBLIC_PATHS = ["/auth/login", "/auth/logout", "/auth/me"];
+  const API_PUBLIC_EXACT = new Set(["/auth/login", "/auth/logout", "/auth/me", "/health"]);
+  /** Unauthenticated API paths (paths may be /api/... or /... depending on mount / serverless adapter). */
+  function isApiPublicRoute(req: Request): boolean {
+    const orig = (req.originalUrl ?? req.url ?? "").split("?")[0] || "";
+    const base = [req.path || "", orig];
+    const candidates: string[] = [];
+    for (const p of base) {
+      candidates.push(p);
+      if (p.startsWith("/api/")) candidates.push(p.slice(4) || "/");
+    }
+    for (let i = 0; i < candidates.length; i++) {
+      const p = candidates[i];
+      if (API_PUBLIC_EXACT.has(p)) return true;
+      if (p === "/public/login-background" || p.startsWith("/public/")) return true;
+    }
+    return false;
+  }
+
   app.use("/api", (req: Request, res: Response, next: NextFunction) => {
-    const normalizedPath = req.path.startsWith("/api/") ? req.path.slice(4) : req.path;
-    if (API_PUBLIC_PATHS.includes(req.path) || API_PUBLIC_PATHS.includes(normalizedPath)) return next();
+    if (isApiPublicRoute(req)) return next();
     if (!req.session.userId) {
       return res.status(401).json({ message: "يجب تسجيل الدخول" });
     }
