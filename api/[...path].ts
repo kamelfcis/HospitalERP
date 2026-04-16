@@ -55,39 +55,78 @@ async function getApp(): Promise<Express> {
  * Ensure req.url contains the full /api/… path.
  *
  * Vercel catch-all `api/[...path].ts` may deliver the matched segments
- * in `req.query.path` while `req.url` is just `/` or `/?path=…`.
+ * in `req.query.path` (object) or as `?path=…&path=…` query params,
+ * while `req.url` is just `/` or `/?path=…`.
  * Express needs the actual pathname to match routes.
  */
 function ensureApiUrl(req: any): void {
-  const url = typeof req?.url === "string" ? req.url : "/";
+  const raw = typeof req?.url === "string" ? req.url : "/";
 
-  // Already a proper /api/something path — nothing to fix.
-  const qIdx = url.indexOf("?");
-  const pathname = qIdx >= 0 ? url.slice(0, qIdx) : url;
+  const qIdx = raw.indexOf("?");
+  const pathname = qIdx >= 0 ? raw.slice(0, qIdx) : raw;
+  const search = qIdx >= 0 ? raw.slice(qIdx + 1) : "";
+
+  // Case 1: Already a proper /api/something path
   if (pathname.startsWith("/api/") && pathname.length > 5) return;
 
-  // Try to reconstruct from query.path (Vercel catch-all parameter).
-  const pathParam = req?.query?.path;
-  if (pathParam !== undefined && pathParam !== null) {
-    const slug = Array.isArray(pathParam)
-      ? pathParam.map(String).filter(Boolean).join("/")
-      : String(pathParam);
-    if (slug) {
-      req.url = `/api/${slug}`;
-      return;
-    }
+  // Case 2: Try req.query.path (Vercel augments req with parsed query)
+  let slug: string | undefined;
+  const qp = req?.query?.path;
+  if (qp !== undefined && qp !== null) {
+    slug = Array.isArray(qp) ? qp.filter(Boolean).join("/") : String(qp);
   }
 
-  // Fallback: just prefix with /api if missing.
-  if (!url.startsWith("/api")) {
-    req.url = url.startsWith("/") ? `/api${url}` : `/api/${url}`;
+  // Case 3: Parse ?path=…&path=… directly from URL string
+  if (!slug && search) {
+    const parts: string[] = [];
+    for (const pair of search.split("&")) {
+      const eq = pair.indexOf("=");
+      const key = eq >= 0 ? decodeURIComponent(pair.slice(0, eq)) : decodeURIComponent(pair);
+      if (key === "path") {
+        const val = eq >= 0 ? decodeURIComponent(pair.slice(eq + 1)) : "";
+        if (val) parts.push(val);
+      }
+    }
+    if (parts.length > 0) slug = parts.join("/");
+  }
+
+  if (slug) {
+    req.url = `/api/${slug}`;
+    return;
+  }
+
+  // Case 4: URL is like /auth/me (prefix stripped by Vercel)
+  if (pathname !== "/" && pathname !== "/api" && pathname !== "/api/") {
+    const clean = pathname.startsWith("/") ? pathname : `/${pathname}`;
+    req.url = `/api${clean}`;
+    return;
+  }
+
+  // Case 5: Bare /api or /
+  if (!raw.startsWith("/api")) {
+    req.url = `/api${raw.startsWith("/") ? raw : `/${raw}`}`;
   }
 }
 
 const SAFETY_TIMEOUT_MS = 55_000;
 
 export default async (req: any, res: any) => {
+  const rawUrl = req.url;
+
+  // Diagnostic endpoint — bypasses Express entirely
+  if (rawUrl?.includes("__diag")) {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      rawUrl,
+      method: req.method,
+      query: req.query,
+      hasQueryPath: req.query?.path !== undefined,
+    }));
+    return;
+  }
+
   ensureApiUrl(req);
+  console.log(`[VERCEL] ${req.method} raw=${rawUrl} → fixed=${req.url}`);
 
   const expressApp = await getApp();
 

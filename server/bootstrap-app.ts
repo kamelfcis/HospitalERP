@@ -122,6 +122,14 @@ export async function bootstrapApp(): Promise<{ app: Express; httpServer: Server
   );
   app.use(express.urlencoded({ extended: false }));
 
+  // Log every request in Vercel for diagnostics
+  if (isVercel) {
+    app.use((req: Request, _res: Response, next: NextFunction) => {
+      console.log(`[EXPRESS] ${req.method} url=${req.url} path=${req.path} originalUrl=${req.originalUrl}`);
+      next();
+    });
+  }
+
   // Some serverless adapters pass catch-all API URLs without the `/api` prefix.
   // Normalize early so the existing `/api/*` route table continues to work unchanged.
   app.use((req: Request, _res: Response, next: NextFunction) => {
@@ -203,7 +211,8 @@ export async function bootstrapApp(): Promise<{ app: Express; httpServer: Server
     return false;
   }
 
-  app.use("/api", (req: Request, res: Response, next: NextFunction) => {
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (!req.path.startsWith("/api")) return next();
     if (isApiPublicRoute(req)) return next();
     if (!req.session.userId) {
       return res.status(401).json({ message: "يجب تسجيل الدخول" });

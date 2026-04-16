@@ -6,7 +6,7 @@
   "functions": {
     "api/[...path].ts": {
       "maxDuration": 60,
-      "includeFiles": "public/**"
+      "includeFiles": ["dist/bootstrap-app.cjs", "public/**"]
     }
   },
   "rewrites": [
