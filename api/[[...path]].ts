@@ -26,5 +26,11 @@ async function getHandler(): Promise<ReturnType<typeof serverless>> {
 
 export default async (req: any, res: any) => {
   const h = await getHandler();
+  // On Vercel `api/[[...path]]`, req.url can arrive as `/auth/login`.
+  // Our Express app registers routes with `/api/*`, so normalize before dispatch.
+  const url = typeof req?.url === "string" ? req.url : "/";
+  if (!url.startsWith("/api")) {
+    req.url = url.startsWith("/") ? `/api${url}` : `/api/${url}`;
+  }
   return h(req, res);
 };
