@@ -273,7 +273,8 @@ export async function bootstrapApp(): Promise<{ app: Express; httpServer: Server
         );
       }
       // Client routes (wouter): no matching file under public/ → serve SPA shell.
-      app.get("*", (req, res, next) => {
+      // Express 5 path parser rejects bare "*", so use a regex catch-all.
+      app.get(/.*/, (req, res, next) => {
         if (req.path.startsWith("/api")) return next();
         if (!existsSync(indexPath)) {
           return res.status(503).type("text").send("UI bundle missing: build must copy dist/public to public/ on Vercel.");
