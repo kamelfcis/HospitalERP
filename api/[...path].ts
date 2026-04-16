@@ -1,56 +1,22 @@
 /**
  * Vercel catch-all function for /api/**.
+ *
+ * Vercel Node.js functions receive standard (req, res) HTTP objects.
+ * We pass them directly to Express — no serverless-http wrapper needed.
  */
 process.noDeprecation = true;
 import "dotenv/config";
-import serverless from "serverless-http";
 import { createRequire } from "node:module";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { Express } from "express";
 
-let handler: ReturnType<typeof serverless> | undefined;
+let app: Express | undefined;
 let initPromise: Promise<void> | undefined;
-
-/**
- * Vercel `api/[...path].ts` often forwards the matched segments as `?path=...`
- * while `req.url` is only `/` or `/api`, so Express never hits `/api/settings` etc.
- * The SPA catch-all then does `next()` for `/api` and the request hangs until maxDuration.
- */
-function normalizeCatchAllApiUrl(req: any): void {
-  const pathParam = req?.query?.path;
-  if (pathParam === undefined || pathParam === null) return;
-
-  const slug = Array.isArray(pathParam)
-    ? pathParam.map(String).filter(Boolean).join("/")
-    : String(pathParam);
-  if (!slug) return;
-
-  const raw = typeof req?.url === "string" ? req.url : "/";
-  let pathname: string;
-  let params: URLSearchParams;
-  try {
-    const u = new URL(raw, "http://localhost");
-    pathname = u.pathname || "/";
-    params = new URLSearchParams(u.searchParams);
-  } catch {
-    const cut = raw.indexOf("?");
-    pathname = cut >= 0 ? raw.slice(0, cut) : raw;
-    params = new URLSearchParams(cut >= 0 ? raw.slice(cut + 1) : "");
-  }
-
-  if (pathname.startsWith("/api/") && pathname.length > 5) return;
-
-  params.delete("path");
-  const q = params.toString();
-  req.url = `/api/${slug}${q ? `?${q}` : ""}`;
-}
 
 function ensureCriticalEnv(): void {
   if (process.env.DATABASE_URL && process.env.SESSION_SECRET) return;
 
-  // Fallback: in serverless runtime, load defaults from checked-in env example
-  // when project env vars are unexpectedly unavailable.
   const fallbackPath = path.resolve(process.cwd(), ".env.example");
   if (!existsSync(fallbackPath)) return;
 
@@ -69,33 +35,82 @@ function ensureCriticalEnv(): void {
   }
 }
 
-async function getHandler(): Promise<ReturnType<typeof serverless>> {
-  if (handler) return handler;
+async function getApp(): Promise<Express> {
+  if (app) return app;
   if (!initPromise) {
     initPromise = (async () => {
       process.env.VERCEL ??= "1";
       ensureCriticalEnv();
       const require = createRequire(import.meta.url);
-      // Load bundled CJS bootstrap to avoid ESM relative-import resolution pitfalls.
       const { bootstrapApp } = require("../dist/bootstrap-app.cjs");
-      const { app } = await bootstrapApp();
-      handler = serverless(app as Express, {
-        binary: ["application/octet-stream", "application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif"],
-      });
+      const result = await bootstrapApp();
+      app = result.app;
     })();
   }
   await initPromise;
-  return handler!;
+  return app!;
 }
 
-export default async (req: any, res: any) => {
-  normalizeCatchAllApiUrl(req);
-  const h = await getHandler();
-  // On Vercel catch-all functions req.url may arrive without the /api prefix.
-  // Our Express app registers routes with /api/*, so normalize before dispatch.
+/**
+ * Ensure req.url contains the full /api/… path.
+ *
+ * Vercel catch-all `api/[...path].ts` may deliver the matched segments
+ * in `req.query.path` while `req.url` is just `/` or `/?path=…`.
+ * Express needs the actual pathname to match routes.
+ */
+function ensureApiUrl(req: any): void {
   const url = typeof req?.url === "string" ? req.url : "/";
+
+  // Already a proper /api/something path — nothing to fix.
+  const qIdx = url.indexOf("?");
+  const pathname = qIdx >= 0 ? url.slice(0, qIdx) : url;
+  if (pathname.startsWith("/api/") && pathname.length > 5) return;
+
+  // Try to reconstruct from query.path (Vercel catch-all parameter).
+  const pathParam = req?.query?.path;
+  if (pathParam !== undefined && pathParam !== null) {
+    const slug = Array.isArray(pathParam)
+      ? pathParam.map(String).filter(Boolean).join("/")
+      : String(pathParam);
+    if (slug) {
+      req.url = `/api/${slug}`;
+      return;
+    }
+  }
+
+  // Fallback: just prefix with /api if missing.
   if (!url.startsWith("/api")) {
     req.url = url.startsWith("/") ? `/api${url}` : `/api/${url}`;
   }
-  return h(req, res);
+}
+
+const SAFETY_TIMEOUT_MS = 55_000;
+
+export default async (req: any, res: any) => {
+  ensureApiUrl(req);
+
+  const expressApp = await getApp();
+
+  return new Promise<void>((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+
+    // Safety: never let the function hang until Vercel kills it at 60s.
+    const timer = setTimeout(() => {
+      if (!res.headersSent) {
+        res.writeHead(504, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ message: "Serverless function timeout" }));
+      }
+      finish();
+    }, SAFETY_TIMEOUT_MS);
+
+    res.on("finish", () => { clearTimeout(timer); finish(); });
+    res.on("close", () => { clearTimeout(timer); finish(); });
+
+    expressApp(req, res);
+  });
 };
