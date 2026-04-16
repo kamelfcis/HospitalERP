@@ -23,7 +23,46 @@
  * ═══════════════════════════════════════════════════════════════
  */
 
-import type { Response } from "express";
+import type { Request, Response } from "express";
+
+/**
+ * Vercel serverless functions have maxDuration (e.g. 60s). Long-lived SSE otherwise
+ * hits "Runtime Timeout". End the stream before that; EventSource clients reconnect
+ * (see client `useSSE` onerror → retry).
+ */
+export function capSseForVercel(req: Request, res: Response, dispose: () => void): () => void {
+  let ran = false;
+  const onceDispose = () => {
+    if (ran) return;
+    ran = true;
+    dispose();
+  };
+
+  if (process.env.VERCEL !== "1") {
+    return onceDispose;
+  }
+
+  const raw = Number(process.env.VERCEL_SSE_CAP_MS ?? 38_000);
+  const ms = Math.min(55_000, Math.max(5_000, Number.isFinite(raw) ? raw : 38_000));
+  const timer = setTimeout(() => {
+    onceDispose();
+    try {
+      if (!res.writableEnded) {
+        res.write(": sse-vercel-cap\n\n");
+        res.end();
+      }
+    } catch {
+      /* ignore */
+    }
+  }, ms);
+
+  const clearTimer = () => clearTimeout(timer);
+  req.once("close", clearTimer);
+  res.once("finish", clearTimer);
+  res.once("close", clearTimer);
+
+  return onceDispose;
+}
 
 // ── الصيدليات ────────────────────────────────────────────────
 export const sseClients = new Map<string, Set<Response>>();

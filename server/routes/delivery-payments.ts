@@ -16,6 +16,7 @@ import {
 import {
   deliveryPaymentClients,
   broadcastDeliveryPaymentUpdate,
+  capSseForVercel,
 } from "./_sse";
 import { broadcastToUnit } from "./_shared";
 
@@ -94,10 +95,11 @@ export function registerDeliveryPaymentRoutes(app: Express) {
     const keepAlive = setInterval(() => {
       try { res.write(": keep-alive\n\n"); (res as any).flush?.(); } catch { clearInterval(keepAlive); }
     }, 15_000);
-    req.on("close", () => {
+    const dispose = capSseForVercel(req, res, () => {
       clearInterval(keepAlive);
       deliveryPaymentClients.delete(res);
     });
+    req.on("close", dispose);
   });
 
   // ── GET /api/delivery-payments/report ────────────────────────────────────

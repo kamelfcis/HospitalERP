@@ -11,6 +11,7 @@ import {
   checkPermission,
   chatSseClients,
   broadcastChatMessage,
+  capSseForVercel,
 } from "./_shared";
 
 export function registerSystemRoutes(app: Express) {
@@ -128,7 +129,11 @@ export function registerSystemRoutes(app: Express) {
     res.flushHeaders();
     chatSseClients.set(userId, res);
     const ping = setInterval(() => { try { res.write(": ping\n\n"); } catch { clearInterval(ping); } }, 25000);
-    req.on("close", () => { clearInterval(ping); chatSseClients.delete(userId); });
+    const dispose = capSseForVercel(req, res, () => {
+      clearInterval(ping);
+      chatSseClients.delete(userId);
+    });
+    req.on("close", dispose);
   });
 
   app.get("/api/chat/users", requireAuth, async (req, res) => {

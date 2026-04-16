@@ -4,6 +4,7 @@ import {
   requireAuth,
   checkPermission,
   clinicSseClients,
+  capSseForVercel,
 } from "./_shared";
 import {
   resolveClinicScope,
@@ -32,7 +33,7 @@ export function registerClinicSetupRoutes(app: Express) {
       try { res.write(": keep-alive\n\n"); } catch { clearInterval(keepAlive); }
     }, 15_000);
 
-    req.on("close", () => {
+    const dispose = capSseForVercel(req, res, () => {
       clearInterval(keepAlive);
       const clients = clinicSseClients.get(clinicId);
       if (clients) {
@@ -40,6 +41,7 @@ export function registerClinicSetupRoutes(app: Express) {
         if (clients.size === 0) clinicSseClients.delete(clinicId);
       }
     });
+    req.on("close", dispose);
   });
 
   app.get("/api/clinic-clinics", requireAuth, async (req, res) => {

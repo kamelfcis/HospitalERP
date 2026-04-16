@@ -3,7 +3,7 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { requireAuth, checkPermission, sseClients } from "./_shared";
+import { requireAuth, checkPermission, sseClients, capSseForVercel } from "./_shared";
 import { PERMISSIONS } from "@shared/permissions";
 import { logger } from "../lib/logger";
 
@@ -51,7 +51,7 @@ export function registerCashierSetupRoutes(app: Express) {
       try { sseWrite(": keep-alive\n\n"); } catch { clearInterval(keepAlive); }
     }, 15_000);
 
-    req.on("close", () => {
+    const dispose = capSseForVercel(req, res, () => {
       clearInterval(keepAlive);
       const clients = sseClients.get(unitId);
       if (clients) {
@@ -60,6 +60,7 @@ export function registerCashierSetupRoutes(app: Express) {
       }
       logger.debug({ unitId }, "[SSE] cashier client disconnected");
     });
+    req.on("close", dispose);
   });
 
   app.get("/api/drawer-passwords", requireAuth, checkPermission(PERMISSIONS.SETTINGS_ACCOUNT_MAPPINGS), async (_req, res) => {

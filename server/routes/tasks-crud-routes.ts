@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
-import { requireAuth } from "./_shared";
+import { requireAuth, capSseForVercel } from "./_shared";
 import { taskNotifSseClients, broadcastTaskNotif } from "./_sse";
 
 export function registerTasksCrudRoutes(app: Express) {
@@ -15,10 +15,11 @@ export function registerTasksCrudRoutes(app: Express) {
     const ping = setInterval(() => {
       try { res.write(": ping\n\n"); } catch { clearInterval(ping); }
     }, 25000);
-    req.on("close", () => {
+    const dispose = capSseForVercel(req, res, () => {
       clearInterval(ping);
       taskNotifSseClients.delete(userId);
     });
+    req.on("close", dispose);
   });
 
   app.get("/api/tasks/notifications/unread-count", requireAuth, async (req, res) => {

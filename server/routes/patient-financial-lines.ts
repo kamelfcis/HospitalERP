@@ -1,7 +1,7 @@
 import type { Express, Response } from "express";
 import { storage } from "../storage";
 import { PERMISSIONS } from "@shared/permissions";
-import { requireAuth, checkPermission } from "./_shared";
+import { requireAuth, checkPermission, capSseForVercel } from "./_shared";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { patientInvoiceClients } from "./_sse";
@@ -34,7 +34,7 @@ export function registerPatientFinancialLinesRoutes(app: Express) {
       }
     }, 30_000);
 
-    req.on("close", () => {
+    const dispose = capSseForVercel(req, res, () => {
       clearInterval(keepAlive);
       const set = patientInvoiceClients.get(patientId);
       if (set) {
@@ -42,6 +42,7 @@ export function registerPatientFinancialLinesRoutes(app: Express) {
         if (set.size === 0) patientInvoiceClients.delete(patientId);
       }
     });
+    req.on("close", dispose);
   });
 
   app.get("/api/patients/:id/invoice-lines", requireAuth, checkPermission(PERMISSIONS.PATIENTS_VIEW), async (req, res) => {

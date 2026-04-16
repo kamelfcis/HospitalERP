@@ -7,6 +7,7 @@ import {
   checkPermission,
   clinicOrdersClients,
   broadcastClinicOrdersUpdate,
+  capSseForVercel,
 } from "./_shared";
 import {
   resolveClinicScope,
@@ -31,10 +32,11 @@ export function registerClinicOrdersRoutes(app: Express) {
       try { res.write(": keep-alive\n\n"); } catch { clearInterval(keepAlive); }
     }, 15_000);
 
-    req.on("close", () => {
+    const dispose = capSseForVercel(req, res, () => {
       clearInterval(keepAlive);
       clinicOrdersClients.delete(res);
     });
+    req.on("close", dispose);
   });
 
   app.get("/api/clinic-orders", requireAuth, async (req, res) => {

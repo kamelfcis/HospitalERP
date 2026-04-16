@@ -28,7 +28,7 @@ import { storage } from "../storage";
 import { runRefresh, REFRESH_KEYS } from "../lib/rpt-refresh-orchestrator";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
-import { bedBoardClients, broadcastBedBoardUpdate, requireAuth, checkHospitalAccess, checkPermission } from "./_shared";
+import { bedBoardClients, broadcastBedBoardUpdate, requireAuth, checkHospitalAccess, checkPermission, capSseForVercel } from "./_shared";
 import { PERMISSIONS } from "@shared/permissions";
 import { findOrCreatePatient } from "../lib/find-or-create-patient";
 import { logger } from "../lib/logger";
@@ -49,10 +49,11 @@ export function registerBedBoardRoutes(app: Express) {
       try { res.write(": keep-alive\n\n"); } catch { clearInterval(keepAlive); }
     }, 15_000);
 
-    req.on("close", () => {
+    const dispose = capSseForVercel(req, res, () => {
       clearInterval(keepAlive);
       bedBoardClients.delete(res);
     });
+    req.on("close", dispose);
   });
 
   app.get("/api/bed-board", requireAuth, checkHospitalAccess, checkPermission(PERMISSIONS.BED_BOARD_VIEW), async (req, res) => {
