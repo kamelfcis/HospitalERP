@@ -121,6 +121,14 @@ export async function bootstrapApp(): Promise<{ app: Express; httpServer: Server
   );
   app.use(express.urlencoded({ extended: false }));
 
+  // Some serverless adapters pass catch-all API URLs without the `/api` prefix.
+  // Normalize early so the existing `/api/*` route table continues to work unchanged.
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    if (req.url === "/health" || req.url.startsWith("/api/") || req.url === "/api") return next();
+    req.url = req.url.startsWith("/") ? `/api${req.url}` : `/api/${req.url}`;
+    next();
+  });
+
   app.use((req: Request, res: Response, next: NextFunction) => {
     const id = (req.headers["x-request-id"] as string) || randomUUID().substring(0, 8);
     (req as any).requestId = id;
