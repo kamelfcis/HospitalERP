@@ -2,6 +2,8 @@
  * server/bootstrap-app.ts — تهيئة Express (مشتركة بين تشغيل Node العادي و Vercel Serverless)
  */
 
+import { existsSync } from "fs";
+import path from "path";
 import express, { type Express, type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
@@ -252,7 +254,24 @@ export async function bootstrapApp(): Promise<{ app: Express; httpServer: Server
     });
 
     if (isVercel) {
-      logger.info("[STARTUP] Vercel serverless — static UI served from CDN, API from this function");
+      logger.info("[STARTUP] Vercel — public/ at edge + Express (Fluid) for API and SPA HTML");
+      const indexPath = path.join(process.cwd(), "public", "index.html");
+      if (!existsSync(indexPath)) {
+        logger.warn(
+          { indexPath },
+          "[STARTUP] public/index.html missing — run build with VERCEL=1 so dist/public is copied to public/",
+        );
+      }
+      // Client routes (wouter): no matching file under public/ → serve SPA shell.
+      app.get("*", (req, res, next) => {
+        if (req.path.startsWith("/api")) return next();
+        if (!existsSync(indexPath)) {
+          return res.status(503).type("text").send("UI bundle missing: build must copy dist/public to public/ on Vercel.");
+        }
+        res.sendFile(indexPath, (err) => {
+          if (err) next(err);
+        });
+      });
     } else if (process.env.NODE_ENV === "production") {
       serveStatic(app);
     } else {

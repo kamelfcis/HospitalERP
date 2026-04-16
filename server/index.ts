@@ -1,7 +1,7 @@
 /**
  * server/index.ts — نقطة دخول الخادم (Node طويل الأمد)
  *
- * يستورد التهيئة من bootstrap-app.ts — نفس المنطق يُستخدم على Vercel عبر api/index.ts
+ * يستورد التهيئة من bootstrap-app.ts — على Vercel يُصدَّر التطبيق من `src/index.ts` (Fluid Express).
  */
 
 import "dotenv/config";

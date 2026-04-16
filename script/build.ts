@@ -1,6 +1,7 @@
+import path from "node:path";
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile } from "fs/promises";
+import { cp, rm, readFile } from "fs/promises";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -37,6 +38,16 @@ async function buildAll() {
 
   console.log("building client...");
   await viteBuild();
+
+  // Vercel serves static files from `public/` at the edge; Fluid Express never runs express.static().
+  if (process.env.VERCEL === "1") {
+    const root = path.resolve(import.meta.dirname, "..");
+    const built = path.join(root, "dist", "public");
+    const pub = path.join(root, "public");
+    console.log("vercel: syncing dist/public → public/ …");
+    await rm(pub, { recursive: true, force: true });
+    await cp(built, pub, { recursive: true });
+  }
 
   console.log("building server...");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));
