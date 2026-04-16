@@ -10,7 +10,8 @@ import connectPgSimple from "connect-pg-simple";
 import compression from "compression";
 import { randomUUID } from "crypto";
 import { createServer, type Server } from "http";
-import { registerRoutes } from "./routes";
+// Vercel serverless runtime resolves ESM imports strictly; avoid directory import.
+import { registerRoutes } from "./routes/index.js";
 import { serveStatic } from "./static";
 import { seedDatabase } from "./seed";
 import { seedPermissionGroups } from "./lib/permission-groups-seed";
