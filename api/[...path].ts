@@ -1,6 +1,7 @@
 /**
  * Vercel catch-all function for /api/**.
  */
+process.noDeprecation = true;
 import "dotenv/config";
 import serverless from "serverless-http";
 import { createRequire } from "node:module";
