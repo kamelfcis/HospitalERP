@@ -292,9 +292,13 @@ export async function bootstrapApp(): Promise<{ app: Express; httpServer: Server
       logger.info("[STARTUP] Vite dev middleware ready");
     }
 
-    logger.info("[STARTUP] running deferred startup tasks (DB migrations, integrity, workers)…");
-    await runStartup(log);
-    logger.info("[STARTUP] deferred startup tasks finished");
+    if (isVercel) {
+      logger.info("[STARTUP] Vercel serverless detected — skipping heavy deferred startup tasks");
+    } else {
+      logger.info("[STARTUP] running deferred startup tasks (DB migrations, integrity, workers)…");
+      await runStartup(log);
+      logger.info("[STARTUP] deferred startup tasks finished");
+    }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     const stack   = err instanceof Error ? err.stack : undefined;
