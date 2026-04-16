@@ -300,6 +300,14 @@ export async function bootstrapApp(): Promise<{ app: Express; httpServer: Server
           if (err) next(err);
         });
       });
+
+      // SPA handler calls next() for /api — without a following handler the request hangs until serverless maxDuration.
+      app.use((req: Request, res: Response) => {
+        if (req.path.startsWith("/api")) {
+          return res.status(404).json({ message: "مسار API غير معروف" });
+        }
+        res.status(404).type("text").send("Not found");
+      });
     } else if (process.env.NODE_ENV === "production") {
       serveStatic(app);
     } else {

@@ -11,6 +11,40 @@ import type { Express } from "express";
 let handler: ReturnType<typeof serverless> | undefined;
 let initPromise: Promise<void> | undefined;
 
+/**
+ * Vercel `api/[...path].ts` often forwards the matched segments as `?path=...`
+ * while `req.url` is only `/` or `/api`, so Express never hits `/api/settings` etc.
+ * The SPA catch-all then does `next()` for `/api` and the request hangs until maxDuration.
+ */
+function normalizeCatchAllApiUrl(req: any): void {
+  const pathParam = req?.query?.path;
+  if (pathParam === undefined || pathParam === null) return;
+
+  const slug = Array.isArray(pathParam)
+    ? pathParam.map(String).filter(Boolean).join("/")
+    : String(pathParam);
+  if (!slug) return;
+
+  const raw = typeof req?.url === "string" ? req.url : "/";
+  let pathname: string;
+  let params: URLSearchParams;
+  try {
+    const u = new URL(raw, "http://localhost");
+    pathname = u.pathname || "/";
+    params = new URLSearchParams(u.searchParams);
+  } catch {
+    const cut = raw.indexOf("?");
+    pathname = cut >= 0 ? raw.slice(0, cut) : raw;
+    params = new URLSearchParams(cut >= 0 ? raw.slice(cut + 1) : "");
+  }
+
+  if (pathname.startsWith("/api/") && pathname.length > 5) return;
+
+  params.delete("path");
+  const q = params.toString();
+  req.url = `/api/${slug}${q ? `?${q}` : ""}`;
+}
+
 function ensureCriticalEnv(): void {
   if (process.env.DATABASE_URL && process.env.SESSION_SECRET) return;
 
@@ -54,6 +88,7 @@ async function getHandler(): Promise<ReturnType<typeof serverless>> {
 }
 
 export default async (req: any, res: any) => {
+  normalizeCatchAllApiUrl(req);
   const h = await getHandler();
   // On Vercel catch-all functions req.url may arrive without the /api prefix.
   // Our Express app registers routes with /api/*, so normalize before dispatch.
