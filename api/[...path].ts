@@ -1,5 +1,5 @@
 /**
- * Vercel catch-all function for /api and /api/**.
+ * Vercel catch-all function for /api/**.
  */
 import "dotenv/config";
 import serverless from "serverless-http";
@@ -26,8 +26,8 @@ async function getHandler(): Promise<ReturnType<typeof serverless>> {
 
 export default async (req: any, res: any) => {
   const h = await getHandler();
-  // On Vercel `api/[[...path]]`, req.url can arrive as `/auth/login`.
-  // Our Express app registers routes with `/api/*`, so normalize before dispatch.
+  // On Vercel catch-all functions req.url may arrive without the /api prefix.
+  // Our Express app registers routes with /api/*, so normalize before dispatch.
   const url = typeof req?.url === "string" ? req.url : "/";
   if (!url.startsWith("/api")) {
     req.url = url.startsWith("/") ? `/api${url}` : `/api/${url}`;
