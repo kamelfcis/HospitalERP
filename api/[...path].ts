@@ -13,7 +13,8 @@ async function getHandler(): Promise<ReturnType<typeof serverless>> {
   if (!initPromise) {
     initPromise = (async () => {
       process.env.VERCEL ??= "1";
-      const { bootstrapApp } = await import("../server/bootstrap-app");
+      // Vercel runs this function as ESM; keep explicit extension for runtime resolution.
+      const { bootstrapApp } = await import("../server/bootstrap-app.js");
       const { app } = await bootstrapApp();
       handler = serverless(app as Express, {
         binary: ["application/octet-stream", "application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif"],
