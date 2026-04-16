@@ -70,6 +70,22 @@ async function buildAll() {
     external: externals,
     logLevel: "info",
   });
+
+  // Dedicated bootstrap bundle for Vercel API catch-all runtime.
+  // This avoids Node ESM extension-resolution issues in serverless.
+  await esbuild({
+    entryPoints: ["server/bootstrap-app.ts"],
+    platform: "node",
+    bundle: true,
+    format: "cjs",
+    outfile: "dist/bootstrap-app.cjs",
+    define: {
+      "process.env.NODE_ENV": '"production"',
+    },
+    minify: true,
+    external: externals,
+    logLevel: "info",
+  });
 }
 
 buildAll().catch((err) => {

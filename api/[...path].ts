@@ -3,6 +3,7 @@
  */
 import "dotenv/config";
 import serverless from "serverless-http";
+import { createRequire } from "node:module";
 import type { Express } from "express";
 
 let handler: ReturnType<typeof serverless> | undefined;
@@ -13,8 +14,9 @@ async function getHandler(): Promise<ReturnType<typeof serverless>> {
   if (!initPromise) {
     initPromise = (async () => {
       process.env.VERCEL ??= "1";
-      // Vercel runs this function as ESM; keep explicit extension for runtime resolution.
-      const { bootstrapApp } = await import("../server/bootstrap-app.js");
+      const require = createRequire(import.meta.url);
+      // Load bundled CJS bootstrap to avoid ESM relative-import resolution pitfalls.
+      const { bootstrapApp } = require("../dist/bootstrap-app.cjs");
       const { app } = await bootstrapApp();
       handler = serverless(app as Express, {
         binary: ["application/octet-stream", "application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif"],
