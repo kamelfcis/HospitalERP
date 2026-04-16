@@ -177,7 +177,8 @@ export async function bootstrapApp(): Promise<{ app: Express; httpServer: Server
 
   const API_PUBLIC_PATHS = ["/auth/login", "/auth/logout", "/auth/me"];
   app.use("/api", (req: Request, res: Response, next: NextFunction) => {
-    if (API_PUBLIC_PATHS.includes(req.path)) return next();
+    const normalizedPath = req.path.startsWith("/api/") ? req.path.slice(4) : req.path;
+    if (API_PUBLIC_PATHS.includes(req.path) || API_PUBLIC_PATHS.includes(normalizedPath)) return next();
     if (!req.session.userId) {
       return res.status(401).json({ message: "يجب تسجيل الدخول" });
     }
