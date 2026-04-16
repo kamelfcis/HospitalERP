@@ -4,19 +4,24 @@
   "installCommand": "npm ci",
   "outputDirectory": "public",
   "functions": {
-    "api/[...path].ts": {
+    "api/handler.ts": {
       "maxDuration": 60,
       "includeFiles": "{dist/bootstrap-app.cjs,public/**}"
     }
   },
-  "rewrites": [
+  "routes": [
+    { "handle": "filesystem" },
     {
-      "source": "/health",
-      "destination": "/api/health"
+      "src": "/api/(.*)",
+      "dest": "/api/handler?__apiPath=$1"
     },
     {
-      "source": "/((?!api/).*)",
-      "destination": "/index.html"
+      "src": "/health",
+      "dest": "/api/handler?__apiPath=health"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
     }
   ]
 }
